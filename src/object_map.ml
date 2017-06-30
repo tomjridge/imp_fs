@@ -4,20 +4,21 @@ open Tjr_btree
 open Btree_api
 open Block
 open Page_ref_int
+open Bin_prot_util
 
 let blk_sz = 4096
 
-(* object ids *)
+(* object ids -------------------------------------------------------- *)
 
 type object_id = int 
 type oid = object_id
 
 
-(* file entries *)
+(* directory entries ------------------------------------------------- *)
 
-type sz = int  (* 32 bits suffices? *)
+type f_size = int  (* 32 bits suffices? *)
 
-type f_ent = blk_id * sz 
+type f_ent = blk_id * f_size 
 
 type d_ent = blk_id 
 
@@ -25,22 +26,25 @@ type d_ent = blk_id
    just one (to sum type)? for simplicity have one for the time being *)
 
 module Entries = struct
-  open Bin_prot.Std
-  (* these types should match f_ent and d_ent; don't want derivings
-     everywhere *)
-
-  type entry = F of int * int | D of int [@@deriving bin_io]  
+  include 
+    struct
+      open Bin_prot.Std
+      (* these types should match f_ent and d_ent; don't want derivings
+         everywhere *)
+      type entry = F of int * int | D of int [@@deriving bin_io]  
+    end
   type t = entry
   type omap_entry = entry
 
-  let sz = 1 (* tag*) + 2*Bin_prot_util.bin_size_int
+  let bin_size_entry = 1 (* tag*) + 2*bin_size_int
 end
 module E = Entries
 
 
+(* global state ----------------------------------------------------- *)
+
 (* "omap" is the "global" object map from oid to Ent.t *)
 
-(* global state TODO *)
 module S = struct
   type t = {
 
@@ -68,13 +72,10 @@ module S = struct
   }
 end
 
-
-
-
 type omap_ops = (oid,E.t,S.t) map_ops
 
 
-
+(* disk ------------------------------------------------------------- *)
 module Disk = struct
   open Btree_api
   let disk_ops : S.t disk_ops = failwith "TODO"
@@ -82,12 +83,9 @@ end
 include Disk
 
 
-
-
-(* store ops are specific to type: file_store_ops, dir_store_ops,
-   omap_store_ops; all stores share the same free space map *)
+(* free space ------------------------------------------------------- *)
+(* all stores share the same free space map *)
 module Free = struct
-
   open S
   open Monad
   let free_ops : (blk_id,S.t) mref = {
@@ -100,6 +98,10 @@ include Free
 
 
 
+(* directories ------------------------------------------------------ *)
+
+(* store ops are specific to type: file_store_ops, dir_store_ops,
+   omap_store_ops; *)
 module Dir = struct
 
   open Small_string
@@ -122,9 +124,10 @@ end
 
 
 
-(* store_ops for file *)
-module File = struct
+(* files ------------------------------------------------------------ *)
 
+module File = struct
+  (* store_ops for file *)
   open Small_string
   open Bin_prot_util
   open Monad
@@ -150,7 +153,7 @@ module File = struct
         return (Some blk)))
       
   (* files are implemented using the (index -> blk) map *)
-  let mk_file_ops ~page_ref_ops = 
+  let mk_map_int_blk_ops ~page_ref_ops = 
     let map_ops = map_ops ~page_ref_ops in
     Map_int_blk.mk_int_blk_map ~write_blk ~read_blk ~map_ops
   
@@ -158,7 +161,7 @@ end
 
 
 
-
+(* object map ------------------------------------------------------- *)
 
 module Omap = struct
   
@@ -166,7 +169,7 @@ module Omap = struct
   open E
   type k = oid
   type v = entry
-  let v_size = E.sz
+  let v_size = E.bin_size_entry
 
   let ps = 
     Binprot_marshalling.mk_ps ~blk_sz
@@ -184,12 +187,111 @@ end
 
 
 
+(* file ops --------------------------------------------------------- *)
 
 (* we have to implement pread and pwrite on top of omap, since size is
    stored in omap *)
+
+(* requires dst_pos + src_len <= blk_sz; FIXME inefficient *)
+let buf_block_blit ~blk_sz ~src ~src_pos ~src_len ~dst ~dst_pos = (
+    assert (dst_pos + src_len <= blk_sz);
+    dst |> Block.to_string |> Bytes.of_string
+    |> (fun dst -> StdLabels.Bytes.blit ~src ~src_pos ~dst ~dst_pos ~len:src_len; dst)
+    |> Bytes.to_string |> Block.of_string blk_sz
+)
+
 module File_ops = struct
 
+  open Monad
+
+  (* calculate blk_index, offset within block and len st. offset+len
+     <= blk_sz *)
+  let calc ~pos ~len kk = (
+    (* which block are we interested in? *)
+    let blk_index = pos / blk_sz in
+
+    (* what offset within the block? *)
+    let offset = pos - (blk_index * blk_sz) in
+
+    (* how many bytes should we read/write within the block? *)
+    let len = 
+      if offset+len > blk_sz then blk_sz - offset else len in
+    let _ =  assert (offset + len <= blk_sz) in
+    
+    kk ~blk_index ~offset ~len
+  )
+
+
+  let pwrite 
+        ~size_ops ~(map_ops:(int,blk,S.t)map_ops) 
+        ~src ~src_pos ~src_len ~dst_pos : (int,S.t) m 
+    = (
+      assert (src_pos + src_len <= Bytes.length src);    
+      begin
+        let more_than_one_block = src_len >= blk_sz in
+        match (dst_pos mod blk_sz = 0 && more_than_one_block) with
+        | _ when src_len = 0 -> (return 0)
+        | true -> (
+          (* 
+            * Case 1: writing a set of blocks at a block index 
   
+            In this case, do the writes.
+
+            NOTE: src_len is not necessarily a multiple of blk_sz 
+  
+            FIXME given the insert_many interface, we seem to have
+            to create new blocks; read-only slices of underlying array
+            would be useful so change Block impl; may want to use
+            unsafe_to_string, with string slices
+           *)
+          let dst_blk_origin = dst_pos / blk_sz in
+          let n_blks = src_len / blk_sz in  
+          let blks = ref [] in
+          let _ = 
+            for i = n_blks-1 downto 0 do 
+              let blk = Bytes.sub_string src (src_pos+(i*blk_sz)) blk_sz in
+              blks:=(dst_blk_origin+i,Block.of_string blk_sz blk)::!blks
+            done
+          in
+          match !blks with
+          | [] -> failwith "impossible"
+          | (k,v)::kvs -> (
+            map_ops.insert_many k v kvs 
+            |> bind (fun kvs' -> assert (kvs' = []); return (n_blks * blk_sz)))
+        )
+        | false -> (
+        (* either less than one block, or non-block-aligned write (or
+           both); write out a new, possibly partial, block; let the
+           user be responsible for calling pwrite again *)
+          (* we must read a block *)
+          calc ~pos:dst_pos ~len:src_len (fun ~blk_index ~offset ~len -> 
+                 let dst_blk = blk_index in
+                 let dst_pos = offset in
+                 (* read block *)
+                 map_ops.find dst_blk 
+                 |> bind (fun blk ->
+                        let blk = 
+                          match blk with
+                          | None -> (Block.of_string blk_sz "")
+                          | Some blk -> blk 
+                        in
+                        (* now update block: copy len bytes from
+                           src_pos into blk at offset *)
+                        let blk' = 
+                          buf_block_blit ~blk_sz ~src ~src_pos ~src_len:len ~dst:blk ~dst_pos
+                        in
+                        (* write block back *)
+                        map_ops.insert dst_blk blk'
+                        |> bind (fun () -> return len))
+               )
+        )
+      end
+      (* now maybe adjust the size *)
+      |> bind (fun n -> 
+             size_ops.get () 
+             |> bind (fun z -> if dst_pos+n > z then size_ops.set (dst_pos+n) else return ())
+             |> bind (fun () -> return n))
+    )    
 
 end
 
@@ -200,3 +302,37 @@ let omap_ops : omap_ops = failwith ""
 (* TODO instantiate the omap with cache *)
 
 
+(*
+    calc ~pos:dst_pos ~len:src_len (fun ~blk_index ~offset ~len:src_len -> 
+
+        (* we can only write individual blocks to the lower layer... *)
+        (* we may have to read a block if offset <> 0 or src_len < blk_sz *)
+        let blk' = (
+          match (offset<>0 || src_len < blk_sz) with
+          | true -> (
+              map_ops.find blk_index |> bind (fun x -> 
+                  match x with 
+                  | None -> return (BlkN.of_string blk_sz "")
+                  | Some blk -> return blk))
+          | false -> (return (BlkN.of_string blk_sz "")))
+        in
+        blk' |> bind (fun blk' -> 
+            let blk' = blk_to_buffer blk' in
+
+            (* blk' is the block that we are preparing; at this point, if
+               needed it contains the data that was already present at
+               blk_index; now we blit the new bytes *)
+
+            (* FIXME we probably want to ensure that blks are
+               immutable, but at the same time minimize copying *)
+
+            blit ~src:src ~src_pos:src_pos ~dst:blk' ~dst_pos:offset ~len:src_len;
+            let blk' = buffer_to_blk blk' in
+            map_ops.insert blk_index blk' |> bind (fun _ -> 
+
+                (* we may have to adjust the size of the bfile; but
+                   clearly we want to avoid reading and writing the
+                   meta block if we can; *)
+                failwith "FIXME" |> bind (fun _ -> return src_len)))))
+
+ *)
