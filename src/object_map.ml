@@ -118,7 +118,8 @@ module Dir = struct
   let dir_store_ops : (k,v,page_ref,S.t) store_ops = 
     Disk_to_store.disk_to_store ~ps ~disk_ops ~free_ops
 
-  let dir_map_ops = Store_to_map.store_ops_to_map_ops ~ps ~store_ops:dir_store_ops
+  let map_ops = Store_to_map.store_ops_to_map_ops ~ps ~store_ops:dir_store_ops
+      ~kk:(fun ~map_ops ~find_leaf -> map_ops)
 end
 
 
@@ -136,8 +137,8 @@ module File = struct
   module Map_int_blk_id = struct
     let ps = Map_int_int.ps' ~blk_sz
     let store_ops = Disk_to_store.disk_to_store ~ps ~disk_ops ~free_ops
-    let map_ops ~page_ref_ops = Store_to_map.store_ops_to_map_ops ~ps ~store_ops 
-        ~page_ref_ops
+    let map_ops ~page_ref_ops = Store_to_map.store_ops_to_map_ops ~ps 
+        ~store_ops  ~page_ref_ops ~kk:(fun ~map_ops ~find_leaf -> map_ops)
   end
   include Map_int_blk_id
 
@@ -200,6 +201,13 @@ let buf_block_blit ~blk_sz ~src ~src_pos ~src_len ~dst ~dst_pos = (
     |> Bytes.to_string |> Block.of_string blk_sz
 )
 
+let block_buf_blit ~blk_sz ~src ~src_pos ~len ~dst ~dst_pos = (
+  assert (dst_pos + len <= Bytes.length dst);
+  assert (src_pos + len <= blk_sz);
+  let src = Bytes.unsafe_of_string src in
+  StdLabels.Bytes.blit ~src ~src_pos ~dst ~dst_pos ~len)
+
+
 module File_ops = struct
 
   open Monad
@@ -221,7 +229,16 @@ module File_ops = struct
     kk ~blk_index ~offset ~len
   )
 
+  (* t is the root block of the idx_map *)
+  let pread ~read_block ~map_ops ~t ~src_pos ~len ~dst ~dst_pos = (
+    assert (dst_pos + len <= Bytes.length dst);
+    (* read the relevant leaf *)
+    let blk = src_pos / blk_sz in
+    let blk_offset = src_pos mod blk_sz in
+    map_ops.find
+  )
 
+ 
   let pwrite 
         ~size_ops ~(map_ops:(int,blk,S.t)map_ops) 
         ~src ~src_pos ~src_len ~dst_pos : (int,S.t) m 
