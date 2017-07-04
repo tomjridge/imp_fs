@@ -204,6 +204,7 @@ let buf_block_blit ~blk_sz ~src ~src_pos ~src_len ~dst ~dst_pos = (
 let block_buf_blit ~blk_sz ~src ~src_pos ~len ~dst ~dst_pos = (
   assert (dst_pos + len <= Bytes.length dst);
   assert (src_pos + len <= blk_sz);
+  let src = Block.to_string src in
   let src = Bytes.unsafe_of_string src in
   StdLabels.Bytes.blit ~src ~src_pos ~dst ~dst_pos ~len)
 
@@ -229,16 +230,72 @@ module File_ops = struct
     kk ~blk_index ~offset ~len
   )
 
-  (* t is the root block of the idx_map *)
-  let pread ~read_block ~map_ops ~t ~src_pos ~len ~dst ~dst_pos = (
-    assert (dst_pos + len <= Bytes.length dst);
-    (* read the relevant leaf *)
-    let blk = src_pos / blk_sz in
-    let blk_offset = src_pos mod blk_sz in
-    map_ops.find
-  )
 
- 
+  let split_at i xs = Core.List.split_n xs i
+
+  (* convert assoc list to map; assumes assoc list is sorted *)
+  let rec assoc_list_to_bst kvs = 
+    match kvs with
+    | [] -> fun k -> None
+    | [(k,v)] -> fun k' -> if k=k' then Some v else None
+    | _ -> 
+      List.length kvs 
+      |> fun n -> 
+      kvs |> split_at (n/2) 
+      |> fun (xs,(k,v)::ys) -> 
+      let f1 = assoc_list_to_bst xs in
+      let f2 = assoc_list_to_bst ((k,v)::ys) in
+      fun k' -> if k' < k then f1 k' else f2 k'
+
+
+  type ('k,'r)rstk = ('k,'r) Tjr_btree.Small_step.rstk
+
+  let stack_to_lu_of_child = Tjr_btree.Isa_export.Tree_stack.stack_to_lu_of_child
+
+  (* t is the root block of the idx_map *)
+  let pread 
+      ~read_block 
+      ~(find_leaf: 'k -> 'r -> ('r*('k*'v)list*('k,'r)rstk,'t) m)
+      ~page_ref_ops
+      ~src_pos ~len ~dst ~dst_pos 
+    = (
+      assert (dst_pos + len <= Bytes.length dst);
+      (* read the relevant leaf *)
+      let blk_i = src_pos / blk_sz in
+      page_ref_ops.get () |> bind (fun r ->
+        find_leaf blk_i r |> bind (fun (_,kvs,rstk) ->
+          (* kvs is the map from idx -> block_id; rstk tells us the
+             maximum block we can try to read *)
+          (* restrict len so that we do not try to read past u *)
+          let (_,u) = stack_to_lu_of_child rstk in
+          (* do not attempt to read block u or higher *)
+          let limit_blk = match u with 
+            | None -> max_int
+            | Some i -> i
+          in
+          (* convert kvs to map for ease of use *)
+          let map = assoc_list_to_bst kvs in
+          let rec loop ~src_pos ~len ~dst_pos ~n_read = (
+            let blk = src_pos / blk_sz in
+            match () with
+            | _ when len=0 || blk >= limit_blk -> return n_read
+            | _ -> 
+              let blk_offset = src_pos mod blk_sz in
+              let get_blk = 
+                (* which block to read? *)
+                match map blk with
+                | None -> return (Block.of_string blk_sz "")
+                | Some i -> read_block i
+              in
+              get_blk |> bind (fun blk -> 
+                let len' = min len (blk_sz - blk_offset) in
+                block_buf_blit ~blk_sz ~src:blk ~src_pos:blk_offset 
+                  ~len:len' ~dst ~dst_pos;
+                loop ~src_pos:(src_pos+len') ~len:(len-len') 
+                  ~dst_pos:(dst_pos+len') ~n_read:(n_read +len')))
+          in
+          loop ~src_pos ~len ~dst_pos ~n_read:0)))
+
   let pwrite 
         ~size_ops ~(map_ops:(int,blk,S.t)map_ops) 
         ~src ~src_pos ~src_len ~dst_pos : (int,S.t) m 
