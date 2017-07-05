@@ -194,10 +194,10 @@ end
    stored in omap *)
 
 (* requires dst_pos + src_len <= blk_sz; FIXME inefficient *)
-let buf_block_blit ~blk_sz ~src ~src_pos ~src_len ~dst ~dst_pos = (
-    assert (dst_pos + src_len <= blk_sz);
+let buf_block_blit ~blk_sz ~src ~src_pos ~len ~dst ~dst_pos = (
+    assert (dst_pos + len <= blk_sz);
     dst |> Block.to_string |> Bytes.of_string
-    |> (fun dst -> StdLabels.Bytes.blit ~src ~src_pos ~dst ~dst_pos ~len:src_len; dst)
+    |> (fun dst -> StdLabels.Bytes.blit ~src ~src_pos ~dst ~dst_pos ~len; dst)
     |> Bytes.to_string |> Block.of_string blk_sz
 )
 
@@ -233,6 +233,7 @@ module File_ops = struct
 
   let split_at i xs = Core.List.split_n xs i
 
+
   (* convert assoc list to map; assumes assoc list is sorted *)
   let rec assoc_list_to_bst kvs = 
     match kvs with
@@ -246,14 +247,15 @@ module File_ops = struct
       let f1 = assoc_list_to_bst xs in
       let f2 = assoc_list_to_bst ((k,v)::ys) in
       fun k' -> if k' < k then f1 k' else f2 k'
-
+  [@@warning "-8"]
 
   type ('k,'r)rstk = ('k,'r) Tjr_btree.Small_step.rstk
 
   let stack_to_lu_of_child = Tjr_btree.Isa_export.Tree_stack.stack_to_lu_of_child
 
-  (* t is the root block of the idx_map *)
-  let pread 
+  (* t is the root block of the idx_map; TODO this should make sure
+     not to read beyond the end of file *)
+  let pread'
       ~read_block 
       ~(find_leaf: 'k -> 'r -> ('r*('k*'v)list*('k,'r)rstk,'t) m)
       ~page_ref_ops
@@ -296,77 +298,84 @@ module File_ops = struct
           in
           loop ~src_pos ~len ~dst_pos ~n_read:0)))
 
-  let pwrite 
-        ~size_ops ~(map_ops:(int,blk,S.t)map_ops) 
-        ~src ~src_pos ~src_len ~dst_pos : (int,S.t) m 
+  (* pwrite is similar to pread; we aim for insert_many-like
+     behaviour; we don't want to allocate all blocks up front; so
+     insert_many needs to take a function that can be stepped and can
+     produce a block or indicate that it is finished; for partial
+     blocks, this needs access to read_block  *)
+  let insert_many ~(k:'k) ~(v:'v) ~(ks:'k list) ~(vs:'k -> blk) : ('k list,S.t) m = failwith "" 
+    
+  let pwrite'
+      ~(kvs_insert: 'k -> 'v -> ('k*'v)list -> ('k*'v)list)
+      ~max_leaf_keys
+      ~read_block
+      ~write_block
+      ~page_ref_ops
+      ~(insert_many: ('k*'v) list -> ('k,'r)rstk -> ('r,'t) m)
+      ~(find_leaf: 'k -> 'r -> ('r*('k*'v)list*('k,'r)rstk,'t) m)
+      ~src ~src_pos ~len ~dst_pos : (int,S.t) m 
     = (
-      assert (src_pos + src_len <= Bytes.length src);    
+      assert (src_pos + len <= Bytes.length src);    
+      (* for dst, file size can grow *)
       begin
-        let more_than_one_block = src_len >= blk_sz in
-        match (dst_pos mod blk_sz = 0 && more_than_one_block) with
-        | _ when src_len = 0 -> (return 0)
-        | true -> (
-          (* 
-            * Case 1: writing a set of blocks at a block index 
-  
-            In this case, do the writes.
+        let blk_i = dst_pos / blk_sz in
+        page_ref_ops.get () |> bind (fun r ->
+          find_leaf blk_i r |> bind (fun (_,kvs,rstk) ->
+            (* kvs is the map from idx -> block_id; rstk tells us the
+               maximum block we can try to write *)
+            let (_,u) = stack_to_lu_of_child rstk in
+            (* do not attempt to write block u or higher *)
+            let limit_blk = match u with 
+              | None -> max_int
+              | Some i -> i
+            in
+            (* convert kvs to map for ease of use *)
+            let map = assoc_list_to_bst kvs in
+            let rec loop ~src_pos ~len ~dst_pos ~n_wrote ~kvs = (
+              let blk_i = src_pos / blk_sz in
+              match () with
+              | _ when len=0 || blk_i >= limit_blk || List.length kvs >= 2*max_leaf_keys -> (
+                  (* now execute the up stage of insert_many to get a new page_ref *)
+                  insert_many kvs rstk |> bind (fun r ->
+                    page_ref_ops.set r |> bind (fun () ->
+                      return n_wrote)))
+              | _ -> 
+                let blk_offset = src_pos mod blk_sz in
+                (* we may not be writing a full block *)
+                let len' = min len (blk_sz - blk_offset) in
+                let blk = 
+                  match blk_offset > 0 || len' < blk_sz with
+                  | true -> (
+                      (* a partial block write *)
+                      (* read the original block *)
+                      (match map blk_i with
+                       | None -> return (Block.of_string blk_sz "")
+                       | Some i -> read_block i)
+                      |> bind (fun orig_blk -> 
+                        (* update *)
+                        let blk = buf_block_blit ~blk_sz ~src ~src_pos ~len:len' ~dst:orig_blk 
+                            ~dst_pos:blk_offset 
+                        in (* FIXME or mutate in place? *)
+                        return blk ))
+                  | false -> (
+                      Block.of_string blk_sz "" 
+                      |> fun dst -> 
+                      buf_block_blit ~blk_sz ~src ~src_pos ~len:blk_sz ~dst ~dst_pos:0 
+                      (* FIXME inefficient create of initial block *)
+                      |> return)
+                in
+                blk |> bind (fun blk ->
+                  (* now write the blk and get a new blk_id to insert into kvs *)
+                  write_block blk |> bind (fun r ->
+                    let kvs = kvs_insert blk_i r kvs in
+                    loop ~src_pos:(src_pos+len') ~len:(len-len') ~dst_pos:(dst_pos+len') 
+                      ~n_wrote:(n_wrote+len') ~kvs)))
+            in
+            loop ~src_pos ~len ~dst_pos ~n_wrote:0 ~kvs))
+      end)
 
-            NOTE: src_len is not necessarily a multiple of blk_sz 
+  let _ = pwrite'
   
-            FIXME given the insert_many interface, we seem to have
-            to create new blocks; read-only slices of underlying array
-            would be useful so change Block impl; may want to use
-            unsafe_to_string, with string slices
-           *)
-          let dst_blk_origin = dst_pos / blk_sz in
-          let n_blks = src_len / blk_sz in  
-          let blks = ref [] in
-          let _ = 
-            for i = n_blks-1 downto 0 do 
-              let blk = Bytes.sub_string src (src_pos+(i*blk_sz)) blk_sz in
-              blks:=(dst_blk_origin+i,Block.of_string blk_sz blk)::!blks
-            done
-          in
-          match !blks with
-          | [] -> failwith "impossible"
-          | (k,v)::kvs -> (
-            map_ops.insert_many k v kvs 
-            |> bind (fun kvs' -> assert (kvs' = []); return (n_blks * blk_sz)))
-        )
-        | false -> (
-        (* either less than one block, or non-block-aligned write (or
-           both); write out a new, possibly partial, block; let the
-           user be responsible for calling pwrite again *)
-          (* we must read a block *)
-          calc ~pos:dst_pos ~len:src_len (fun ~blk_index ~offset ~len -> 
-                 let dst_blk = blk_index in
-                 let dst_pos = offset in
-                 (* read block *)
-                 map_ops.find dst_blk 
-                 |> bind (fun blk ->
-                        let blk = 
-                          match blk with
-                          | None -> (Block.of_string blk_sz "")
-                          | Some blk -> blk 
-                        in
-                        (* now update block: copy len bytes from
-                           src_pos into blk at offset *)
-                        let blk' = 
-                          buf_block_blit ~blk_sz ~src ~src_pos ~src_len:len ~dst:blk ~dst_pos
-                        in
-                        (* write block back *)
-                        map_ops.insert dst_blk blk'
-                        |> bind (fun () -> return len))
-               )
-        )
-      end
-      (* now maybe adjust the size *)
-      |> bind (fun n -> 
-             size_ops.get () 
-             |> bind (fun z -> if dst_pos+n > z then size_ops.set (dst_pos+n) else return ())
-             |> bind (fun () -> return n))
-    )    
-
 end
 
 
