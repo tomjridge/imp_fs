@@ -5,7 +5,7 @@ open Btree_api
 open Block
 open Page_ref_int
 open Bin_prot_util
-
+open Entry
 let blk_sz = 4096
 
 (* object ids -------------------------------------------------------- *)
@@ -13,32 +13,10 @@ let blk_sz = 4096
 type object_id = int 
 type oid = object_id
 
+type fid = [ `F of oid ]
+type did = [ `D of oid ]
 
-(* directory entries ------------------------------------------------- *)
-
-type f_size = int  (* 32 bits suffices? *)
-
-type f_ent = blk_id * f_size 
-
-type d_ent = blk_id 
-
-(* CHOICE do we want to have two maps (one for files, one for dirs) or
-   just one (to sum type)? for simplicity have one for the time being *)
-
-module Entries = struct
-  include 
-    struct
-      open Bin_prot.Std
-      (* these types should match f_ent and d_ent; don't want derivings
-         everywhere *)
-      type entry = F of int * int | D of int [@@deriving bin_io]  
-    end
-  type t = entry
-  type omap_entry = entry
-
-  let bin_size_entry = 1 (* tag*) + 2*bin_size_int
-end
-module E = Entries
+type fid_did = [ #fid | #did ]
 
 
 (* global state ----------------------------------------------------- *)
@@ -72,7 +50,7 @@ module S = struct
   }
 end
 
-type omap_ops = (oid,E.t,S.t) map_ops
+type omap_ops = (oid,entry,S.t) map_ops
 
 
 (* disk ------------------------------------------------------------- *)
@@ -107,13 +85,13 @@ module Dir = struct
   open Small_string
   open Bin_prot_util
   type k = SS.t
-  type v = oid
+  type v = entry
   
   let ps = 
     Binprot_marshalling.mk_ps ~blk_sz 
-      ~cmp:SS.compare ~k_size:bin_size_ss ~v_size:bin_size_int
+      ~cmp:SS.compare ~k_size:bin_size_ss ~v_size:Entry.bin_size_entry
       ~read_k:bin_reader_ss ~write_k:bin_writer_ss
-      ~read_v:bin_reader_int ~write_v:bin_writer_int
+      ~read_v:bin_reader_entry ~write_v:bin_writer_entry
 
   let dir_store_ops : (k,v,page_ref,S.t) store_ops = 
     Disk_to_store.disk_to_store ~ps ~disk_ops ~free_ops
@@ -169,10 +147,10 @@ end
 module Omap = struct
   
   open Bin_prot_util
-  open E
+  open Entry
   type k = oid
   type v = entry
-  let v_size = E.bin_size_entry
+  let v_size = bin_size_entry
 
   let ps = 
     Binprot_marshalling.mk_ps ~blk_sz
@@ -212,6 +190,18 @@ module Omap = struct
       | F (r,sz) -> failwith __LOC__
       | D r -> return (Dir.map_ops ~page_ref_ops) 
       (* TODO caching? *)
+
+  let get_dir_ls_ops ~oid = 
+    let page_ref_ops = dir_oid_to_page_ref_ops ~oid in
+    map_ops.find oid |> bind @@ fun ent_opt ->
+    match ent_opt with
+    | None -> failwith __LOC__  (* TODO old reference no longer valid? *)
+    | Some ent -> 
+      match ent with
+      | F (r,sz) -> failwith __LOC__
+      | D r -> return (Dir.ls_ops ~page_ref_ops)
+
+(* FIXME duplication *)
 
 end
 

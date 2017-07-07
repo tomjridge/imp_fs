@@ -90,3 +90,6 @@ let rename' ~root_oid ~src ~dst = (
 let _ = rename'
 
 let truncate () = failwith "TODO"
+
+
+let the_state = ref !{ root=0; free_oid=0 }

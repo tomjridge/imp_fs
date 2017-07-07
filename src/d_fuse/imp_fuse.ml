@@ -71,15 +71,35 @@ end
 (* fuse ------------------------------------------------------------- *)
 
 open Path_resolution
+open Object_map
+open Entry
+open Monad
 
 let root_oid = 0
 
 let do_readdir path _ = safely @@ fun () -> 
   string_to_components path @@ fun ~cs ~ends_with_slash ->
-  let dir_map_ops oid = 
-    (* want to get a map_ops for the given dir *)
-    
-  resolve' ~root_oid 
+  let dir_map_ops oid = Omap.get_dir_map_ops ~oid in
+  let m = 
+    resolve' 
+      ~root_oid 
+      ~dir_map_ops
+      ~cs
+      ~ends_with_slash
+      ~_Dir:(fun ~parent ~oid -> D(oid))
+      ~_File:(fun ~parent ~oid ~sz -> F(oid,sz))
+      ~_Error:(fun _ -> failwith __LOC__)  (* TODO *)
+    |> bind @@ fun resolved -> 
+    match resolved with
+    | D(oid) -> Omap.get_dir_ls_ops ~oid |> bind @@ fun ls_ops ->
+      Btree_api.all_kvs ls_ops
+    | F(oid,sz) -> failwith __LOC__ (* TODO *)
+  in
+  m |> Monad.run !the_state |> fun (s',r) -> match r with
+
+;;
+  match resolved with
+  | 
   Imp_fs.readdir !{ls_ops=}
 
 let do_fopen path flags = safely (fun () -> 
