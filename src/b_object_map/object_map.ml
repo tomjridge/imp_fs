@@ -14,9 +14,13 @@ type object_id = int
 type oid = object_id
 
 type fid = [ `F of oid ]
+
 type did = [ `D of oid ]
 
-type fid_did = [ #fid | #did ]
+type fid_did = [ fid | did ]
+
+let dest_fid (`F oid) = oid
+let dest_did (`D oid) = oid
 
 
 (* global state ----------------------------------------------------- *)
@@ -50,10 +54,20 @@ module S = struct
   }
 end
 
+(* invariant: fid maps to file, did maps to dir; package as two ops? *)
 type omap_ops = (oid,entry,S.t) map_ops
+
+type size = int
+
+type omap_files = (oid,blk_id*size,S.t) map_ops
+
+type omap_dirs = (oid,blk_id,S.t) map_ops
+
+
 
 
 (* disk ------------------------------------------------------------- *)
+
 module Disk = struct
   open Btree_api
   let disk_ops : S.t disk_ops = failwith "TODO"
@@ -61,7 +75,11 @@ end
 include Disk
 
 
+
+
+
 (* free space ------------------------------------------------------- *)
+
 (* all stores share the same free space map *)
 module Free = struct
   open S
@@ -99,6 +117,7 @@ module Dir = struct
   let map_ops = Store_to_map.store_ops_to_map_ops ~ps ~store_ops:dir_store_ops
       ~kk:(fun ~map_ops ~find_leaf -> map_ops)
 
+  (* FIXME produce at same time as map_ops, via poly_rec *)
   let ls_ops = Store_to_map.make_ls_ops ~ps ~store_ops:dir_store_ops
 end
 
@@ -168,40 +187,39 @@ module Omap = struct
   open Monad
 
   (* return get/set for a particular oid *)
-  let dir_oid_to_page_ref_ops ~oid = 
+  let did_to_page_ref_ops ~did = 
+    did |> dest_did |> fun oid ->
     { 
       get=(fun () -> map_ops.find oid |> bind @@ fun ent_opt ->
         match ent_opt with
         | None -> failwith __LOC__ (* TODO impossible? oid has been deleted? *)
         | Some ent -> 
           match ent with
-          | F(r,sz) -> failwith __LOC__ (* TODO typing on oids? *)
+          | F(r,sz) -> failwith __LOC__ (* TODO invariant did is a dir *)
           | D(r) -> return r);
       set=(fun r -> map_ops.insert oid (D(r)))
     }
-                         
-  let get_dir_map_ops ~oid = 
-    let page_ref_ops = dir_oid_to_page_ref_ops ~oid in
+
+  let lookup_did ~did =     
+    did |> dest_did |> fun oid ->
     map_ops.find oid |> bind @@ fun ent_opt ->
     match ent_opt with
     | None -> failwith __LOC__  (* TODO old reference no longer valid? *)
     | Some ent -> 
       match ent with
       | F (r,sz) -> failwith __LOC__
-      | D r -> return (Dir.map_ops ~page_ref_ops) 
+      | D r -> return r
+                         
+  let did_to_map_ops ~did = 
+    lookup_did ~did |> bind @@ fun r ->
+    let page_ref_ops = did_to_page_ref_ops ~did in
+    return (Dir.map_ops ~page_ref_ops)
       (* TODO caching? *)
 
-  let get_dir_ls_ops ~oid = 
-    let page_ref_ops = dir_oid_to_page_ref_ops ~oid in
-    map_ops.find oid |> bind @@ fun ent_opt ->
-    match ent_opt with
-    | None -> failwith __LOC__  (* TODO old reference no longer valid? *)
-    | Some ent -> 
-      match ent with
-      | F (r,sz) -> failwith __LOC__
-      | D r -> return (Dir.ls_ops ~page_ref_ops)
-
-(* FIXME duplication *)
+  let did_to_ls_ops ~did = 
+    lookup_did ~did |> bind @@ fun r ->
+    let page_ref_ops = did_to_page_ref_ops ~did in
+    return (Dir.ls_ops ~page_ref_ops)
 
 end
 
