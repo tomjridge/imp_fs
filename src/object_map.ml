@@ -120,6 +120,8 @@ module Dir = struct
 
   let map_ops = Store_to_map.store_ops_to_map_ops ~ps ~store_ops:dir_store_ops
       ~kk:(fun ~map_ops ~find_leaf -> map_ops)
+
+  let ls_ops = Store_to_map.make_ls_ops ~ps ~store_ops:dir_store_ops
 end
 
 
@@ -180,8 +182,36 @@ module Omap = struct
 
   let store_ops = Disk_to_store.disk_to_store ~ps ~disk_ops ~free_ops
 
-  let map_ops ~page_ref_ops = Store_to_map.store_ops_to_map_ops ~ps ~store_ops 
-        ~page_ref_ops
+  let page_ref_ops = failwith "TODO"
+
+  let map_ops = Store_to_map.store_ops_to_map_ops ~ps ~store_ops 
+      ~page_ref_ops ~kk:(fun ~map_ops ~find_leaf -> map_ops)
+
+  open Monad
+
+  (* return get/set for a particular oid *)
+  let dir_oid_to_page_ref_ops ~oid = 
+    { 
+      get=(fun () -> map_ops.find oid |> bind @@ fun ent_opt ->
+        match ent_opt with
+        | None -> failwith __LOC__ (* TODO impossible? oid has been deleted? *)
+        | Some ent -> 
+          match ent with
+          | F(r,sz) -> failwith __LOC__ (* TODO typing on oids? *)
+          | D(r) -> return r);
+      set=(fun r -> map_ops.insert oid (D(r)))
+    }
+                         
+  let get_dir_map_ops ~oid = 
+    let page_ref_ops = dir_oid_to_page_ref_ops ~oid in
+    map_ops.find oid |> bind @@ fun ent_opt ->
+    match ent_opt with
+    | None -> failwith __LOC__  (* TODO old reference no longer valid? *)
+    | Some ent -> 
+      match ent with
+      | F (r,sz) -> failwith __LOC__
+      | D r -> return (Dir.map_ops ~page_ref_ops) 
+      (* TODO caching? *)
 
 end
 

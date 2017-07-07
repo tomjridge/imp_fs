@@ -25,11 +25,12 @@ let file_or_dir_delete
     ~parent_map_ops
     ~name
     ~oid
+    ~file_or_dir
     ~mark_garbage
   = (
     parent_map_ops.delete name |> bind @@ fun () ->
     (* assume no links, so oid is garbage and can be collected *)
-    mark_garbage#oid oid 
+    mark_garbage file_or_dir oid 
     (* obviously if a dir we may delete all the oids of things in the
        dir; assume this happens in the step above *)
   )
@@ -47,4 +48,45 @@ let dir_create
   )
 
 
+let readdir ~dir = (
+  (dir#!ls_ops) |> fun ls_ops ->
+  Btree_api.all_kvs ls_ops 
+)
+
   
+let rename' ~root_oid ~src ~dst = (
+  (* https://github.com/libfuse/libfuse/wiki/Invariants - we can
+     ASSUME maybe that checks have already been carried out *)
+  match src,dst with
+  | `File(src),`Missing(dst) -> (
+      dst#!parent |> (fun p -> (p#!map_ops).insert (dst#!name) (src#!entry))
+      |> bind @@ fun () ->
+      src#!parent |> fun p -> (p#!map_ops).delete (src#!name))
+  | `File(src),`File(dst) -> (
+      match dst#!oid = src#!oid with
+      | true -> assert false  (* FUSE checks this already? *)
+      | false -> 
+        (dst#!parent) 
+        |> (fun p -> (p#!map_ops).insert (dst#!name) (src#!entry))
+        |> bind @@ fun () ->
+        src#!parent |> fun p -> (p#!map_ops).delete (src#!name))
+  | `File(_),`Dir(_) -> assert false  (* ASSUME caught by fuse *)
+  | `Dir(src),`Missing(dst) -> (
+      (* ASSUME cannot be root; ASSUME other checks hold *)
+      assert (src#!oid <> root_oid);
+      (dst#!parent) |> (fun p -> (p#!map_ops).insert (dst#!name) (src#!entry))
+      |> bind @@ fun () ->
+      (src#!parent) |> (fun p -> (p#!map_ops).delete (src#!name)))
+  | `Dir(src),`Dir(dst) -> (
+      assert (src#!oid <> dst #!oid);
+      (* ASSUME other conditions hold eg dst empty *)
+      (dst#!parent) |> (fun p -> (p#!map_ops).insert (dst#!name) (src#!entry))
+      |> bind @@ fun () -> 
+      (src#!parent) |> fun p -> (p#!map_ops).delete (src#!name))
+  | `Dir(src),`File(dst) -> 
+    Monad.err (__LOC__ ^ ": attempt to rename directory onto file ENOTDIR")
+)
+
+let _ = rename'
+
+let truncate () = failwith "TODO"

@@ -26,26 +26,24 @@ let resolve'
       match cs with
       | [] -> failwith __LOC__
       | c::cs -> 
-        dir_map_ops parent |> bind (fun map_ops ->
-          map_ops.find c |> bind (fun vopt ->
-            match vopt with
-            | None -> (
-                if cs = [] then 
-                  return @@ `Missing_entry(parent,c,ends_with_slash)
-                else 
-                  return @@ `Error_no_directory(parent,c,cs))
-            | Some (`File(oid)) -> (
-                if cs = [] && not ends_with_slash then
-                  return @@ `File(parent,oid)
-                else
-                  return @@ `Error_file_present(c,cs,ends_with_slash))
-            | Some (`Dir(oid)) -> (
-                if cs = [] then 
-                  return @@ `Dir(parent,oid)
-                else
-                  loop ~parent:oid ~cs)
-          )
-        ))
+        dir_map_ops parent |> bind @@ fun map_ops ->
+        map_ops.find c |> bind @@ fun vopt ->
+        match vopt with
+        | None -> (
+            if cs = [] then 
+              return @@ `Missing_entry(parent,c,ends_with_slash) 
+            else 
+              return @@ `Error_no_directory(parent,c,cs))
+        | Some (`File(oid)) -> (
+            if cs = [] && not ends_with_slash then
+              return @@ `File(parent,oid)
+            else
+              return @@ `Error_file_present(c,cs,ends_with_slash))
+        | Some (`Dir(oid)) -> (
+            if cs = [] then 
+              return @@ `Dir(parent,oid)
+            else
+              loop ~parent:oid ~cs) )
     in  
     if cs = [] then 
       return @@ `Dir(root_oid,root_oid) 
