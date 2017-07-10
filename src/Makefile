@@ -1,21 +1,63 @@
-PKGS:=tjr_btree,tjr_lib,ppx_poly_record,Fuse,extunix
+SHELL:=/bin/bash
+BASH_ENV=bash_env.sh
+export BASH_ENV
 
-mls:=entry.ml object_map.ml path_resolution.ml imp_fs.ml imp_state.ml # imp_fuse.ml
+# shouldn't shell builtin source bash_env anyway?
+libname:=$(shell source bash_env.sh && echo $${libname})#
+# $(info libname is $(libname)!)
 
-all: link
-	ocamlfind ocamlc -thread -package $(PKGS) $(mls)
+# ----------------------------------------
 
-link:
-	ln -s b_*/* c_*/* d_*/* .
+all: _links _depend
+	$$ocamlc -c $$mls
+	$$ocamlopt -c $$mls
+	mk_cma
+	mk_cmxa
+#	$(MAKE) $$natives $$bytes
+
+
+_links:
+	mk_links
 	touch $@
 
-.depend: FORCE
-	ocamlfind ocamldep -package $(PKGS) $(mls) >$@
+_mlis: 
+	mk_mlis
+
+install:
+	mk_meta
+	-remove
+	install
+
+_remove: 
+	remove
+
+_reinstall: 
+	remove
+	install
+
+# README.html: README.adoc
+# 	asciidoctor $<
+
+_depend:
+	mkdir -p _depend
+	mk_depend
+
+_codetags:
+	mk_codetags
+
+_doc:
+	echo Make sure to build first
+	mk_doc
+	cp *.html *.css ../docs
 
 clean:
-	rm -f *.{cmo,cmi,cmx} .depend link 
-	for f in b_*/* c_*/* d_*/*; do \
-		rm -f `basename $$f` \
-	done
+	clean
+	rm -f *.html
+
+real_clean: clean
+	rm_links
+	rm -rf _links _depend
 
 FORCE:
+
+

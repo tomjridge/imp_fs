@@ -5,7 +5,8 @@ open Tjr_string
 open Tjr_btree
 open Btree_api
 open Monad
-
+open Omap_pervasives
+open Object_map
 
 let string_to_components s kk = (
   assert(starts_with ~prefix:"/" s);
@@ -16,12 +17,12 @@ let string_to_components s kk = (
   |> fun s' -> kk ~cs:s' ~ends_with_slash:(ends_with ~suffix:"/" s)
 )
 
-open Entry
+open Omap_entry
 
 (* we want to identify either a file or a directory by object id *)
 let resolve' 
-    ~root_oid
-    ~(dir_map_ops: 'oid -> (('k,'v,'t)map_ops,'t)m)
+    ~root_did
+    ~(dir_map_ops: did -> (('k,'v,'t)map_ops,'t)m)
     ~cs 
     ~ends_with_slash 
     ~_Error
@@ -29,28 +30,29 @@ let resolve'
     ~_Dir
     ~_File
   = (
-    let rec loop ~parent (* of dir *) ~cs = (
+    let rec loop ~(parent:did) (* of dir *) ~cs = (
       match cs with
       | [] -> failwith __LOC__
       | c::cs -> 
         dir_map_ops parent |> bind @@ fun map_ops ->
         map_ops.find c |> bind @@ fun vopt ->
+        (* vopt is entry in parent dir, not in object map *)
         match vopt with
         | None -> (
             if cs = [] then 
               return @@ _Missing ~parent ~c ~ends_with_slash
             else 
               return @@ _Error (`Error_no_directory(parent,c,cs)))
-        | Some (F(oid,sz)) -> (
+        | Some (Fid_sz(fid,sz)) -> (
             if cs = [] && not ends_with_slash then
-              return @@ _File ~parent ~oid ~sz
+              return @@ _File ~parent ~fid ~sz
             else
               return @@ _Error (`Error_file_present(c,cs,ends_with_slash)))
-        | Some (D(oid)) -> (
+        | Some (Did(did)) -> (
             if cs = [] then 
-              return @@ _Dir ~parent ~oid
+              return @@ _Dir ~parent ~did
             else
-              loop ~parent:oid ~cs) )
+              loop ~parent:did ~cs) )
     in  
     if cs = [] then 
       return @@ _Dir ~parent:root_oid ~oid:root_oid

@@ -86,12 +86,12 @@ let do_readdir path _ = safely @@ fun () ->
       ~dir_map_ops
       ~cs
       ~ends_with_slash
-      ~_Dir:(fun ~parent ~oid -> D(oid))
-      ~_File:(fun ~parent ~oid ~sz -> F(oid,sz))
-      ~_Error:(fun _ -> failwith __LOC__)  (* TODO *)
+      ~_Dir:(fun ~parent ~oid -> `Dir(oid))
+      ~_File:(fun ~parent ~oid ~sz -> `Error(`ENOTDIR)
+      ~_Error:(fun e -> e)  (* TODO *)
     |> bind @@ fun resolved -> 
     match resolved with
-    | D(oid) -> Omap.get_dir_ls_ops ~oid |> bind @@ fun ls_ops ->
+    | `Dir(oid) -> Omap.get_dir_ls_ops ~oid |> bind @@ fun ls_ops ->
       Btree_api.all_kvs ls_ops
     | F(oid,sz) -> failwith __LOC__ (* TODO *)
   in

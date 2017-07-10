@@ -1,96 +1,24 @@
 (* global object map ------------------------------------------------ *)
 
+(** We maintain a single global object map, from oid (int) to entry. *)
+
 open Tjr_btree
 open Btree_api
 open Block
 open Page_ref_int
 open Bin_prot_util
-open Entry
-let blk_sz = 4096
-
-(* object ids -------------------------------------------------------- *)
-
-type object_id = int 
-type oid = object_id
-
-type fid = [ `F of oid ]
-
-type did = [ `D of oid ]
-
-type fid_did = [ fid | did ]
-
-let dest_fid (`F oid) = oid
-let dest_did (`D oid) = oid
-
-
-(* global state ----------------------------------------------------- *)
-
-(* "omap" is the "global" object map from oid to Ent.t *)
-
-module S = struct
-  type t = {
-
-    (* We always allocate new blocks. *)
-    free: page_ref;
-
-    (* The omap is represented by a pointer to the B-tree *)
-    omap_root: blk_id;
-
-    (* The omap is cached. *)
-    omap_cache: unit; (* TODO *)
-
-    (* This is the "global transaction log", which records synced
-       objects without requiring a sync of the object map. Represented
-       using a B-tree or (better?) a persistent on-disk list. *)
-    omap_additional_object_roots: blk_id; 
-
-    (* The B-tree backing each file also has a cache. *)
-    file_caches: oid -> unit;
-
-    (* Ditto directories *)
-    dir_caches: oid -> unit;
-
-    (* TODO other layers of caching *)
-  }
-end
-
-(* invariant: fid maps to file, did maps to dir; package as two ops? *)
-type omap_ops = (oid,entry,S.t) map_ops
-
-type size = int
-
-type omap_files = (oid,blk_id*size,S.t) map_ops
-
-type omap_dirs = (oid,blk_id,S.t) map_ops
-
-
+open Omap_entry
+open Omap_pervasives
+open Omap_state
 
 
 (* disk ------------------------------------------------------------- *)
 
 module Disk = struct
   open Btree_api
-  let disk_ops : S.t disk_ops = failwith "TODO"
+  let disk_ops : omap_state disk_ops = failwith "TODO"
 end
 include Disk
-
-
-
-
-
-(* free space ------------------------------------------------------- *)
-
-(* all stores share the same free space map *)
-module Free = struct
-  open S
-  open Monad
-  let free_ops : (blk_id,S.t) mref = {
-    get=(fun () -> (fun t -> (t,Ok t.free)));
-    set=(fun free -> fun t -> ({t with free}, Ok ()));
-  }
-end
-include Free
-
 
 
 
@@ -99,19 +27,23 @@ include Free
 (* store ops are specific to type: file_store_ops, dir_store_ops,
    omap_store_ops; *)
 module Dir = struct
+  open Bin_prot.Std
+
+  type dir_entry = fid_did
+
 
   open Small_string
   open Bin_prot_util
   type k = SS.t
-  type v = entry
+  type v = dir_entry
   
   let ps = 
     Binprot_marshalling.mk_ps ~blk_sz 
-      ~cmp:SS.compare ~k_size:bin_size_ss ~v_size:Entry.bin_size_entry
+      ~cmp:SS.compare ~k_size:bin_size_ss ~v_size:Omap_entry.bin_size_entry
       ~read_k:bin_reader_ss ~write_k:bin_writer_ss
-      ~read_v:bin_reader_entry ~write_v:bin_writer_entry
+      ~read_v:bin_reader_dir_entry ~write_v:bin_writer_dir_entry
 
-  let dir_store_ops : (k,v,page_ref,S.t) store_ops = 
+  let dir_store_ops : (k,v,page_ref,omap_state) store_ops = 
     Disk_to_store.disk_to_store ~ps ~disk_ops ~free_ops
 
   let map_ops = Store_to_map.store_ops_to_map_ops ~ps ~store_ops:dir_store_ops
@@ -166,16 +98,16 @@ end
 module Omap = struct
   
   open Bin_prot_util
-  open Entry
+  open Omap_entry
   type k = oid
-  type v = entry
+  type v = omap_entry
   let v_size = bin_size_entry
 
   let ps = 
     Binprot_marshalling.mk_ps ~blk_sz
       ~cmp:Int_.compare ~k_size:bin_size_int ~v_size
       ~read_k:bin_reader_int ~write_k:bin_writer_int
-      ~read_v:bin_reader_entry ~write_v:bin_writer_entry
+      ~read_v:bin_reader_omap_entry ~write_v:bin_writer_omap_entry
 
   let store_ops = Disk_to_store.disk_to_store ~ps ~disk_ops ~free_ops
 
@@ -194,10 +126,11 @@ module Omap = struct
         match ent_opt with
         | None -> failwith __LOC__ (* TODO impossible? oid has been deleted? *)
         | Some ent -> 
+          let open Omap_entry in 
           match ent with
-          | F(r,sz) -> failwith __LOC__ (* TODO invariant did is a dir *)
-          | D(r) -> return r);
-      set=(fun r -> map_ops.insert oid (D(r)))
+          | Fid_sz(r,sz) -> failwith __LOC__ (* TODO invariant did is a dir *)
+          | Did(r) -> return r);
+      set=(fun r -> map_ops.insert oid (Did(r)))
     }
 
   let lookup_did ~did =     
@@ -207,8 +140,8 @@ module Omap = struct
     | None -> failwith __LOC__  (* TODO old reference no longer valid? *)
     | Some ent -> 
       match ent with
-      | F (r,sz) -> failwith __LOC__
-      | D r -> return r
+      | Fid_sz (r,sz) -> failwith __LOC__
+      | Did r -> return r
                          
   let did_to_map_ops ~did = 
     lookup_did ~did |> bind @@ fun r ->
@@ -382,7 +315,7 @@ and read_block.
 
 *)
 
-  let insert_many ~(k:'k) ~(v:'v) ~(ks:'k list) ~(vs:'k -> blk) : ('k list,S.t) m = failwith "" 
+  let insert_many ~(k:'k) ~(v:'v) ~(ks:'k list) ~(vs:'k -> blk) : ('k list,omap_state) m = failwith "TODO" 
     
   let pwrite'
       ~(kvs_insert: 'k -> 'v -> ('k*'v)list -> ('k*'v)list)
@@ -393,7 +326,7 @@ and read_block.
       ~dst_size_ops  (* for dst size if writing beyond end *)
       ~(insert_many_up: ('k*'v) list -> ('k,'r)rstk -> ('r,'t) m)  (* upwards phase of insert_many; may split initial leaf *)
       ~(find_leaf: 'k -> 'r -> ('r*('k*'v)list*('k,'r)rstk,'t) m)  (* locate initial leaf holding the blk_i of the blk we first modify *)
-      ~src ~src_pos ~len ~dst_pos : (int,S.t) m 
+      ~src ~src_pos ~len ~dst_pos : (int,omap_state) m 
     = (
       assert (src_pos + len <= Bytes.length src);
       (* for dst, file size can grow *)

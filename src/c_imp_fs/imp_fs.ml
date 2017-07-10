@@ -30,7 +30,7 @@ let file_or_dir_delete
   = (
     parent_map_ops.delete name |> bind @@ fun () ->
     (* assume no links, so oid is garbage and can be collected *)
-    mark_garbage file_or_dir oid 
+    mark_garbage oid 
     (* obviously if a dir we may delete all the oids of things in the
        dir; assume this happens in the step above *)
   )

@@ -1,5 +1,8 @@
 (* directory entries ------------------------------------------------- *)
 
+(** An entry in the object map is either a file (a pointer to a block,
+    and a file size) or a directory (a pointer to a block). *)
+
 open Tjr_btree
 open Block
 open Bin_prot_util
@@ -18,7 +21,7 @@ include struct
 
   (* these types should match f_ent and d_ent; don't want derivings
      everywhere *)
-  type entry = F of int * int | D of int [@@deriving bin_io]  
+  type omap_entry = Fid_sz of int * int | Did of int [@@deriving bin_io]  
 end
 
 
