@@ -6,3 +6,15 @@
 /src/object_map.ml
 /src/path_resolution.ml
 /src/imp_state.ml
+_depend/
+/src/_links
+/src/imp_fs.cmt
+/src/imp_state.cmt
+/src/object_map.cmt
+/src/omap_entry.cmt
+/src/omap_entry.ml
+/src/omap_pervasives.cmt
+/src/omap_pervasives.ml
+/src/omap_state.cmt
+/src/omap_state.ml
+/src/path_resolution.cmt

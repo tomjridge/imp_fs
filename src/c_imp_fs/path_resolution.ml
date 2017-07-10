@@ -43,20 +43,20 @@ let resolve'
               return @@ _Missing ~parent ~c ~ends_with_slash
             else 
               return @@ _Error (`Error_no_directory(parent,c,cs)))
-        | Some (Fid_sz(fid,sz)) -> (
+        | Some (`Fid(fid)) -> (
             if cs = [] && not ends_with_slash then
-              return @@ _File ~parent ~fid ~sz
+              return @@ _File ~parent ~fid
             else
               return @@ _Error (`Error_file_present(c,cs,ends_with_slash)))
-        | Some (Did(did)) -> (
+        | Some (`Dif(did)) -> (
             if cs = [] then 
               return @@ _Dir ~parent ~did
             else
               loop ~parent:did ~cs) )
     in  
     if cs = [] then 
-      return @@ _Dir ~parent:root_oid ~oid:root_oid
+      return @@ _Dir ~parent:root_did ~did:root_did
     else 
-      loop ~parent:root_oid ~cs)
+      loop ~parent:root_did ~cs)
 
 let _ = resolve'

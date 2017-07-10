@@ -27,9 +27,7 @@ include Disk
 (* store ops are specific to type: file_store_ops, dir_store_ops,
    omap_store_ops; *)
 module Dir = struct
-  open Bin_prot.Std
-
-  type dir_entry = fid_did
+  type dir_entry = fid_did [@@deriving bin_io]
 
 
   open Small_string
@@ -128,9 +126,9 @@ module Omap = struct
         | Some ent -> 
           let open Omap_entry in 
           match ent with
-          | Fid_sz(r,sz) -> failwith __LOC__ (* TODO invariant did is a dir *)
-          | Did(r) -> return r);
-      set=(fun r -> map_ops.insert oid (Did(r)))
+          | F_blkid_sz(r,sz) -> failwith __LOC__ (* TODO invariant did is a dir *)
+          | D_blkid(r) -> return r);
+      set=(fun r -> map_ops.insert oid (D_blkid(r)))
     }
 
   let lookup_did ~did =     
@@ -140,8 +138,8 @@ module Omap = struct
     | None -> failwith __LOC__  (* TODO old reference no longer valid? *)
     | Some ent -> 
       match ent with
-      | Fid_sz (r,sz) -> failwith __LOC__
-      | Did r -> return r
+      | F_blkid_sz (r,sz) -> failwith __LOC__
+      | D_blkid r -> return r
                          
   let did_to_map_ops ~did = 
     lookup_did ~did |> bind @@ fun r ->

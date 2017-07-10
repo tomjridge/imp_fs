@@ -11,8 +11,8 @@ libname:=$(shell source bash_env.sh && echo $${libname})#
 all: _links _depend
 	$$ocamlc -c $$mls
 	$$ocamlopt -c $$mls
-	mk_cma
-	mk_cmxa
+#	mk_cma
+#	mk_cmxa
 #	$(MAKE) $$natives $$bytes
 
 

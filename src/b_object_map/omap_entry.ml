@@ -21,7 +21,7 @@ include struct
 
   (* these types should match f_ent and d_ent; don't want derivings
      everywhere *)
-  type omap_entry = Fid_sz of int * int | Did of int [@@deriving bin_io]  
+  type omap_entry = F_blkid_sz of int * int | D_blkid of int [@@deriving bin_io]  
 end
 
 
