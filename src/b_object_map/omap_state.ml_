@@ -1,0 +1,12 @@
+open Tjr_btree
+open Page_ref_int
+open Block
+
+(* omap operations from oid/fid/did --------------------------------- *)
+
+(* "omap" is the "global" object map from oid to Ent.t *)
+
+open Tjr_btree
+open Btree_api
+open Omap_entry
+

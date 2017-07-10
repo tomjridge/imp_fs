@@ -12,6 +12,7 @@ open Block
 
 module Blk=Blk4096
 open Blk
+open Omap_state
 
 let default_stats = LargeFile.stat "."
 
@@ -23,8 +24,7 @@ let safely f =
 
 type t = {
   fd: Disk_on_fd.fd;
-  free:page_ref;
-  root:page_ref;
+  omap_state:omap_state;
 }
 type fs_state = t
 
@@ -41,8 +41,9 @@ module Ops = struct
   }
   
   let page_ref_ops = {
-    get=(fun () -> fun t -> (t,Ok t.root));
-    set=(fun root -> fun t -> ({t with root},Ok ()));
+    get=(fun () -> fun t -> (t,Ok t.omap_state.omap_root));
+    set=(fun omap_root -> fun t -> (
+        {t with omap_state={t.omap_state with omap_root}},Ok ()));
   }
 
 end
@@ -72,7 +73,7 @@ end
 
 open Path_resolution
 open Object_map
-open Entry
+open Omap_entry
 open Monad
 
 let root_oid = 0

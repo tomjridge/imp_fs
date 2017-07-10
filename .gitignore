@@ -18,3 +18,13 @@ _depend/
 /src/omap_state.cmt
 /src/omap_state.ml
 /src/path_resolution.cmt
+/src/disk_ops.cmt
+/src/disk_ops.ml
+/src/free_ops.cmt
+/src/free_ops.ml
+/src/imp_dir.cmt
+/src/imp_dir.ml
+/src/imp_file.cmt
+/src/imp_file.ml
+/src/imp_pervasives.cmt
+/src/imp_pervasives.ml

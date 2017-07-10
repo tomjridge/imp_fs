@@ -8,86 +8,21 @@ open Block
 open Page_ref_int
 open Bin_prot_util
 open Omap_entry
-open Omap_pervasives
-open Omap_state
+open Imp_pervasives
+open Imp_state
 
+(* invariant: fid maps to file, did maps to dir; package as two ops? *)
+type omap_ops = (oid,omap_entry,imp_state) map_ops
 
-(* disk ------------------------------------------------------------- *)
+type size = int
 
-module Disk = struct
-  open Btree_api
-  let disk_ops : omap_state disk_ops = failwith "TODO"
-end
-include Disk
+type omap_fid_ops = (fid,blk_id*size,imp_state) map_ops
 
+let omap_fid_ops = failwith "TODO"
 
+type omap_did_ops = (did,blk_id,imp_state) map_ops
 
-(* directories ------------------------------------------------------ *)
-
-(* store ops are specific to type: file_store_ops, dir_store_ops,
-   omap_store_ops; *)
-module Dir = struct
-  type dir_entry = fid_did [@@deriving bin_io]
-
-
-  open Small_string
-  open Bin_prot_util
-  type k = SS.t
-  type v = dir_entry
-  
-  let ps = 
-    Binprot_marshalling.mk_ps ~blk_sz 
-      ~cmp:SS.compare ~k_size:bin_size_ss ~v_size:Omap_entry.bin_size_entry
-      ~read_k:bin_reader_ss ~write_k:bin_writer_ss
-      ~read_v:bin_reader_dir_entry ~write_v:bin_writer_dir_entry
-
-  let dir_store_ops : (k,v,page_ref,omap_state) store_ops = 
-    Disk_to_store.disk_to_store ~ps ~disk_ops ~free_ops
-
-  let map_ops = Store_to_map.store_ops_to_map_ops ~ps ~store_ops:dir_store_ops
-      ~kk:(fun ~map_ops ~find_leaf -> map_ops)
-
-  (* FIXME produce at same time as map_ops, via poly_rec *)
-  let ls_ops = Store_to_map.make_ls_ops ~ps ~store_ops:dir_store_ops
-end
-
-
-
-
-(* files ------------------------------------------------------------ *)
-
-module File = struct
-  (* store_ops for file *)
-  open Small_string
-  open Bin_prot_util
-  open Monad
-
-  (* int -> blk_id map *)
-  module Map_int_blk_id = struct
-    let ps = Map_int_int.ps' ~blk_sz
-    let store_ops = Disk_to_store.disk_to_store ~ps ~disk_ops ~free_ops
-    let map_ops ~page_ref_ops = Store_to_map.store_ops_to_map_ops ~ps 
-        ~store_ops  ~page_ref_ops ~kk:(fun ~map_ops ~find_leaf -> map_ops)
-  end
-  include Map_int_blk_id
-
-  (* write_blk and read_blk based on disk_ops *)
-  let write_blk blk = (
-    free_ops.get () |> bind (fun blk_id -> 
-        disk_ops.write blk_id blk |> bind (fun _ -> 
-            free_ops.set (blk_id+1) |> bind (fun () -> 
-                return blk_id))))
-
-  let read_blk blk_id = (
-    disk_ops.read blk_id |> bind (fun blk ->
-        return (Some blk)))
-      
-  (* files are implemented using the (index -> blk) map *)
-  let mk_map_int_blk_ops ~page_ref_ops = 
-    let map_ops = map_ops ~page_ref_ops in
-    Map_int_blk.mk_int_blk_map ~write_blk ~read_blk ~map_ops
-  
-end
+let omap_did_ops = failwith "TODO"
 
 
 
@@ -97,9 +32,10 @@ module Omap = struct
   
   open Bin_prot_util
   open Omap_entry
+  open Disk_ops
   type k = oid
   type v = omap_entry
-  let v_size = bin_size_entry
+  let v_size = bin_size_omap_entry_
 
   let ps = 
     Binprot_marshalling.mk_ps ~blk_sz

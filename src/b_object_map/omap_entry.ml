@@ -21,9 +21,9 @@ include struct
 
   (* these types should match f_ent and d_ent; don't want derivings
      everywhere *)
-  type omap_entry = F_blkid_sz of int * int | D_blkid of int [@@deriving bin_io]  
+  type omap_entry = F_blkid_sz of int * int | D_blkid of int [@@deriving bin_io]
 end
 
 
-let bin_size_entry = 1 (* tag*) + 2*bin_size_int
+let bin_size_omap_entry_ = 1 (* tag*) + 2*bin_size_int
 
