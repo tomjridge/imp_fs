@@ -9,12 +9,13 @@ open Imp_pervasives
 open Imp_state
 open Disk_ops
 open Bin_prot.Std
+open Free_ops
 
 (* store ops are specific to type: file_store_ops, dir_store_ops,
    omap_store_ops; *)
 
 type dir_entry = Fid of fid | Did of did [@@deriving bin_io]
-let bp_size_dir_entry = 2*bp_size_int
+let bp_size_dir_entry = 1+bp_size_int  (* FIXME check *)
 
 type k = SS.t
 type v = dir_entry

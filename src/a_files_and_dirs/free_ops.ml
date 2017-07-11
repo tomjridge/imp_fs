@@ -1,3 +1,8 @@
+(* free space ------------------------------------------------------- *)
+
+(* all stores share the same free space map *)
+
+
 open Tjr_btree
 open Monad
 open Imp_state

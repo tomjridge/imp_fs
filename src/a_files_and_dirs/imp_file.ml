@@ -8,6 +8,7 @@ open Monad
 open Imp_pervasives
 open Disk_ops
 open Imp_state
+open Free_ops
 
 (* int -> blk_id map *)
 module Map_int_blk_id = struct

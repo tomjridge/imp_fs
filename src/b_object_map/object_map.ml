@@ -9,7 +9,7 @@ open Page_ref_int
 open Bin_prot_util
 open Imp_pervasives
 open Imp_state
-
+open Free_ops
 
 (* omap entries ------------------------------------------------- *)
 
@@ -44,74 +44,60 @@ type omap_did_ops = (did,blk_id,imp_state) map_ops
 let omap_did_ops = failwith "TODO"
 
 
-
-
 (* object map ------------------------------------------------------- *)
 
-module Omap = struct
-  
-  open Bin_prot_util
-  open Disk_ops
-  type k = oid
-  type v = omap_entry
-  let v_size = bp_size_omap_entry
+open Disk_ops
 
-  let ps = 
-    Binprot_marshalling.mk_ps ~blk_sz
-      ~cmp:Int_.compare ~k_size:bp_size_int ~v_size
-      ~read_k:bin_reader_int ~write_k:bin_writer_int
-      ~read_v:bin_reader_omap_entry ~write_v:bin_writer_omap_entry
+type k = oid
+type v = omap_entry
+let v_size = bp_size_omap_entry
 
-  let store_ops = Disk_to_store.disk_to_store ~ps ~disk_ops ~free_ops
+let ps = 
+  Binprot_marshalling.mk_ps ~blk_sz
+    ~cmp:Int_.compare ~k_size:bp_size_int ~v_size
+    ~read_k:bin_reader_int ~write_k:bin_writer_int
+    ~read_v:bin_reader_omap_entry ~write_v:bin_writer_omap_entry
 
-  let page_ref_ops = failwith "TODO"
+let store_ops = Disk_to_store.disk_to_store ~ps ~disk_ops ~free_ops
 
-  let map_ops = Store_to_map.store_ops_to_map_ops ~ps ~store_ops 
-      ~page_ref_ops ~kk:(fun ~map_ops ~find_leaf -> map_ops)
+let page_ref_ops = failwith "TODO"
 
-  open Monad
-
-  (* return get/set for a particular oid *)
-  let did_to_page_ref_ops ~did = 
-    did |> did2oid |> fun oid ->
-    { 
-      get=(fun () -> map_ops.find oid |> bind @@ fun ent_opt ->
-        match ent_opt with
-        | None -> failwith __LOC__ (* TODO impossible? oid has been deleted? *)
-        | Some ent -> 
-          match ent with
-          | File_blkid_sz(r,sz) -> failwith __LOC__ (* TODO invariant did is a dir *)
-          | Dir_blkid(r) -> return r);
-      set=(fun r -> map_ops.insert oid (Dir_blkid(r)))
-    }
-
-  let lookup_did ~did =     
-    did |> did2oid |> fun oid ->
-    map_ops.find oid |> bind @@ fun ent_opt ->
-    match ent_opt with
-    | None -> failwith __LOC__  (* TODO old reference no longer valid? *)
-    | Some ent -> 
-      match ent with
-      | File_blkid_sz (r,sz) -> failwith __LOC__
-      | Dir_blkid r -> return r
-                         
-  let did_to_map_ops ~did = 
-    lookup_did ~did |> bind @@ fun r ->
-    let page_ref_ops = did_to_page_ref_ops ~did in
-    return (Imp_dir.map_ops ~page_ref_ops)
-      (* TODO caching? *)
-
-  let did_to_ls_ops ~did = 
-    lookup_did ~did |> bind @@ fun r ->
-    let page_ref_ops = did_to_page_ref_ops ~did in
-    return (Imp_dir.ls_ops ~page_ref_ops)
-
-end
+let map_ops = Store_to_map.store_ops_to_map_ops ~ps ~store_ops 
+    ~page_ref_ops ~kk:(fun ~map_ops ~find_leaf -> map_ops)
 
 
+(* looking up directories and files --------------------------------- *)
+
+open Monad
 
 
-let omap_ops : omap_ops = failwith ""
+let lookup_did ~did =     
+  did |> did2oid |> fun oid ->
+  map_ops.find oid |> bind @@ fun ent_opt ->
+  match ent_opt with
+  | None -> failwith __LOC__  (* TODO old reference no longer valid? *)
+  | Some ent -> 
+    match ent with
+    | File_blkid_sz (r,sz) -> failwith __LOC__
+    | Dir_blkid r -> return r
+
+(* return get/set for a particular oid *)
+let did_to_page_ref_ops ~did = 
+  did |> did2oid |> fun oid ->
+  { 
+    get=(fun () -> lookup_did ~did);
+    set=(fun r -> map_ops.insert oid (Dir_blkid(r)))
+  }
+
+let did_to_map_ops ~did = 
+  let page_ref_ops = did_to_page_ref_ops ~did in
+  return (Imp_dir.map_ops ~page_ref_ops)
+(* TODO caching? *)
+
+let did_to_ls_ops ~did = 
+  let page_ref_ops = did_to_page_ref_ops ~did in
+  return (Imp_dir.ls_ops ~page_ref_ops)
+
 
 
 (* TODO instantiate the omap with cache *)

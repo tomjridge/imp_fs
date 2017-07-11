@@ -1,4 +1,4 @@
-(* impfs ------------------------------------------------------------ *)
+(* imp_posix, various posix ops ------------------------------------ *)
 
 (* create and delete files and dirs; rename files and dirs; truncate
    files; read and write to files *)

@@ -5,19 +5,17 @@ open Tjr_string
 open Tjr_btree
 open Btree_api
 open Monad
-open Omap_pervasives
-open Object_map
+open Imp_pervasives
+open Imp_dir
 
 let string_to_components s kk = (
   assert(starts_with ~prefix:"/" s);
   s 
   |> split_on_all ~sub:"/"
   |> List.filter (fun x-> x<>"")
-  |> List.map Small_string.of_string  (* NOTE each component <= 256 bytes *)
+  |> List.map Small_string.of_string  (* ASSUMES each component <= 256 bytes *)
   |> fun s' -> kk ~cs:s' ~ends_with_slash:(ends_with ~suffix:"/" s)
 )
-
-open Omap_entry
 
 (* we want to identify either a file or a directory by object id *)
 let resolve' 
@@ -43,12 +41,12 @@ let resolve'
               return @@ _Missing ~parent ~c ~ends_with_slash
             else 
               return @@ _Error (`Error_no_directory(parent,c,cs)))
-        | Some (`Fid(fid)) -> (
+        | Some (Fid(fid)) -> (
             if cs = [] && not ends_with_slash then
               return @@ _File ~parent ~fid
             else
-              return @@ _Error (`Error_file_present(c,cs,ends_with_slash)))
-        | Some (`Dif(did)) -> (
+              return @@ _Error (`Error_not_dir(c,cs,ends_with_slash)))
+        | Some (Did(did)) -> (
             if cs = [] then 
               return @@ _Dir ~parent ~did
             else

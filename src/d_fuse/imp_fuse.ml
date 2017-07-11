@@ -12,43 +12,16 @@ open Block
 
 module Blk=Blk4096
 open Blk
-open Omap_state
+open Imp_pervasives
+open Imp_state
+open Path_resolution
+open Object_map
+open Monad
 
 let default_stats = LargeFile.stat "."
 
 let safely f = 
   try f () with e -> Printexc.to_string e |> print_endline; raise e
-
-
-(* global state ----------------------------------------------------- *)
-
-type t = {
-  fd: Disk_on_fd.fd;
-  omap_state:omap_state;
-}
-type fs_state = t
-
-module Ops = struct
-  open Monad
-  let fd_ops = {
-    get=(fun () -> fun t -> (t,Ok t.fd));
-    set=(fun fd -> failwith "Don't use!");
-  }
-
-  let free_ops = {
-    get=(fun () -> fun t -> (t,Ok t.free));
-    set=(fun free -> fun t -> ({t with free}, Ok ()));
-  }
-  
-  let page_ref_ops = {
-    get=(fun () -> fun t -> (t,Ok t.omap_state.omap_root));
-    set=(fun omap_root -> fun t -> (
-        {t with omap_state={t.omap_state with omap_root}},Ok ()));
-  }
-
-end
-
-open Ops
 
 
 (* data ------------------------------------------------------------- *)
@@ -64,48 +37,74 @@ module Data = struct
   let fd = safely (
       fun () -> Unix.openfile fn [O_CREAT;O_RDWR] 0o640)
 
-  let disk_ops : fs_state Btree_api.disk_ops = 
-    Disk_on_fd.make_disk blk_sz fd_ops
-
 end
+
+
+(* global mutable state --------------------------------------------- *)
+
+let the_state = ref {  
+  fd=Data.fd;
+  free=0;
+  omap_root=0;
+  omap_cache=();
+  omap_additional_object_roots=0;
+  file_caches=(fun _ -> ());
+  dir_caches=(fun _ -> ());
+}
+
+let run_ m = m |> Monad.run !the_state |> (fun (s',r) -> 
+  the_state:=s';
+  match r with 
+  | Ok v -> v
+  | Error e -> failwith e)
+
 
 (* fuse ------------------------------------------------------------- *)
 
-open Path_resolution
-open Object_map
-open Omap_entry
-open Monad
 
-let root_oid = 0
+let root_did : did = (Obj.magic 0)
 
-let do_readdir path _ = safely @@ fun () -> 
+let do_readdir path _ : string list = safely @@ fun () -> 
   string_to_components path @@ fun ~cs ~ends_with_slash ->
-  let dir_map_ops oid = Omap.get_dir_map_ops ~oid in
+  let dir_map_ops did = did_to_map_ops ~did in
   let m = 
-    resolve' 
-      ~root_oid 
-      ~dir_map_ops
-      ~cs
-      ~ends_with_slash
-      ~_Dir:(fun ~parent ~oid -> `Dir(oid))
-      ~_File:(fun ~parent ~oid ~sz -> `Error(`ENOTDIR)
-      ~_Error:(fun e -> e)  (* TODO *)
-    |> bind @@ fun resolved -> 
-    match resolved with
-    | `Dir(oid) -> Omap.get_dir_ls_ops ~oid |> bind @@ fun ls_ops ->
+    (resolve' 
+       ~root_did 
+       ~dir_map_ops
+       ~cs
+       ~ends_with_slash
+       ~_Error:(fun e -> `Error e)  (* TODO *)
+       ~_Missing:(fun ~parent ~c ~ends_with_slash -> `Error `ENOENT)
+       ~_File:(fun ~parent ~fid -> `Error(`ENOTDIR))
+       ~_Dir:(fun ~parent ~did -> `Dir(did))) |> bind @@ function 
+    | `Dir(did) -> 
+      did_to_ls_ops ~did |> bind @@ fun ls_ops ->
       Btree_api.all_kvs ls_ops
-    | F(oid,sz) -> failwith __LOC__ (* TODO *)
+    | `Error _ -> 
+      failwith __LOC__ (* TODO *)
   in
-  m |> Monad.run !the_state |> fun (s',r) -> match r with
+  m |> run_ 
+  |> List.map (fun x -> x |> fst |> Small_string.to_string)
 
-;;
-  match resolved with
-  | 
-  Imp_fs.readdir !{ls_ops=}
 
 let do_fopen path flags = safely (fun () -> 
-    if path = "/"^Img.fn then None
-    else raise (Unix_error (ENOENT,"open",path)))
+  string_to_components path @@ fun ~cs ~ends_with_slash ->
+  let dir_map_ops did = did_to_map_ops ~did in
+  let m = 
+    (resolve' 
+       ~root_did 
+       ~dir_map_ops
+       ~cs
+       ~ends_with_slash
+       ~_Error:(fun e -> `Error e)
+       ~_Missing:(fun ~parent ~c ~ends_with_slash -> `Error `ENOENT)
+       ~_File:(fun ~parent ~fid -> `File)
+       ~_Dir:(fun ~parent ~did -> `Dir)) |> bind @@ function 
+    | `Dir | `File -> return None
+    | `Error _ -> raise (Unix_error (ENOENT,"open",path))
+  in
+  m |> run_)
+
 
 (* assume all reads are block-aligned *)
 let do_read path buf ofs _ = safely (fun () ->     
