@@ -81,12 +81,30 @@ let lookup_did ~did =
     | File_blkid_sz (r,sz) -> failwith __LOC__
     | Dir_blkid r -> return r
 
+let lookup_fid ~fid =     
+  fid |> fid2oid |> fun oid ->
+  map_ops.find oid |> bind @@ fun ent_opt ->
+  match ent_opt with
+  | None -> failwith __LOC__  (* TODO old reference no longer valid? *)
+  | Some ent -> 
+    match ent with
+    | File_blkid_sz (r,sz) -> return (r,sz)
+    | Dir_blkid r -> failwith __LOC__
+
+
 (* return get/set for a particular oid *)
 let did_to_page_ref_ops ~did = 
   did |> did2oid |> fun oid ->
   { 
     get=(fun () -> lookup_did ~did);
     set=(fun r -> map_ops.insert oid (Dir_blkid(r)))
+  }
+
+let fid_to_page_ref_x_size_ops ~fid = 
+  fid |> fid2oid |> fun oid ->
+  { 
+    get=(fun () -> lookup_fid ~fid);
+    set=(fun (r,sz) -> map_ops.insert oid (File_blkid_sz(r,sz)))
   }
 
 let did_to_map_ops ~did = 
@@ -97,6 +115,9 @@ let did_to_map_ops ~did =
 let did_to_ls_ops ~did = 
   let page_ref_ops = did_to_page_ref_ops ~did in
   return (Imp_dir.ls_ops ~page_ref_ops)
+
+
+let fid_to_map_ops 
 
 
 

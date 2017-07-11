@@ -107,29 +107,40 @@ let do_fopen path flags = safely (fun () ->
 
 
 (* assume all reads are block-aligned *)
-let do_read path buf ofs _ = safely @@ fun () ->     
+let do_read path buf ofs _ = safely @@ fun () -> 
+  let open Imp_file in
+  string_to_components path @@ fun ~cs ~ends_with_slash ->
+  let dir_map_ops did = did_to_map_ops ~did in
+  (resolve' 
+     ~root_did 
+     ~dir_map_ops
+     ~cs
+     ~ends_with_slash
+     ~_Error:(fun e -> `Error e)
+     ~_Missing:(fun ~parent ~c ~ends_with_slash -> `Error `ENOENT)
+     ~_File:(fun ~parent ~fid -> `File(fid))
+     ~_Dir:(fun ~parent ~did -> `Error `EISDIR))
+  |> bind @@ function 
+  | `Error _ -> raise (Unix_error (ENOENT (* FIXME *),"read",path)) 
+  | `File(fid) -> 
+   FIXME got here
+
+  m |> run_)
+
+
   let buf_size = Bigarray.Array1.dim buf in
-  let wf = 
-    path = "/"^Img.fn &&
-    buf_size >= blk_sz &&  (* allow attempts to read more, but only read blk_sz *)
-    Int64.rem ofs (Int64.of_int blk_sz) = Int64.zero       
-  in 
   let msg () = 
-    `List[`String "read"; `String path; `Int (Int64.to_int ofs);
-          `Int buf_size]
+    `List[`String "read"; `String path; `Int (Int64.to_int ofs); `Int buf_size]
     |> Yojson.Safe.to_string 
   in
-  Test.test(fun () -> 
-    msg () |> print_endline);
-  (if buf_size > blk_sz then
-     Test.warn (__LOC__^": buf_size > blk_sz"));
-  let open Btree_api.Imperative_map_ops in
-  match () with
-  | _ when (not wf) -> (
-      Test.warn (__LOC__^": not wf");
-      raise (Unix_error (ENOENT,"read",path)))
-  | _ -> (
-      try
+  Test.test(fun () -> msg () |> print_endline);
+
+
+  let dir_map_ops did = did_to_map_ops ~did in
+  resolve' 
+    ~root_did
+    ~dir_map_ops
+  
         (* we want to return a single block FIXME to begin with *)
         let i = ((Int64.to_int ofs) / blk_sz) in
         let blk = imap_ops.find i in
