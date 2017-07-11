@@ -13,8 +13,8 @@ open Bin_prot.Std
 (* store ops are specific to type: file_store_ops, dir_store_ops,
    omap_store_ops; *)
 
-type dir_entry = Fid_sz of (fid*int) | Did of did [@@deriving bin_io]
-let bp_size_dir_entry = 3*bp_size_int
+type dir_entry = Fid of fid | Did of did [@@deriving bin_io]
+let bp_size_dir_entry = 2*bp_size_int
 
 type k = SS.t
 type v = dir_entry

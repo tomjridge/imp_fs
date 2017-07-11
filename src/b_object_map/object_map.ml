@@ -7,16 +7,35 @@ open Btree_api
 open Block
 open Page_ref_int
 open Bin_prot_util
-open Omap_entry
 open Imp_pervasives
 open Imp_state
+
+
+(* omap entries ------------------------------------------------- *)
+
+(** An entry in the object map is either a file (a pointer to a block,
+    and a file size) or a directory (a pointer to a block). *)
+
+(* CHOICE do we want to have two maps (one for files, one for dirs) or
+   just one (to sum type)? for simplicity have one for the time being *)
+
+open Bin_prot.Std
+
+(* these types should match f_ent and d_ent; don't want derivings
+   everywhere *)
+type omap_entry = 
+  | File_blkid_sz of int * int 
+  | Dir_blkid of int [@@deriving bin_io]
+
+let bp_size_omap_entry = 1 (* tag*) + 2*bp_size_int
+
 
 (* invariant: fid maps to file, did maps to dir; package as two ops? *)
 type omap_ops = (oid,omap_entry,imp_state) map_ops
 
-type size = int
 
-type omap_fid_ops = (fid,blk_id*size,imp_state) map_ops
+(* don't use omap_ops; use omap_fid_ops, or omap_did_ops *)
+type omap_fid_ops = (fid,blk_id*int,imp_state) map_ops
 
 let omap_fid_ops = failwith "TODO"
 
@@ -26,12 +45,12 @@ let omap_did_ops = failwith "TODO"
 
 
 
+
 (* object map ------------------------------------------------------- *)
 
 module Omap = struct
   
   open Bin_prot_util
-  open Omap_entry
   open Disk_ops
   type k = oid
   type v = omap_entry
@@ -60,7 +79,6 @@ module Omap = struct
         match ent_opt with
         | None -> failwith __LOC__ (* TODO impossible? oid has been deleted? *)
         | Some ent -> 
-          let open Omap_entry in 
           match ent with
           | File_blkid_sz(r,sz) -> failwith __LOC__ (* TODO invariant did is a dir *)
           | Dir_blkid(r) -> return r);
