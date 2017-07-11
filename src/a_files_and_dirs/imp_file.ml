@@ -42,20 +42,28 @@ let mk_map_int_blk_ops ~page_ref_ops =
 (* we have to implement pread and pwrite on top of omap, since size is
    stored in omap *)
 
+(* NOTE buffer matches Fuse.buffer and Core.Bigstring *)
+type buffer = 
+  (char, Bigarray.int8_unsigned_elt, Bigarray.c_layout) Bigarray.Array1.t
+
+let buffer_length = Bigarray.Array1.dim
+
+let blit_string_buffer = Core.Bigstring.From_string.blit
+
+let blit_buffer_string = Core.Bigstring.To_string.blit
+
 (* requires dst_pos + src_len <= blk_sz; FIXME inefficient *)
 let buf_block_blit ~blk_sz ~src ~src_pos ~len ~dst ~dst_pos = (
     assert (dst_pos + len <= blk_sz);
-    dst |> Block.to_string |> Bytes.of_string
-    |> (fun dst -> StdLabels.Bytes.blit ~src ~src_pos ~dst ~dst_pos ~len; dst)
-    |> Bytes.to_string |> Block.of_string blk_sz
-)
+    dst |> Block.to_string |> fun dst -> 
+    blit_buffer_string ~src ~src_pos ~len ~dst ~dst_pos
+    |> fun () -> Block.of_string blk_sz dst)
 
 let block_buf_blit ~blk_sz ~src ~src_pos ~len ~dst ~dst_pos = (
-  assert (dst_pos + len <= Bytes.length dst);
+  assert (dst_pos + len <= buffer_length dst);
   assert (src_pos + len <= blk_sz);
-  let src = Block.to_string src in
-  let src = Bytes.unsafe_of_string src in
-  StdLabels.Bytes.blit ~src ~src_pos ~dst ~dst_pos ~len)
+  src |> Block.to_string |> fun src ->
+  blit_string_buffer ~src ~src_pos ~len ~dst ~dst_pos)
 
 
 open Block
@@ -132,7 +140,7 @@ and read_block.
       ~src_length ~src_pos ~len ~dst ~dst_pos 
     = (
       assert (src_pos+len <= src_length);
-      assert (dst_pos + len <= Bytes.length dst);
+      assert (dst_pos + len <= buffer_length dst);
       (* read the relevant leaf *)
       let blk_i = src_pos / blk_sz in
       page_ref_ops.get () |> bind (fun r ->
@@ -208,7 +216,7 @@ and read_block.
       ~(find_leaf: 'k -> 'r -> ('r*('k*'v)list*('k,'r)rstk,'t) m)  (* locate initial leaf holding the blk_i of the blk we first modify *)
       ~src ~src_pos ~len ~dst_pos : (int,imp_state) m 
     = (
-      assert (src_pos + len <= Bytes.length src);
+      assert (src_pos + len <= buffer_length src);
       (* for dst, file size can grow *)
       begin
         let blk_i = dst_pos / blk_sz in

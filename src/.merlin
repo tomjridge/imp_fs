@@ -1,4 +1,4 @@
-PKG tjr_btree tjr_lib ppx_poly_record Fuse extunix
+PKG tjr_btree tjr_lib ppx_poly_record Fuse extunix core
 
 FLG -short-paths
 
