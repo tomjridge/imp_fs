@@ -20,7 +20,7 @@ let string_to_components s kk = (
 (* we want to identify either a file or a directory by object id *)
 let resolve' 
     ~root_did
-    ~(dir_map_ops: did -> (('k,'v,'t)map_ops,'t)m)
+    ~(did_to_map_ops: did:did -> (('k,'v,'t)map_ops,'t)m)
     ~cs 
     ~ends_with_slash 
     ~_Error
@@ -32,7 +32,7 @@ let resolve'
       match cs with
       | [] -> failwith __LOC__
       | c::cs -> 
-        dir_map_ops parent |> bind @@ fun map_ops ->
+        did_to_map_ops ~did:parent |> bind @@ fun map_ops ->
         map_ops.find c |> bind @@ fun vopt ->
         (* vopt is entry in parent dir, not in object map *)
         match vopt with
@@ -58,3 +58,8 @@ let resolve'
       loop ~parent:root_did ~cs)
 
 let _ = resolve'
+
+
+let resolve ~root_did ~did_to_map_ops ~_Error ~_Missing ~_Dir ~_File s = 
+  string_to_components s (fun ~cs ~ends_with_slash ->
+    resolve' ~root_did ~did_to_map_ops ~_Error ~_Missing ~_Dir ~_File ~cs ~ends_with_slash)

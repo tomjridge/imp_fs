@@ -117,7 +117,7 @@ let did_to_ls_ops ~did =
   return (Imp_dir.ls_ops ~page_ref_ops)
 
 
-let fid_to_map_ops 
+(* let fid_to_map_ops  *)
 
 
 

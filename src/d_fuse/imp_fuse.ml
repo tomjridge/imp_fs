@@ -5,6 +5,7 @@ open LargeFile
 open Bigarray
 open Fuse
 open Tjr_btree
+open Base_types_pervasives
 open Btree_api
 open Page_ref_int
 open Params
@@ -65,151 +66,108 @@ let run_ m = m |> Monad.run !the_state |> (fun (s',r) ->
 let root_did : did = (Obj.magic 0)
 
 let do_readdir path _ : string list = safely @@ fun () -> 
-  string_to_components path @@ fun ~cs ~ends_with_slash ->
-  let dir_map_ops did = did_to_map_ops ~did in
-  let m = 
-    (resolve' 
-       ~root_did 
-       ~dir_map_ops
-       ~cs
-       ~ends_with_slash
-       ~_Error:(fun e -> `Error e)  (* TODO *)
-       ~_Missing:(fun ~parent ~c ~ends_with_slash -> `Error `ENOENT)
-       ~_File:(fun ~parent ~fid -> `Error(`ENOTDIR))
-       ~_Dir:(fun ~parent ~did -> `Dir(did))) |> bind @@ function 
+  begin 
+    path 
+    |> (resolve
+        ~root_did 
+        ~did_to_map_ops
+        ~_Error:(fun e -> `Error e)  (* TODO *)
+        ~_Missing:(fun ~parent ~c ~ends_with_slash -> `Error `ENOENT)
+        ~_File:(fun ~parent ~fid -> `Error(`ENOTDIR))
+        ~_Dir:(fun ~parent ~did -> `Dir(did))) 
+    |> bind @@ function 
     | `Dir(did) -> 
       did_to_ls_ops ~did |> bind @@ fun ls_ops ->
       Btree_api.all_kvs ls_ops
     | `Error _ -> 
       failwith __LOC__ (* TODO *)
-  in
-  m |> run_ 
+  end
+  |> run_ 
   |> List.map (fun x -> x |> fst |> Small_string.to_string)
 
 
 let do_fopen path flags = safely (fun () -> 
-  string_to_components path @@ fun ~cs ~ends_with_slash ->
-  let dir_map_ops did = did_to_map_ops ~did in
-  let m = 
-    (resolve' 
-       ~root_did 
-       ~dir_map_ops
-       ~cs
-       ~ends_with_slash
-       ~_Error:(fun e -> `Error e)
-       ~_Missing:(fun ~parent ~c ~ends_with_slash -> `Error `ENOENT)
-       ~_File:(fun ~parent ~fid -> `File)
-       ~_Dir:(fun ~parent ~did -> `Dir)) |> bind @@ function 
+  begin
+    path
+    |> (resolve
+        ~root_did 
+        ~did_to_map_ops
+        ~_Error:(fun e -> `Error e)
+        ~_Missing:(fun ~parent ~c ~ends_with_slash -> `Error `ENOENT)
+        ~_File:(fun ~parent ~fid -> `File)
+        ~_Dir:(fun ~parent ~did -> `Dir)
+    )        
+    |> bind @@ function 
     | `Dir | `File -> return None
     | `Error _ -> raise (Unix_error (ENOENT,"open",path))
-  in
-  m |> run_)
+  end
+  |> run_)
 
 
-(* assume all reads are block-aligned *)
+(* assume all reads are block-aligned; ofs is offset in file? *)
 let do_read path buf ofs _ = safely @@ fun () -> 
   let open Imp_file in
-  string_to_components path @@ fun ~cs ~ends_with_slash ->
-  let dir_map_ops did = did_to_map_ops ~did in
-  (resolve' 
-     ~root_did 
-     ~dir_map_ops
-     ~cs
-     ~ends_with_slash
-     ~_Error:(fun e -> `Error e)
-     ~_Missing:(fun ~parent ~c ~ends_with_slash -> `Error `ENOENT)
-     ~_File:(fun ~parent ~fid -> `File(fid))
-     ~_Dir:(fun ~parent ~did -> `Error `EISDIR))
-  |> bind @@ function 
-  | `Error _ -> raise (Unix_error (ENOENT (* FIXME *),"read",path)) 
-  | `File(fid) -> 
-   FIXME got here
-
-  m |> run_)
-
-
-  let buf_size = Bigarray.Array1.dim buf in
-  let msg () = 
-    `List[`String "read"; `String path; `Int (Int64.to_int ofs); `Int buf_size]
-    |> Yojson.Safe.to_string 
-  in
-  Test.test(fun () -> msg () |> print_endline);
+  let len=buffer_length buf in
+  begin 
+    path
+    |> (resolve
+        ~root_did 
+        ~did_to_map_ops
+        ~_Error:(fun e -> `Error e)
+        ~_Missing:(fun ~parent ~c ~ends_with_slash -> `Error `ENOENT)
+        ~_File:(fun ~parent ~fid -> `File(fid))
+        ~_Dir:(fun ~parent ~did -> `Error `EISDIR))
+    |> bind @@ function 
+    | `Error _ -> raise (Unix_error (ENOENT (* FIXME *),"read",path)) 
+    | `File(fid) ->
+      (* get page ref for fid *)
+      lookup_fid ~fid |> bind @@ fun (r,sz) ->
+      let find_leaf = failwith "TODO" in
+      let read_block i = imp_read_block i |> bind (fun x -> return (dest_Some x)) in (* FIXME *)
+      pread' ~read_block ~find_leaf ~r
+        ~src_pos:ofs ~src_length:len ~len ~dst:buf ~dst_pos:0
+  end
+  |> run_
 
 
-  let dir_map_ops did = did_to_map_ops ~did in
-  resolve' 
-    ~root_did
-    ~dir_map_ops
+(* NOTE ofs is offset in file (pointer to by path) *)
+let do_write path buf ofs _fd = safely @@ fun () -> 
+  let open Imp_file in
+  let len = buffer_length buf in
   
-        (* we want to return a single block FIXME to begin with *)
-        let i = ((Int64.to_int ofs) / blk_sz) in
-        let blk = imap_ops.find i in
+
+  (if (offset_within_block + buf_size > blk_sz) then
+     Test.warn (__LOC__^": offset_within_block + buf_size > blk_sz"));
+  let open Btree_api.Imperative_map_ops in
+  match () with
+  | _ when (not wf) -> (
+      Test.warn (__LOC__^": not wf");
+      raise (Unix_error (ENOENT,"write",path)))
+  | _ -> (
+      try
         let blk = 
-          match blk with
-          | None -> Blk.of_string ""
-          | Some blk -> blk
+          match offset_within_block = 0 with
+          | true -> Bytes.create blk_sz
+          | false -> (
+              (* have to read existing block *)
+              imap_ops.find blk_id |> function None -> Bytes.create blk_sz | Some blk -> blk|>Blk.to_string)
         in
-        let blk = Blk.to_string blk in
-        for j = 0 to blk_sz -1 do  (* copy to buf FIXME use blit *)
-          buf.{j} <- String.get blk j 
+        let n = min (blk_sz - offset_within_block) buf_size in  (* allow writing < blk_sz *)
+        for j = 0 to n -1 do
+          Bytes.set blk (offset_within_block+j) buf.{j}  (* FIXME use blit *)
         done;
-        blk_sz
+        blk |> Bytes.to_string |> Blk.of_string |> fun blk ->
+        imap_ops.insert blk_id blk |> (fun () -> n)
       with e -> (
-          print_endline "do_read:!"; 
-          msg ()|>print_endline; 
+          print_endline "do_write:!"; 
+          msg ()|>print_endline;
           e|>Printexc.to_string|>print_endline;
           Printexc.get_backtrace() |> print_endline;
-          ignore(exit 1);  (* exit rather than allow fs to continue *)
-          raise (Unix_error (ENOENT,"read",path))))
+          ignore(exit 1);
+          raise (Unix_error (ENOENT,"write",path))) )
 
 
-(* NOTE ofs is offset in file (pointer to by path); loopback writes
-   may be non-block-aligned, and less than the block size *)
-let do_write path (buf:('x,'y,'z)Bigarray.Array1.t) ofs _fd = safely (fun () -> 
-    let buf_size = Bigarray.Array1.dim buf in
-    let blk_id = ((Int64.to_int ofs) / blk_sz) in
-    let offset_within_block = Int64.rem ofs (Int64.of_int blk_sz) |> Int64.to_int in
-    let wf = 
-      path = "/"^Img.fn &&
-      buf_size > 0 &&  (* allow < blk_sz, but not 0 *)
-      true (* offset_within_block = 0  FIXME may want to allow writing at an offset *)
-    in 
-    let msg () = 
-      `List[`String "write"; `String path; `Int (Int64.to_int ofs); 
-            `String "buf_size,blk_id,offset_within_block"; `Int buf_size; `Int blk_id; `Int offset_within_block]
-      |> Yojson.Safe.to_string 
-    in
-    Test.test (fun () -> msg () |> print_endline);
-    (if (offset_within_block + buf_size > blk_sz) then
-       Test.warn (__LOC__^": offset_within_block + buf_size > blk_sz"));
-    let open Btree_api.Imperative_map_ops in
-    match () with
-    | _ when (not wf) -> (
-        Test.warn (__LOC__^": not wf");
-        raise (Unix_error (ENOENT,"write",path)))
-    | _ -> (
-        try
-          let blk = 
-            match offset_within_block = 0 with
-            | true -> Bytes.create blk_sz
-            | false -> (
-                (* have to read existing block *)
-                imap_ops.find blk_id |> function None -> Bytes.create blk_sz | Some blk -> blk|>Blk.to_string)
-          in
-          let n = min (blk_sz - offset_within_block) buf_size in  (* allow writing < blk_sz *)
-          for j = 0 to n -1 do
-            Bytes.set blk (offset_within_block+j) buf.{j}  (* FIXME use blit *)
-          done;
-          blk |> Bytes.to_string |> Blk.of_string |> fun blk ->
-          imap_ops.insert blk_id blk |> (fun () -> n)
-        with e -> (
-            print_endline "do_write:!"; 
-            msg ()|>print_endline;
-            e|>Printexc.to_string|>print_endline;
-            Printexc.get_backtrace() |> print_endline;
-            ignore(exit 1);
-            raise (Unix_error (ENOENT,"write",path))) ))
-
+(*
 
 (* following apparently required for a block device backed by a file on a fuse fs ? *)
 (* let do_fsync path ds hnd = () *)
@@ -235,3 +193,4 @@ let _ =
    (Unix.openfile path flags 0 |> Unix.close);
    None); (* FIXME from fusexmp; not sure needed *) *)
 
+*)

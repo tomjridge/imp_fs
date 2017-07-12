@@ -29,3 +29,6 @@ include Did
 let bp_size_oid = Tjr_btree.Bin_prot_util.bp_size_int
 
 
+let option_case ~_None ~_Some x = (match x with
+  | None -> _None
+  | Some x -> _Some x)

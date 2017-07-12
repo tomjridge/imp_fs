@@ -20,20 +20,21 @@ end
 include Map_int_blk_id
 
 (* write_blk and read_blk based on disk_ops *)
-let write_blk blk = (
+let imp_write_block blk = (
   free_ops.get () |> bind (fun blk_id -> 
     disk_ops.write blk_id blk |> bind (fun _ -> 
       free_ops.set (blk_id+1) |> bind (fun () -> 
         return blk_id))))
 
-let read_blk blk_id = (
+let imp_read_block blk_id = (
   disk_ops.read blk_id |> bind (fun blk ->
     return (Some blk)))
 
 (* files are implemented using the (index -> blk) map *)
 let mk_map_int_blk_ops ~page_ref_ops = 
   let map_ops = map_ops ~page_ref_ops in
-  Map_int_blk.mk_int_blk_map ~write_blk ~read_blk ~map_ops
+  Map_int_blk.mk_int_blk_map ~write_blk:imp_write_block 
+    ~read_blk:imp_read_block ~map_ops
 
 
 
@@ -134,49 +135,46 @@ and read_block.
 let pread'
     ~read_block 
     ~(find_leaf: 'k -> 'r -> ('r*('k*'v)list*('k,'r)rstk,'t) m)
-    ~page_ref_ops
+    ~r
     ~src_length ~src_pos ~len ~dst ~dst_pos 
-  = (
-    assert (src_pos+len <= src_length);
-    assert (dst_pos + len <= buffer_length dst);
-    (* read the relevant leaf *)
+  = 
+  assert (src_pos+len <= src_length);
+  assert (dst_pos + len <= buffer_length dst);
+  (* read the relevant leaf *)
+  let blk_i = src_pos / blk_sz in
+  find_leaf blk_i r |> bind @@ fun (_,kvs,rstk) ->
+  (* kvs is the map from idx -> block_id; rstk tells us the
+     maximum block we can try to read; restrict len so that we
+     do not try to read past u; NOTE that u is strictly
+     greater than blk_i *)
+  let (_,u) = stack_to_lu_of_child rstk in
+  (* do not attempt to read block u or higher; assume no file anywhere
+     near max_int blocks TODO *)
+  let limit_blk = u |> option_case ~_None:max_int ~_Some:(fun i -> i) in
+  (* convert kvs to map for ease of use *)
+  let map = assoc_list_to_bst kvs in
+  let empty_blk = lazy (Block.of_string blk_sz "") in
+  let rec loop ~src_pos ~len ~dst_pos ~n_read = 
     let blk_i = src_pos / blk_sz in
-    page_ref_ops.get () |> bind (fun r ->
-      find_leaf blk_i r |> bind (fun (_,kvs,rstk) ->
-        (* kvs is the map from idx -> block_id; rstk tells us the
-           maximum block we can try to read; restrict len so that we
-           do not try to read past u; NOTE that u is strictly
-           greater than blk_i *)
-        let (_,u) = stack_to_lu_of_child rstk in
-        (* do not attempt to read block u or higher *)
-        let limit_blk = match u with 
-          | None -> max_int  (* assume no file anywhere near max_int blocks *)
-          | Some i -> i
-        in          
-        (* convert kvs to map for ease of use *)
-        let map = assoc_list_to_bst kvs in
-        let empty_blk = lazy (Block.of_string blk_sz "") in
-        let rec loop ~src_pos ~len ~dst_pos ~n_read = (
-          let blk_i = src_pos / blk_sz in
-          match () with
-          | _ when len=0 || blk_i >= limit_blk -> return n_read
-          | _ -> 
-            let blk_offset = src_pos mod blk_sz in
-            let get_blk = 
-              (* which block to read? *)
-              match map blk_i with
-              | None -> return (Lazy.force empty_blk)
-              | Some i -> read_block i
-            in
-            get_blk |> bind (fun blk -> 
-              (* NOTE len > 0 and 0 <= blk_offset < blk_sz *)
-              let len' = min len (blk_sz - blk_offset) in
-              block_buf_blit ~blk_sz ~src:blk ~src_pos:blk_offset 
-                ~len:len' ~dst ~dst_pos;
-              loop ~src_pos:(src_pos+len') ~len:(len-len') 
-                ~dst_pos:(dst_pos+len') ~n_read:(n_read +len')))
-        in
-        loop ~src_pos ~len ~dst_pos ~n_read:0)))
+    match len=0 || blk_i >= limit_blk with
+    | true -> return n_read
+    | false -> 
+      let blk_offset = src_pos mod blk_sz in
+      (* which block to read? *)
+      map blk_i 
+      |> option_case 
+        ~_None:(return (Lazy.force empty_blk))
+        ~_Some:(fun i -> i)
+      |> bind @@ fun blk -> 
+      (* NOTE len > 0 and 0 <= blk_offset < blk_sz *)
+      let len' = min len (blk_sz - blk_offset) in
+      block_buf_blit 
+        ~blk_sz ~src:blk ~src_pos:blk_offset ~len:len' ~dst ~dst_pos;
+      loop 
+        ~src_pos:(src_pos+len') ~len:(len-len') 
+        ~dst_pos:(dst_pos+len') ~n_read:(n_read +len')
+  in
+  loop ~src_pos ~len ~dst_pos ~n_read:0
 
 let _ = pread'
 
@@ -201,90 +199,74 @@ let _ = pread'
 
 *)
 
-let insert_many ~(k:'k) ~(v:'v) ~(ks:'k list) ~(vs:'k -> blk) : ('k list,imp_state) m = failwith "TODO" 
+(* let insert_many ~(k:'k) ~(v:'v) ~(ks:'k list) ~(vs:'k -> blk) : ('k list,imp_state) m = failwith "TODO"  *)
 
 let pwrite'
     ~(kvs_insert: 'k -> 'v -> ('k*'v)list -> ('k*'v)list)
     ~max_leaf_keys
     ~read_block
     ~write_block
-    ~page_ref_ops  (* for B-tree root *)
-    ~dst_size_ops  (* for dst size if writing beyond end *)
-    ~(insert_many_up: ('k*'v) list -> ('k,'r)rstk -> ('r,'t) m)  (* upwards phase of insert_many; may split initial leaf *)
-    ~(find_leaf: 'k -> 'r -> ('r*('k*'v)list*('k,'r)rstk,'t) m)  (* locate initial leaf holding the blk_i of the blk we first modify *)
-    ~src ~src_pos ~len ~dst_pos : (int,imp_state) m 
-  = (
-    assert (src_pos + len <= buffer_length src);
-    (* for dst, file size can grow *)
-    begin
-      let blk_i = dst_pos / blk_sz in
-      page_ref_ops.get () |> bind (fun r ->
-        find_leaf blk_i r |> bind (fun (_,kvs,rstk) ->
-          (* kvs is the map from idx -> block_id; rstk tells us the
-             maximum block we can try to write *)
-          let (_,u) = stack_to_lu_of_child rstk in
-          (* do not attempt to write block u or higher *)
-          let limit_blk = match u with 
-            | None -> max_int
-            | Some i -> i
-          in
-          (* convert kvs to map for ease of use *)
-          let map = assoc_list_to_bst kvs in
-          let rec loop ~src_pos ~len ~dst_pos ~n_wrote ~kvs = (
-            let blk_i = src_pos / blk_sz in
-            match () with
-            | _ when 
-                len=0 || (* nothing left to write *)
-                blk_i >= limit_blk || (* can't insert beyond the context bound *)
-                List.length kvs >= 2*max_leaf_keys (* can't have a leaf too large *)
-              -> (
-                  (* now execute the up stage of insert_many to get a new page_ref *)
-                  insert_many_up kvs rstk |> bind @@ fun r ->
-                  page_ref_ops.set r |> bind @@ fun () ->
-                  (* and update the size *)
-                  dst_size_ops.get () |> bind @@ fun dst_size -> 
-                  let new_size = max dst_size (dst_pos+n_wrote) in
-                  (match new_size > dst_size with
-                   | true -> dst_size_ops.set new_size | false -> return ())
-                  |> bind (fun () -> return n_wrote))
-            | _ -> 
-              let blk_offset = src_pos mod blk_sz in
-              (* we may not be writing a full block; NOTE len > 0
-                 and 0 <= blk_offset < blk_sz and len' <= blk_sz *)
-              let len' = min len (blk_sz - blk_offset) in
-              let blk = 
-                match blk_offset > 0 || len' < blk_sz with
-                | true -> (
-                    (* a partial block write; read the original
-                       block *)
-                    (match map blk_i with
-                     | None -> return (Block.of_string blk_sz "")
-                     | Some i -> read_block i)
-                    |> bind @@ fun orig_blk -> 
-                    (* update; NOTE this mutates orig_blk *)
-                    buf_block_blit ~blk_sz ~src ~src_pos 
-                      ~len:len' ~dst:orig_blk ~dst_pos:blk_offset;
-                    (* FIXME or mutate in place? *)
-                    return orig_blk )
-                | false -> (
-                    Block.of_string blk_sz "" |> fun dst -> 
-                    (* NOTE blk_offset = 0 and len' >= blk_sz ie len'
-                       = blk_sz *)
-                    assert (blk_offset = 0 && len' = blk_sz);
-                    buf_block_blit ~blk_sz ~src ~src_pos ~len:blk_sz 
-                      ~dst ~dst_pos:0;
-                    return dst)
-                (* FIXME inefficient create of initial block *)
-              in
-              blk |> bind (fun blk ->
-                (* now write the blk and get a new blk_id to insert into kvs *)
-                write_block blk |> bind (fun r ->
-                  let kvs = kvs_insert blk_i r kvs in
-                  loop ~src_pos:(src_pos+len') ~len:(len-len') ~dst_pos:(dst_pos+len') 
-                    ~n_wrote:(n_wrote+len') ~kvs)))
-          in
-          loop ~src_pos ~len ~dst_pos ~n_wrote:0 ~kvs))
-    end)
+    ~(insert_many_up: ('k*'v) list -> ('k,'r)rstk -> ('r,'t) m)  (* TODO upwards phase of insert_many; may split initial leaf *)
+    ~(find_leaf: 'k -> 'r -> ('r*('k*'v)list*('k,'r)rstk,'t) m)  (* TODO locate initial leaf holding the blk_i of the blk we first modify *)
+    ~src ~src_pos ~len 
+    ~r ~dst_pos ~dst_size  (* for dst size if writing beyond end *)
+    ~kk
+  = 
+  assert (src_pos + len <= buffer_length src);
+  (* for dst, file size can grow *)
+  let blk_i = dst_pos / blk_sz in
+  find_leaf blk_i r |> bind @@ fun (_,kvs,rstk) ->
+  (* kvs is the map from idx -> block_id *)
+  let (_,u) = stack_to_lu_of_child rstk in
+  (* do not attempt to write block u or higher *)
+  let limit_blk = u |> option_case ~_None:max_int ~_Some:(fun i -> i) in
+  (* convert kvs to map for ease of use *)
+  let map = assoc_list_to_bst kvs in
+  let rec loop ~src_pos ~len ~dst_pos ~n_wrote ~kvs = 
+    let blk_i = src_pos / blk_sz in
+    (* either: nothing left to write; can't insert beyond the context
+       bound; can't have a leaf too large. *) 
+    match len=0 || blk_i >= limit_blk || List.length kvs >= 2*max_leaf_keys with
+    | true -> 
+      (* Now execute the up stage of insert_many to get a new page_ref *)
+      insert_many_up kvs rstk |> bind @@ fun r ->
+      kk ~r ~sz:(max dst_size (dst_pos+n_wrote)) ~n_wrote
+    | _ -> 
+      let blk_offset = src_pos mod blk_sz in
+      (* we may not be writing a full block; NOTE len > 0 and 0 <=
+         blk_offset < blk_sz and len' <= blk_sz *)
+      let len' = min len (blk_sz - blk_offset) in
+      begin match blk_offset > 0 || len' < blk_sz with
+        | true -> 
+          (* a partial block write; read the original block *)
+          map blk_i 
+          |> option_case
+            ~_None:(return (Block.of_string blk_sz ""))
+            ~_Some:(fun i -> read_block i)
+          |> bind @@ fun orig_blk -> 
+          buf_block_blit 
+            ~blk_sz ~src ~src_pos ~len:len' ~dst:orig_blk ~dst_pos:blk_offset; 
+          return orig_blk
+          (* update; NOTE this mutates orig_blk *)
+          (* FIXME or mutate in place? *)
+        | false ->
+          (* NOTE blk_offset = 0 && len' >= blk_sz ie len'=blk_sz *)
+          assert (blk_offset = 0 && len' = blk_sz);
+          Block.of_string blk_sz "" |> fun dst -> 
+          buf_block_blit ~blk_sz ~src ~src_pos ~len:blk_sz ~dst ~dst_pos:0;
+          return dst
+          (* FIXME inefficient create of initial block? *)
+      end
+      |> bind @@ fun blk ->
+      (* now write the blk and get a new blk_id to insert into kvs *)
+      write_block blk |> bind @@ fun r ->
+      let kvs = kvs_insert blk_i r kvs in
+      loop 
+        ~src_pos:(src_pos+len') ~len:(len-len') ~dst_pos:(dst_pos+len') 
+        ~n_wrote:(n_wrote+len') ~kvs
+  in
+  loop ~src_pos ~len ~dst_pos ~n_wrote:0 ~kvs
+
 
 let _ = pwrite'
 
