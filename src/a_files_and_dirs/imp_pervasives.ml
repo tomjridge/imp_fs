@@ -1,3 +1,4 @@
+(** Common definitions including file id and dir id; X is a module alias for Tjr_btree *)
 
 (* don't open Tjr_btree - module clashes :(; use open X.Yzw *)
 module X = Tjr_btree

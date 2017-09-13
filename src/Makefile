@@ -52,7 +52,7 @@ _doc:
 
 clean:
 	clean
-	rm -f *.html
+	rm -f *.html *.css
 
 real_clean: clean
 	rm_links

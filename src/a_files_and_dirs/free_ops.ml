@@ -1,3 +1,5 @@
+(** Operations to get a free block; currently just a counter *)
+
 (* free space ------------------------------------------------------- *)
 
 (* all stores share the same free space map *)

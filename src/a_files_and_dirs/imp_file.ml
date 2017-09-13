@@ -1,3 +1,5 @@
+(** Implementation of files as (oversimplification) maps from block index to block, via B-tree *)
+
 (* store_ops for file *)
 open Imp_pervasives
 open X.Small_string

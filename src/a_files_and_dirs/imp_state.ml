@@ -1,3 +1,5 @@
+(** The ImpFS state type *)
+
 (* Full ImpFS state ------------------------------------------------- *)
 
 open Imp_pervasives

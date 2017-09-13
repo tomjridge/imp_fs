@@ -1,3 +1,5 @@
+(** Implementation of directories as maps via the B-tree *)
+
 (* directories ------------------------------------------------------ *)
 
 

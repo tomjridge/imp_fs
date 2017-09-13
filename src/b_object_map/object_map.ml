@@ -1,3 +1,5 @@
+(** Global object map; supports "lookup file id" etc *)
+
 (* global object map ------------------------------------------------ *)
 
 (** We maintain a single global object map, from oid (int) to entry. *)

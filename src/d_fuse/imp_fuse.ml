@@ -1,3 +1,5 @@
+(** FuSE integration *)
+
 (* fuse integration ------------------------------------------------- *)
 
 open Unix

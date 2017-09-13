@@ -1,4 +1,4 @@
-(* basic interface to the block device *)
+(** Interface to the block device; currently backed by single fd *)
 
 open Imp_pervasives
 open X.Disk_on_fd

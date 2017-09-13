@@ -1,3 +1,5 @@
+(** The oft-repeated-almost-verbatim path resolution code *)
+
 (* simple resolution of fuse absolute paths *)
 open Tjr_string
 open Imp_pervasives
