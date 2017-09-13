@@ -27,9 +27,10 @@ FOR_PACK="-for-pack $Libname"
 
     # 8~"pattern-matching is not exhaustive"; 
     # 11~"this match case is unused";
+    # 20~argument will not be used FIXME re-enable this
     # 26~"unused variable s2"
     # 40~It is not visible in the current scope, and will not be selected if the type becomes unknown.
-WARN="-w @f@p@u@s@40-8-11-26-40"
+WARN="-w @f@p@u@s@40-8-11-26-40-20"
 
     # these include syntax, so should work on all files; may be
     # overridden in ocamlc.sh; FIXME don't need -bin-annot twice

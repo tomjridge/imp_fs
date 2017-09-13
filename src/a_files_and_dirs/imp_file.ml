@@ -1,40 +1,48 @@
-open Tjr_btree
-open Btree_api
 (* store_ops for file *)
-open Small_string
-open Bin_prot_util
-open Monad
-
 open Imp_pervasives
+open X.Small_string
+open X.Bin_prot_util
+open X.Monad
+open X.Disk_ops
+
 open Disk_ops
 open Imp_state
 open Free_ops
 
 (* int -> blk_id map *)
 module Map_int_blk_id = struct
-  let ps = Map_int_int.ps' ~blk_sz
-  let store_ops = Disk_to_store.disk_to_store ~ps ~disk_ops ~free_ops
-  let map_ops ~page_ref_ops = Store_to_map.store_ops_to_map_ops ~ps 
-      ~store_ops  ~page_ref_ops ~kk:(fun ~map_ops ~find_leaf -> map_ops)
+  let ps = X.Map_int_int.ps' ~blk_sz
+  let store_ops = X.Disk_to_store.disk_to_store ~ps ~disk_ops ~free_ops
+  let map_ops ~page_ref_ops : [<`Map_ops of 'a] = 
+    X.Store_to_map.store_ops_to_map_ops 
+      ~ps 
+      ~store_ops  
+      ~page_ref_ops 
 end
 include Map_int_blk_id
 
-(* write_blk and read_blk based on disk_ops *)
-let imp_write_block blk = (
-  free_ops.get () |> bind (fun blk_id -> 
-    disk_ops.write blk_id blk |> bind (fun _ -> 
-      free_ops.set (blk_id+1) |> bind (fun () -> 
-        return blk_id))))
+let read,write = 
+  X.Disk_ops.dest_disk_ops disk_ops @@ fun ~blk_sz ~read ~write -> 
+  read,write
 
-let imp_read_block blk_id = (
-  disk_ops.read blk_id |> bind (fun blk ->
-    return (Some blk)))
+(* write_blk and read_blk based on disk_ops *)
+let imp_write_block blk = 
+  free_ops.get () |> bind @@ fun blk_id -> 
+  write blk_id blk |> bind @@ fun _ -> 
+  free_ops.set (blk_id+1) |> bind @@ fun () -> 
+  return blk_id
+
+let imp_read_block blk_id =
+  read blk_id |> bind @@ fun blk ->
+  return (Some blk)
 
 (* files are implemented using the (index -> blk) map *)
-let mk_map_int_blk_ops ~page_ref_ops = 
+let mk_map_int_blk_ops ~page_ref_ops : [<`Map_ops of 'a] = 
   let map_ops = map_ops ~page_ref_ops in
-  Map_int_blk.mk_int_blk_map ~write_blk:imp_write_block 
-    ~read_blk:imp_read_block ~map_ops
+  X.Map_int_blk.mk_int_blk_map 
+    ~write_blk:imp_write_block 
+    ~read_blk:imp_read_block 
+    ~map_ops
 
 
 
@@ -56,19 +64,17 @@ let blit_buffer_string = Core.Bigstring.To_string.blit
 (* requires dst_pos + src_len <= blk_sz; FIXME inefficient *)
 let buf_block_blit ~blk_sz ~src ~src_pos ~len ~dst ~dst_pos = (
   assert (dst_pos + len <= blk_sz);
-  dst |> Block.to_string |> fun dst -> 
+  dst |> X.Block.to_string |> fun dst -> 
   blit_buffer_string ~src ~src_pos ~len ~dst ~dst_pos : unit)
 
 let block_buf_blit ~blk_sz ~src ~src_pos ~len ~dst ~dst_pos = (
   assert (dst_pos + len <= buffer_length dst);
   assert (src_pos + len <= blk_sz);
-  src |> Block.to_string |> fun src ->
+  src |> X.Block.to_string |> fun src ->
   blit_string_buffer ~src ~src_pos ~len ~dst ~dst_pos : unit)
 
 
-open Block
-
-open Monad
+open X.Monad
 
 (* calculate blk_index, offset within block and len st. offset+len
    <= blk_sz *)
@@ -107,9 +113,9 @@ let rec assoc_list_to_bst kvs =
     fun k' -> if k' < k then f1 k' else f2 k'
 [@@warning "-8"]
 
-type ('k,'r)rstk = ('k,'r) Tjr_btree.Small_step.rstk
+type ('k,'r)rstk = ('k,'r) X.Rstk.rstk
 
-let stack_to_lu_of_child = Tjr_btree.Isa_export.Tree_stack.stack_to_lu_of_child
+let stack_to_lu_of_child = X.Isa_export.Tree_stack.stack_to_lu_of_child
 
 (* t is the root block of the idx_map; TODO this should make sure
    not to read beyond the end of file *)
@@ -153,7 +159,7 @@ let pread'
   let limit_blk = u |> option_case ~_None:max_int ~_Some:(fun i -> i) in
   (* convert kvs to map for ease of use *)
   let map = assoc_list_to_bst kvs in
-  let empty_blk = lazy (Block.of_string blk_sz "") in
+  let empty_blk = lazy (X.Block.of_string blk_sz "") in
   let rec loop ~src_pos ~len ~dst_pos ~n_read = 
     let blk_i = src_pos / blk_sz in
     match len=0 || blk_i >= limit_blk with
@@ -241,7 +247,7 @@ let pwrite'
           (* a partial block write; read the original block *)
           map blk_i 
           |> option_case
-            ~_None:(return (Block.of_string blk_sz ""))
+            ~_None:(return (X.Block.of_string blk_sz ""))
             ~_Some:(fun i -> read_block i)
           |> bind @@ fun orig_blk -> 
           buf_block_blit 
@@ -252,7 +258,7 @@ let pwrite'
         | false ->
           (* NOTE blk_offset = 0 && len' >= blk_sz ie len'=blk_sz *)
           assert (blk_offset = 0 && len' = blk_sz);
-          Block.of_string blk_sz "" |> fun dst -> 
+          X.Block.of_string blk_sz "" |> fun dst -> 
           buf_block_blit ~blk_sz ~src ~src_pos ~len:blk_sz ~dst ~dst_pos:0;
           return dst
           (* FIXME inefficient create of initial block? *)

@@ -1,3 +1,7 @@
+
+(* don't open Tjr_btree - module clashes :(; use open X.Yzw *)
+module X = Tjr_btree
+
 open Bin_prot.Std
 
 let blk_sz = 4096
@@ -26,7 +30,7 @@ end = struct
 end
 include Did
 
-let bp_size_oid = Tjr_btree.Bin_prot_util.bp_size_int
+let bp_size_oid = X.Bin_prot_util.bp_size_int
 
 
 let option_case ~_None ~_Some x = (match x with

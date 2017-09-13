@@ -1,26 +1,23 @@
 (* simple resolution of fuse absolute paths *)
-
 open Tjr_string
-
-open Tjr_btree
-open Btree_api
-open Monad
 open Imp_pervasives
+open X.Monad
 open Imp_dir
 
-let string_to_components s kk = (
+let string_to_components s kk = 
   assert(starts_with ~prefix:"/" s);
   s 
   |> split_on_all ~sub:"/"
   |> List.filter (fun x-> x<>"")
-  |> List.map Small_string.of_string  (* ASSUMES each component <= 256 bytes *)
+  |> List.map X.Small_string.of_string  
+  (* ASSUMES each component <= 256 bytes *)
   |> fun s' -> kk ~cs:s' ~ends_with_slash:(ends_with ~suffix:"/" s)
-)
+
 
 (* we want to identify either a file or a directory by object id *)
 let resolve' 
     ~root_did
-    ~(did_to_map_ops: did:did -> (('k,'v,'t)map_ops,'t)m)
+    ~(did_to_map_ops: did:did -> ([<`Map_ops of 'a],'t)m)
     ~cs 
     ~ends_with_slash 
     ~_Error
@@ -33,7 +30,8 @@ let resolve'
       | [] -> failwith __LOC__
       | c::cs -> 
         did_to_map_ops ~did:parent |> bind @@ fun map_ops ->
-        map_ops.find c |> bind @@ fun vopt ->
+        X.Map_ops.dest_map_ops map_ops @@ fun ~find ~insert ~delete ~insert_many ->
+        find c |> bind @@ fun vopt ->
         (* vopt is entry in parent dir, not in object map *)
         match vopt with
         | None -> (

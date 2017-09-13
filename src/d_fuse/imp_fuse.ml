@@ -4,20 +4,19 @@ open Unix
 open LargeFile
 open Bigarray
 open Fuse
-open Tjr_btree
-open Base_types_pervasives
-open Btree_api
-open Page_ref_int
-open Params
-open Block
 
+open Imp_pervasives
+open X.Base_types_pervasives
+open X.Page_ref_int
+open X.Params
+open X.Block
+open X.Monad
 module Blk=Blk4096
 open Blk
-open Imp_pervasives
+
 open Imp_state
 open Path_resolution
 open Object_map
-open Monad
 
 let default_stats = LargeFile.stat "."
 
@@ -53,7 +52,7 @@ let the_state = ref {
   dir_caches=(fun _ -> ());
 }
 
-let run_ m = m |> Monad.run !the_state |> (fun (s',r) -> 
+let run_ m = m |> X.Monad.run !the_state |> (fun (s',r) -> 
   the_state:=s';
   match r with 
   | Ok v -> v
@@ -78,12 +77,12 @@ let do_readdir path _ : string list = safely @@ fun () ->
     |> bind @@ function 
     | `Dir(did) -> 
       did_to_ls_ops ~did |> bind @@ fun ls_ops ->
-      Btree_api.all_kvs ls_ops
+      X.Leaf_stream_util.all_kvs ~ls_ops
     | `Error _ -> 
       failwith __LOC__ (* TODO *)
   end
   |> run_ 
-  |> List.map (fun x -> x |> fst |> Small_string.to_string)
+  |> List.map (fun x -> x |> fst |> X.Small_string.to_string)
 
 
 let do_fopen path flags = safely (fun () -> 

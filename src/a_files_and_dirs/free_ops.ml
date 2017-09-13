@@ -2,9 +2,9 @@
 
 (* all stores share the same free space map *)
 
+open Imp_pervasives
+open X.Monad
 
-open Tjr_btree
-open Monad
 open Imp_state
 
 let free_ops = {
