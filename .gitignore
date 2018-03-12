@@ -33,3 +33,5 @@ _depend/
 /src/imp_posix.ml
 /src/page_ref_ops.cmt
 /src/page_ref_ops.ml
+*.cmt
+/src/persistent_log.ml

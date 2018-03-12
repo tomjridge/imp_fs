@@ -1,3 +1,5 @@
+(* FIXME commented for the time being
+
 (** FuSE integration *)
 
 (* fuse integration ------------------------------------------------- *)
@@ -196,4 +198,5 @@ let _ =
    (Unix.openfile path flags 0 |> Unix.close);
    None); (* FIXME from fusexmp; not sure needed *) *)
 
+*)
 *)
