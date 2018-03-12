@@ -35,3 +35,5 @@ _depend/
 /src/page_ref_ops.ml
 *.cmt
 /src/persistent_log.ml
+/src/persistent_chunked_list.ml
+/src/persistent_list.ml

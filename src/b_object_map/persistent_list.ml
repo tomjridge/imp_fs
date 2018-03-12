@@ -101,11 +101,11 @@ let write_node ptr n = fun s ->
   { s with map=(ptr,n)::s.map } |> fun s ->
   (s,Ok ())
 
-let tap = ref []
+(* let tap = ref [] *)
 
 let read_node ptr = fun s ->
   Printf.printf "ptr is: %d\n" ptr;
-  tap:=s.map;
+  (* tap:=s.map; *)
   (s, Ok (List.assoc ptr s.map))  (* ASSUMES ptr in map *)
 
 
