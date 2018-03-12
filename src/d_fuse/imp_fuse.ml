@@ -8,11 +8,11 @@ open Bigarray
 open Fuse
 
 open Imp_pervasives
+open Tjr_fs_shared
 open X.Base_types_pervasives
 open X.Page_ref_int
 open X.Params
 open X.Block
-open X.Monad
 module Blk=Blk4096
 open Blk
 
@@ -54,7 +54,7 @@ let the_state = ref {
   dir_caches=(fun _ -> ());
 }
 
-let run_ m = m |> X.Monad.run !the_state |> (fun (s',r) -> 
+let run_ m = m |> Monad.run !the_state |> (fun (s',r) -> 
   the_state:=s';
   match r with 
   | Ok v -> v
@@ -65,6 +65,8 @@ let run_ m = m |> X.Monad.run !the_state |> (fun (s',r) ->
 
 
 let root_did : did = (Obj.magic 0)
+
+open Monad
 
 let do_readdir path _ : string list = safely @@ fun () -> 
   begin 

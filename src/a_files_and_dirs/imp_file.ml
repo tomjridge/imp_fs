@@ -1,10 +1,12 @@
 (** Implementation of files as (oversimplification) maps from block index to block, via B-tree *)
 
 (* store_ops for file *)
+
+open Tjr_fs_shared
 open Imp_pervasives
+open X.Base_types
 open X.Small_string
 open X.Bin_prot_util
-open X.Monad
 open X.Disk_ops
 
 open Disk_ops
@@ -15,7 +17,7 @@ open Free_ops
 module Map_int_blk_id = struct
   let ps = X.Map_int_int.ps' ~blk_sz
   let store_ops = X.Disk_to_store.disk_to_store ~ps ~disk_ops ~free_ops
-  let map_ops ~page_ref_ops : [<`Map_ops of 'a] = 
+  let map_ops ~page_ref_ops : ('k,'v,'t) X.Map_ops.map_ops = 
     X.Store_to_map.store_ops_to_map_ops 
       ~ps 
       ~store_ops  
@@ -39,7 +41,7 @@ let imp_read_block blk_id =
   return (Some blk)
 
 (* files are implemented using the (index -> blk) map *)
-let mk_map_int_blk_ops ~page_ref_ops : [<`Map_ops of 'a] = 
+let mk_map_int_blk_ops ~page_ref_ops (* : map_ops *) = 
   let map_ops = map_ops ~page_ref_ops in
   X.Map_int_blk.mk_int_blk_map 
     ~write_blk:imp_write_block 
@@ -75,8 +77,6 @@ let block_buf_blit ~blk_sz ~src ~src_pos ~len ~dst ~dst_pos = (
   src |> X.Block.to_string |> fun src ->
   blit_string_buffer ~src ~src_pos ~len ~dst ~dst_pos : unit)
 
-
-open X.Monad
 
 (* calculate blk_index, offset within block and len st. offset+len
    <= blk_sz *)
@@ -117,7 +117,7 @@ let rec assoc_list_to_bst kvs =
 
 type ('k,'r)rstk = ('k,'r) X.Rstk.rstk
 
-let stack_to_lu_of_child = X.Isa_export.Tree_stack.stack_to_lu_of_child
+let stack_to_lu_of_child = X.Isa_export.Tree_stack.rstack_get_bounds
 
 (* t is the root block of the idx_map; TODO this should make sure
    not to read beyond the end of file *)

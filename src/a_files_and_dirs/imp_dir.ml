@@ -29,12 +29,12 @@ let ps =
     ~read_k:bin_reader_ss ~write_k:bin_writer_ss
     ~read_v:bin_reader_dir_entry ~write_v:bin_writer_dir_entry
 
-let dir_store_ops : [<`Store_ops of 'a] = 
+let dir_store_ops = 
   X.Disk_to_store.disk_to_store ~ps ~disk_ops ~free_ops
 
-let map_ops ~page_ref_ops : [< `Map_ops of 'a ] = 
+let map_ops ~page_ref_ops = 
   store_ops_to_map_ops ~ps ~page_ref_ops ~store_ops:dir_store_ops
 
 (* FIXME produce at same time as map_ops, via poly_rec *)
-let ls_ops ~page_ref_ops : [< `Ls_ops of 'a] = 
+let ls_ops ~page_ref_ops : ('k,'v,'r,'t) X.Leaf_stream_ops.leaf_stream_ops = 
   make_ls_ops ~ps ~store_ops:dir_store_ops ~page_ref_ops

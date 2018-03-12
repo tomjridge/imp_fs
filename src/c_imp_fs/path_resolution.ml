@@ -1,9 +1,11 @@
 (** The oft-repeated-almost-verbatim path resolution code *)
 
+(* FIXME replace with path_resolution from the separate gh repo *)
+
 (* simple resolution of fuse absolute paths *)
 open Tjr_string
+open Tjr_fs_shared.Monad
 open Imp_pervasives
-open X.Monad
 open Imp_dir
 
 let string_to_components s kk = 
@@ -19,7 +21,7 @@ let string_to_components s kk =
 (* we want to identify either a file or a directory by object id *)
 let resolve' 
     ~root_did
-    ~(did_to_map_ops: did:did -> ([<`Map_ops of 'a],'t)m)
+    ~(did_to_map_ops: did:did -> (('k,'v,'t)X.Map_ops.map_ops,'t)m)
     ~cs 
     ~ends_with_slash 
     ~_Error

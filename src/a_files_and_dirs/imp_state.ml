@@ -5,7 +5,7 @@
 open Imp_pervasives
 open X.Page_ref_int
 open X.Block
-open X.Monad
+open Tjr_fs_shared
 
 (* we need this early because the monad require this type *)
 

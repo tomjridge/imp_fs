@@ -6,7 +6,7 @@
    files; read and write to files *)
 
 open Imp_pervasives
-open X.Monad
+open Tjr_fs_shared.Monad
 
 let file_create 
     ~name 
@@ -89,7 +89,7 @@ let rename' ~root_oid ~src ~dst =
       |> bind @@ fun () -> 
       (src#!parent) |> fun p -> p_delete (src#!name))
   | `Dir(src),`File(dst) -> 
-    X.Monad.err (__LOC__ ^ ": attempt to rename directory onto file ENOTDIR")
+    Monad.err (__LOC__ ^ ": attempt to rename directory onto file ENOTDIR")
 
 let _ = rename'
 

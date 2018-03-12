@@ -3,6 +3,7 @@
 (* global object map ------------------------------------------------ *)
 
 (** We maintain a single global object map, from oid (int) to entry. *)
+open Tjr_fs_shared.Monad
 open Imp_pervasives
 open X.Bin_prot_util
 open Imp_state
@@ -53,7 +54,7 @@ let v_size = bp_size_omap_entry
 
 let ps = 
   X.Binprot_marshalling.mk_binprot_ps ~blk_sz
-    ~cmp:X.Int_.compare ~k_size:bp_size_int ~v_size
+    ~cmp:Int_.compare ~k_size:bp_size_int ~v_size
     ~read_k:bin_reader_int ~write_k:bin_writer_int
     ~read_v:bin_reader_omap_entry ~write_v:bin_writer_omap_entry
 
@@ -61,14 +62,12 @@ let store_ops = X.Disk_to_store.disk_to_store ~ps ~disk_ops ~free_ops
 
 let page_ref_ops = failwith "TODO"
 
-let map_ops : [<`Map_ops of 'a] = 
+let map_ops (* : map_ops *) = 
   X.Store_to_map.store_ops_to_map_ops ~ps ~store_ops 
     ~page_ref_ops
 
 
 (* looking up directories and files --------------------------------- *)
-
-open X.Monad
 
 let find,insert,delete,insert_many = 
   dest_map_ops map_ops @@ fun ~find ~insert ~delete ~insert_many ->
