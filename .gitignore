@@ -37,3 +37,4 @@ _depend/
 /src/persistent_log.ml
 /src/persistent_chunked_list.ml
 /src/persistent_list.ml
+/src/links

@@ -1,5 +1,8 @@
 (** Global object map; supports "lookup file id" etc *)
 
+
+(* FIXME commented for time being
+
 (* global object map ------------------------------------------------ *)
 
 (** We maintain a single global object map, from oid (int) to entry. *)
@@ -123,3 +126,4 @@ let did_to_ls_ops ~did =
 
 (* TODO instantiate the omap with cache *)
 
+*)

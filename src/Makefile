@@ -8,19 +8,19 @@ libname:=$(shell source bash_env.sh && echo $${libname})#
 
 # ----------------------------------------
 
-all: _links _depend
+all: links depend
 	$$ocamlc -c $$mls
 	$$ocamlopt -c $$mls
-#	mk_cma
-#	mk_cmxa
+	mk_cma
+	mk_cmxa
 #	$(MAKE) $$natives $$bytes
 
 
-_links:
+links:
 	mk_links
 	touch $@
 
-_mlis: 
+mlis: 
 	mk_mlis
 
 install:
@@ -28,24 +28,24 @@ install:
 	-remove
 	install
 
-_remove: 
+remove: 
 	remove
 
-_reinstall: 
+reinstall: 
 	remove
 	install
 
 # README.html: README.adoc
 # 	asciidoctor $<
 
-_depend:
-	mkdir -p _depend
+depend:
+	mkdir -p depend
 	mk_depend
 
-_codetags:
+codetags:
 	mk_codetags
 
-_doc:
+doc:
 	echo Make sure to build first
 	mk_doc
 	cp *.html *.css ../docs
@@ -56,7 +56,7 @@ clean:
 
 real_clean: clean
 	rm_links
-	rm -rf _links _depend
+	rm -rf links depend
 
 FORCE:
 

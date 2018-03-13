@@ -27,7 +27,7 @@ type ('k,'v) op = Insert of 'k * 'v | Delete of 'k
    chunk" *)
 
 (* FIXME this doesn't work; why?
-type ('k,'v,'repr) chunk_state = (('k,'v)op,'repr) P.state = {
+type ('k,'v,'repr) chunk_state = (('k,'v)op,'repr) pcl_state = {
   elts: (('k,'v) op) list;
   elts_repr: 'repr
 }
@@ -59,17 +59,10 @@ open Repr
    persistent_list *)
 
 
-module Test : sig end = struct
+module Test = struct
 
   (* In order to test, we need a state which contains the plist state
      and the pclist state. *)
-
-(*
-  type ('k,'v) plog_state = {
-    plist_state: (int,('k,'v)repr) Pl.plist_state;
-    pclist_state: (('k,'v)op,('k,'v)repr) pcl_state
-  }
-*)
 
   type ptr = int
   type ('k,'v) list_node = (ptr,('k,'v)repr) Pl.list_node
@@ -84,6 +77,23 @@ module Test : sig end = struct
     plist_state: (int,('k,'v)repr) Pl.plist_state;
     pclist_state: (('k,'v)op,('k,'v)repr) pcl_state
   }
+
+  let init_state = 
+    let root = 0 in
+    let elts = [] in
+    let elts_repr = repr_ops.nil in
+    let current_node= Pl.{ next=None; contents=elts_repr } in
+    {    
+      map=[(root,current_node)]; 
+      free=root+1;
+      plist_state=Pl.{
+        current_ptr=0;
+        current_node
+      };
+      pclist_state=Pcl.{ elts; elts_repr };
+    }
+    
+
   
   let list_ops () : (('k, 'v) repr, ('k, 'v) state) Pl.list_ops = 
     Pl.make_persistent_list
@@ -111,6 +121,74 @@ module Test : sig end = struct
     
 
   (* run some tests *)
+  let main () = 
+    chunked_list () @@ fun ~insert ->
+    let cmds = 
+      Tjr_list.from_to 0 20 |> List.map (fun x -> (x,2*x)) |> fun xs ->
+      let rec f xs = 
+        match xs with 
+        | [] -> return ()
+        | (k,v)::xs -> 
+          insert (Insert(k,v)) |> bind @@ fun () ->
+          f xs
+      in
+      f xs
+    in  
+    cmds init_state |> fun (s,Ok x) -> 
+    assert(x=());
+    s
+    
+
+(* to test interactively:
+
+FIXME remove this thread dependency
+
+#thread;;  
+#require "imp_fs";;
+
+open Imp_fs;;
+open Persistent_log;;
+Test.main();;
+
+
+- : (int, int) Imp_fs.Persistent_log.Test.state =
+{Imp_fs.Persistent_log.Test.map =
+  [(2, {Imp_fs.Persistent_log.Pl.next = None; contents = <abstr>});
+   (1, {Imp_fs.Persistent_log.Pl.next = Some 2; contents = <abstr>});
+   (1, {Imp_fs.Persistent_log.Pl.next = None; contents = <abstr>});
+   (1, {Imp_fs.Persistent_log.Pl.next = None; contents = <abstr>});
+   (1, {Imp_fs.Persistent_log.Pl.next = None; contents = <abstr>});
+   (1, {Imp_fs.Persistent_log.Pl.next = None; contents = <abstr>});
+   (1, {Imp_fs.Persistent_log.Pl.next = None; contents = <abstr>});
+   (1, {Imp_fs.Persistent_log.Pl.next = None; contents = <abstr>});
+   (1, {Imp_fs.Persistent_log.Pl.next = None; contents = <abstr>});
+   (1, {Imp_fs.Persistent_log.Pl.next = None; contents = <abstr>});
+   (1, {Imp_fs.Persistent_log.Pl.next = None; contents = <abstr>});
+   (1, {Imp_fs.Persistent_log.Pl.next = None; contents = <abstr>});
+   (0, {Imp_fs.Persistent_log.Pl.next = Some 1; contents = <abstr>});
+   (0, {Imp_fs.Persistent_log.Pl.next = None; contents = <abstr>});
+   (0, {Imp_fs.Persistent_log.Pl.next = None; contents = <abstr>});
+   (0, {Imp_fs.Persistent_log.Pl.next = None; contents = <abstr>});
+   (0, {Imp_fs.Persistent_log.Pl.next = None; contents = <abstr>});
+   (0, {Imp_fs.Persistent_log.Pl.next = None; contents = <abstr>});
+   (0, {Imp_fs.Persistent_log.Pl.next = None; contents = <abstr>});
+   (0, {Imp_fs.Persistent_log.Pl.next = None; contents = <abstr>});
+   (0, {Imp_fs.Persistent_log.Pl.next = None; contents = <abstr>});
+   (0, {Imp_fs.Persistent_log.Pl.next = None; contents = <abstr>});
+   (0, {Imp_fs.Persistent_log.Pl.next = None; contents = <abstr>});
+   (0, {Imp_fs.Persistent_log.Pl.next = None; contents = <abstr>})];
+ free = 3;
+ plist_state =
+  {Imp_fs.Persistent_log.Pl.current_ptr = 2;
+   current_node = {Imp_fs.Persistent_log.Pl.next = None; contents = <abstr>}};
+ pclist_state =
+  {Imp_fs.Persistent_log.Pcl.elts = [Insert (20, 40)]; elts_repr = <abstr>}}
+
+   This looks OK. The current elts is a singleton [(20,40)] and we
+   have just started writing to node 2.
+
+*)
+    
 
 end
 

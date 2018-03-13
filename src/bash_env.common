@@ -147,7 +147,7 @@ function clean() {
 function install() {
     # assumes packing
 	  ocamlfind install $libname META $libname.{cmi,cmo,cma,cmx,cmxa,a,cmt} *.cmt *.ml
-    # FIXME how to install cmt file for tjr_btree?
+    # FIXME how to install cmt file for libname?
 }
 
 function remove() {
