@@ -22,8 +22,8 @@ open Tjr_fs_shared.Monad
 open Persistent_list
 
 
-(* state we maintain *)
-type ('e,'repr) state = {
+(* state we maintain; this is for the current chunk *)
+type ('e,'repr) pcl_state = {
   elts: 'e list;
   elts_repr: 'repr
   
@@ -32,8 +32,8 @@ type ('e,'repr) state = {
 (* what we need from marshalling *)
 type ('e,'repr) repr_ops = {
   nil: 'repr;
-  snoc: 'e -> 'repr -> 'repr;
-  wf_size: 'repr -> bool  (* whether we can fit repr in a Persistent_list node *)
+  snoc: 'e -> 'repr -> [ `Ok of 'repr | `Error_too_large ];  
+  (* may not be able to snoc an element if it won't fit in the node *)
 }
 
 
@@ -42,33 +42,40 @@ type ('e,'repr) repr_ops = {
 let make_persistent_chunked_list 
     ~list_ops 
     ~repr_ops 
-    ~(read_state : unit -> (('e,'repr) state,'t) m)
+    ~(pcl_state_ref : (('e,'repr) pcl_state,'t) mref)
+    : (insert:('e -> (unit, 't) m) -> 'a) -> 'a
   =
+  let read_state,write_state = pcl_state_ref.get, pcl_state_ref.set in
   let { replace_last; new_node } = list_ops in
-  let { nil; snoc; wf_size } = repr_ops in
+  let { nil; snoc } = repr_ops in
   let insert (e:'e) = 
     read_state () |> bind @@ fun s ->
     let { elts; elts_repr } = s in
-    snoc e elts_repr |> fun new_elts_repr -> 
-    wf_size new_elts_repr |> function
-    | true -> 
+    snoc e elts_repr |> function
+    | `Ok new_elts_repr -> 
+      let s = { elts=s.elts@[e]; elts_repr = new_elts_repr } in
+      write_state s |> bind @@ fun () ->
       (* we can write the new contents into the list *)
       replace_last new_elts_repr
-    | false ->
+    | `Error_too_large ->
       (* we can't fit this new elt; so make a new node and try again *)
-      snoc e nil |> fun new_elts_repr ->
-      (* FIXME ASSUMES we need to be sure that any singleton list
-         [elt] can fit in a Persistent_list node *)
-      assert(wf_size new_elts_repr);
-      new_node new_elts_repr
+      snoc e nil |> function 
+      | `Error_too_large -> 
+        (* FIXME ASSUMES we need to be sure that any singleton list
+           [elt] can fit in a Persistent_list node *)
+        failwith __LOC__
+      | `Ok new_elts_repr ->
+        let s = { elts=[e]; elts_repr=new_elts_repr } in
+        write_state s |> bind @@ fun () ->
+        new_node new_elts_repr
   in
   fun f -> f ~insert
-  
+
 
 let _ : 
   list_ops:('repr, 't) list_ops -> 
   repr_ops:('e, 'repr) repr_ops -> 
-  read_state:(unit -> (('e, 'repr) state, 't) m) 
+  pcl_state_ref:(('e, 'repr) pcl_state, 't) mref 
   -> (insert:('e -> (unit, 't) m) -> 'a) -> 'a
   = 
   make_persistent_chunked_list
