@@ -39,11 +39,14 @@ type ('e,'repr) repr_ops = {
 
 (* we also need persistent_list ops *)
 
+type inserted_type = 
+  Inserted_in_current_node | Inserted_in_new_node
+
 let make_persistent_chunked_list 
     ~list_ops 
     ~repr_ops 
     ~(pcl_state_ref : (('e,'repr) pcl_state,'t) mref)
-    : (insert:('e -> (unit, 't) m) -> 'a) -> 'a
+    : (insert:('e -> (inserted_type, 't) m) -> 'a) -> 'a
   =
   let read_state,write_state = pcl_state_ref.get, pcl_state_ref.set in
   let { replace_last; new_node } = list_ops in
@@ -56,7 +59,8 @@ let make_persistent_chunked_list
       let s = { elts=s.elts@[e]; elts_repr = new_elts_repr } in
       write_state s |> bind @@ fun () ->
       (* we can write the new contents into the list *)
-      replace_last new_elts_repr
+      replace_last new_elts_repr |> bind @@ fun () ->
+      return Inserted_in_current_node
     | `Error_too_large ->
       (* we can't fit this new elt; so make a new node and try again *)
       snoc e nil |> function 
@@ -67,7 +71,8 @@ let make_persistent_chunked_list
       | `Ok new_elts_repr ->
         let s = { elts=[e]; elts_repr=new_elts_repr } in
         write_state s |> bind @@ fun () ->
-        new_node new_elts_repr
+        new_node new_elts_repr |> bind @@ fun () ->
+        return Inserted_in_new_node
   in
   fun f -> f ~insert
 
@@ -76,6 +81,6 @@ let _ :
   list_ops:('repr, 't) list_ops -> 
   repr_ops:('e, 'repr) repr_ops -> 
   pcl_state_ref:(('e, 'repr) pcl_state, 't) mref 
-  -> (insert:('e -> (unit, 't) m) -> 'a) -> 'a
+  -> (insert:('e -> (inserted_type, 't) m) -> 'a) -> 'a
   = 
   make_persistent_chunked_list

@@ -1,6 +1,20 @@
 (** A persistent log, used to reduce traffic via the B-tree. NOTE
     append-only logs are quickest when data must be stored persistently *)
 
+(*
+
+TODO:
+
+- need an in-memory map of current and past operations
+
+- need API functions to query the union of the current and past maps,
+  and to get the past map as a list
+
+
+
+*)
+
+
 open Tjr_fs_shared.Monad
 open Imp_pervasives
 open X.Block
@@ -34,23 +48,12 @@ type ('k,'v,'repr) chunk_state = (('k,'v)op,'repr) pcl_state = {
 
 *)
 
-type ('k,'v,'repr) chunk_state = (('k,'v)op,'repr) pcl_state
 
-(* we have to fix on a representation for the list of ops; for the
-   time being, let's just keep this abstract; eventually it will be
-   bytes *)
+(* FIXME needed? type ('k,'v,'repr) chunk_state = (('k,'v)op,'repr) pcl_state *)
 
-module Repr : sig 
-  type ('k,'v) repr
-  val repr_ops : ( ('k,'v)op, ('k,'v)repr) repr_ops
-end = struct
-  type ('k,'v) repr = ('k,'v) op  list
-  let repr_ops = {
-    nil=[];
-    snoc=(fun e es -> if List.length es < 10 then `Ok (es@[e]) else `Error_too_large);
-  }
-end
-open Repr
+
+
+
 
 
 (* test  ---------------------------------------------------------- *)
@@ -60,6 +63,26 @@ open Repr
 
 
 module Test = struct
+
+  (* on-disk representation ----------------------------------------- *)
+  (* we have to fix on a representation for the list of ops; for the
+     time being, let's just keep this abstract; eventually it will be
+     bytes *)
+
+  module Repr : sig 
+    type ('k,'v) repr
+    val repr_ops : ( ('k,'v)op, ('k,'v)repr) repr_ops
+  end = struct
+    type ('k,'v) repr = ('k,'v) op  list
+    let repr_ops = {
+      nil=[];
+      snoc=(fun e es -> if List.length es < 10 then `Ok (es@[e]) else `Error_too_large);
+    }
+  end
+  open Repr
+
+    
+
 
   (* In order to test, we need a state which contains the plist state
      and the pclist state. *)
@@ -92,9 +115,10 @@ module Test = struct
       };
       pclist_state=Pcl.{ elts; elts_repr };
     }
-    
 
-  
+
+  (* list ops ------------------------------------------------------- *)
+
   let list_ops () : (('k, 'v) repr, ('k, 'v) state) Pl.list_ops = 
     Pl.make_persistent_list
       ~write_node:(fun ptr node -> fun s -> ({ s with map=(ptr,node)::s.map },Ok ()))
@@ -107,6 +131,9 @@ module Test = struct
   let _ = list_ops
 
 
+  (* chunked list ops ----------------------------------------------- *)
+
+
   let chunked_list () =
     Pcl.make_persistent_chunked_list
       ~list_ops:(list_ops ())
@@ -116,9 +143,12 @@ module Test = struct
         set=(fun pclist_state -> fun s -> ({s with pclist_state},Ok ()));
       }
 
-  let _ : unit -> (insert:(('a, 'b) op -> (unit, ('a, 'b) state) m) -> 'c) -> 'c 
+  let _ : unit -> (insert:(('a, 'b) op -> (inserted_type, ('a, 'b) state) m) -> 'c) -> 'c 
     = chunked_list
     
+
+
+  (* main ----------------------------------------------------------- *)
 
   (* run some tests *)
   let main () = 
@@ -129,7 +159,7 @@ module Test = struct
         match xs with 
         | [] -> return ()
         | (k,v)::xs -> 
-          insert (Insert(k,v)) |> bind @@ fun () ->
+          insert (Insert(k,v)) |> bind @@ fun _ ->
           f xs
       in
       f xs
