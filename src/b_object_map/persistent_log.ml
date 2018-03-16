@@ -14,6 +14,7 @@ TODO:
 
 *)
 
+open Tjr_map
 
 open Tjr_fs_shared.Monad
 open Imp_pervasives
@@ -40,6 +41,11 @@ open Pcl
 (* FIXME need insert_many *)
 type ('k,'v) op = Insert of 'k * 'v | Delete of 'k
 
+let op2k = function
+  | Insert (k,v) -> k
+  | Delete k -> k
+
+
 (* we have to decide what information we need to keep for the "current
    chunk" *)
 
@@ -56,11 +62,82 @@ type ('k,'v,'repr) chunk_state = (('k,'v)op,'repr) pcl_state = {
 
 
 (* in-mem map; NOTE 'v is ('k,'v)op  *)
-type ('k,'v,'t) map_ops = ('k,('k,'v)op,'t) Tjr_map.map_ops
+type ('k,'v,'map) map_ops = ('k,('k,'v)op,'map) Tjr_map.map_ops
 
-type ('k,'v) plog_ops = {
-  insert: ('k,'v)op -> unit;
+
+type ('k,'v,'map,'ptr,'t) plog_ops = {
+  find: 'k -> (('k,'v) op option,'t) m;  
+  (* should execute in mem but to control concurrency we put in the
+     monad FIXME? something better can be done? *)
+
+  add: ('k,'v)op -> (unit,'t) m;  (* add rather than insert, to avoid confusion *)
+  
+  detach: unit -> 'ptr * 'map * 'ptr  
+  (* 'ptr to first block in list; map upto current node; 'ptr to current node *)
 }
+
+
+type ('map,'ptr) plog_state = {
+  start_block: 'ptr;
+  current_block: 'ptr;
+  map_past: 'map;  (* in reverse order *)
+  map_current: 'map;
+}
+
+
+(* a map built from two other maps; prefer m2 *)
+let map_find_union ~map_ops ~m1 ~m2 k = 
+  let open Tjr_map in
+  map_ops.map_find k m2 |> function
+  | Some _ as x -> x
+  | None -> 
+    map_ops.map_find k m1
+
+(* moved to tjr_map       
+let map_union ~map_ops ~m1 ~m2 = 
+  let { map_add; map_bindings } = map_ops in
+  Tjr_list.with_each_elt
+    ~step:(fun ~state:m1' (k,op) -> map_add k op m1')
+    ~init_state:m1
+    (map_bindings m2)
+*)
+
+(* FIXME what about initialization? *)
+
+let make_plog
+    ~map_ops
+    ~insert
+    ~plog_state_ref
+(*  : ('k,'v,'map,'ptr,'t) plog_ops *)
+  =
+  let { map_find; map_add; map_empty } = map_ops in
+  let map_union m1 m2 = Tjr_map.map_union ~map_ops ~m1 ~m2 in
+  let {get;set} = plog_state_ref in
+  (* ASSUME start_block is initialized and consistent with pcl_state *)
+  let find k : (('k,'v) op option,'t) m =
+    get () |> bind @@ fun s ->
+    let map_find = map_find_union ~map_ops ~m1:s.map_past ~m2:s.map_current in    
+    let r = map_find k in
+    return r
+  in    
+  let add op =
+    insert op |> bind @@ function
+    | Inserted_in_current_node ->
+      get () |> bind @@ fun s ->
+      set { s with map_current=map_ops.map_add (op2k op) op s.map_current } 
+    | Inserted_in_new_node ptr ->
+      get () |> bind @@ fun s ->
+      set { s with 
+            map_past=map_union s.map_past s.map_current;
+            map_current=map_empty }      
+  in
+  let detach () = () in
+  failwith ""
+  
+
+  
+  
+  
   
 
 
