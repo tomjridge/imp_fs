@@ -27,6 +27,9 @@ module Pcl = Persistent_chunked_list
 open Pcl
 
 
+
+(* actions ---------------------------------------------------------- *)
+
 (* we need a concrete representation of actions; these are the
    elements that get written to disk *)
 
@@ -52,7 +55,13 @@ type ('k,'v,'repr) chunk_state = (('k,'v)op,'repr) pcl_state = {
 (* FIXME needed? type ('k,'v,'repr) chunk_state = (('k,'v)op,'repr) pcl_state *)
 
 
+(* in-mem map; NOTE 'v is ('k,'v)op  *)
+type ('k,'v,'t) map_ops = ('k,('k,'v)op,'t) Tjr_map.map_ops
 
+type ('k,'v) plog_ops = {
+  insert: ('k,'v)op -> unit;
+}
+  
 
 
 
@@ -119,7 +128,7 @@ module Test = struct
 
   (* list ops ------------------------------------------------------- *)
 
-  let list_ops () : (('k, 'v) repr, ('k, 'v) state) Pl.list_ops = 
+  let list_ops () : (('k, 'v) repr, 'ptr, ('k, 'v) state) Pl.list_ops = 
     Pl.make_persistent_list
       ~write_node:(fun ptr node -> fun s -> ({ s with map=(ptr,node)::s.map },Ok ()))
       ~plist_state_ref:{
@@ -143,7 +152,7 @@ module Test = struct
         set=(fun pclist_state -> fun s -> ({s with pclist_state},Ok ()));
       }
 
-  let _ : unit -> (insert:(('a, 'b) op -> (inserted_type, ('a, 'b) state) m) -> 'c) -> 'c 
+  let _ : unit -> (insert:(('a, 'b) op -> ('ptr inserted_type, ('a, 'b) state) m) -> 'c) -> 'c 
     = chunked_list
     
 

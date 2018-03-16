@@ -39,14 +39,14 @@ type ('e,'repr) repr_ops = {
 
 (* we also need persistent_list ops *)
 
-type inserted_type = 
-  Inserted_in_current_node | Inserted_in_new_node
+type 'ptr inserted_type = 
+  Inserted_in_current_node | Inserted_in_new_node of 'ptr
 
 let make_persistent_chunked_list 
     ~list_ops 
     ~repr_ops 
     ~(pcl_state_ref : (('e,'repr) pcl_state,'t) mref)
-    : (insert:('e -> (inserted_type, 't) m) -> 'a) -> 'a
+    : (insert:('e -> ('ptr inserted_type, 't) m) -> 'a) -> 'a
   =
   let read_state,write_state = pcl_state_ref.get, pcl_state_ref.set in
   let { replace_last; new_node } = list_ops in
@@ -71,16 +71,16 @@ let make_persistent_chunked_list
       | `Ok new_elts_repr ->
         let s = { elts=[e]; elts_repr=new_elts_repr } in
         write_state s |> bind @@ fun () ->
-        new_node new_elts_repr |> bind @@ fun () ->
-        return Inserted_in_new_node
+        new_node new_elts_repr |> bind @@ fun ptr ->
+        return (Inserted_in_new_node ptr)
   in
   fun f -> f ~insert
 
 
 let _ : 
-  list_ops:('repr, 't) list_ops -> 
+  list_ops:('repr, 'ptr, 't) list_ops -> 
   repr_ops:('e, 'repr) repr_ops -> 
   pcl_state_ref:(('e, 'repr) pcl_state, 't) mref 
-  -> (insert:('e -> (inserted_type, 't) m) -> 'a) -> 'a
+  -> (insert:('e -> ('ptr inserted_type, 't) m) -> 'a) -> 'a
   = 
   make_persistent_chunked_list

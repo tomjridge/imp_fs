@@ -24,9 +24,9 @@ type ('ptr,'a) plist_state (* cursor_state *) = {
 }
 
 (* FIXME rename plist *)
-type ('a,'t) list_ops = {
+type ('a,'ptr,'t) list_ops = {
   replace_last: 'a -> (unit,'t) m;
-  new_node: 'a -> (unit,'t) m;
+  new_node: 'a -> ('ptr,'t) m;  (* NOTE we return the ptr to the new node *)
 }
 
 
@@ -35,7 +35,7 @@ let make_persistent_list
     ~(write_node : 'ptr -> ('ptr,'a) list_node -> (unit,'t) m) 
     ~(plist_state_ref : (('ptr,'a) plist_state,'t) mref)
     ~(alloc : unit -> ('ptr,'t) m)
-    : ('a,'t) list_ops
+    : ('a,'ptr,'t) list_ops
   =
 (*
   let create ~ptr ~contents = 
@@ -65,7 +65,8 @@ let make_persistent_list
     { next=None; contents } |> fun new_node ->
     write_node new_ptr new_node |> bind @@ fun () ->
     { current_ptr=new_ptr; current_node=new_node } |> fun s ->
-    write_state s
+    write_state s |> bind @@ fun () ->
+    return new_ptr
   in
   { replace_last; new_node }
 
@@ -172,8 +173,8 @@ module Test = struct
     let ops = ops () in
     let cmds = 
       ops.replace_last "New start" |> bind @@ fun () ->
-      ops.new_node "second node" |> bind @@ fun () ->
-      ops.new_node "third node" |> bind @@ fun () ->
+      ops.new_node "second node" |> bind @@ fun _ ->
+      ops.new_node "third node" |> bind @@ fun _ ->
       ops.replace_last "alternative third node" |> bind @@ fun () ->
       plist_to_list ~read_node ~ptr:0
     in
