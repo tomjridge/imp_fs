@@ -17,7 +17,10 @@ type ('ptr,'a) list_node = {
   contents: 'a;
 }
 
-(* the cursor state is in memory; make sure to write the current_node to disk *)
+(* the cursor state is in memory; make sure to write the current_node
+   to disk; NOTE 'a is the type of the contents of the list_node
+
+*)
 type ('ptr,'a) plist_state (* cursor_state *) = {
   current_ptr: 'ptr;  (* block we are currently updating *)
   current_node: ('ptr,'a) list_node;  (* stored in mem to avoid rereading when moving to new node FIXME? *)
@@ -95,7 +98,7 @@ let _ = plist_to_list
 
 module Test = struct 
 
-  (* the state of the whole system *)
+  (* the state of the whole system; 'a is the type of  *)
   type ('ptr,'a) state = {
     map: ('ptr*('ptr,'a)list_node) list;  (* association list *)
     cursor_state: ('ptr,'a) plist_state;
