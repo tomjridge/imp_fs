@@ -72,7 +72,7 @@ type ('k,'v,'map,'ptr,'t) plog_ops = {
 
   add: ('k,'v)op -> (unit,'t) m;  (* add rather than insert, to avoid confusion *)
   
-  detach: unit -> 'ptr * 'map * 'ptr  
+  detach: unit -> ('ptr * 'map * 'ptr,'t) m
   (* 'ptr to first block in list; map upto current node; 'ptr to current node *)
 }
 
@@ -131,14 +131,13 @@ let make_plog
             map_past=map_union s.map_past s.map_current;
             map_current=map_empty }      
   in
-  let detach () = () in
-  failwith ""
-  
-
-  
-  
-  
-  
+  let detach () =  
+    get () |> bind @@ fun s ->
+    let r = (s.start_block,s.map_past,s.current_block) in
+    set { s with start_block=s.current_block; map_past=map_empty } |> bind @@ fun () ->
+    return r
+  in
+  { find; add; detach }  
 
 
 
