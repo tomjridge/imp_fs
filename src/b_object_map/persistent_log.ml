@@ -160,13 +160,14 @@ module Test = struct
 
     type ('k,'v) list_node = (ptr,('k,'v)repr) Pl.list_node
 
-    type ('k,'v,'map) state = {
+    type ('k,'v,'map,'dbg) state = {
       map: (ptr * ('k,'v)list_node) list;  (* association list *)
       free: ptr;  (* iso to ptr *)
 
       plist_state: (int,('k,'v)repr) plist_state;
       pclist_state: (('k,'v)op,('k,'v)repr) pcl_state;
       plog_state: ('map,ptr) plog_state;
+      dbg: 'dbg; (* debug state *)
     }
   end
 
@@ -206,7 +207,7 @@ module Test = struct
 
   let _ : 
     map_ops:('k, ('k, 'v) op, 'map) Tjr_map.map_ops -> 
-    ('k, 'v, 'map, ptr, ('k, 'v, 'map) state) plog_ops 
+    ('k, 'v, 'map, ptr, ('k, 'v, 'map,'dbg) state) plog_ops 
     = plog
 
 
@@ -223,12 +224,80 @@ module Test = struct
 
   let _ : unit ->
     (ptr, 'a, (ptr, 'a) op Map_int.t, ptr,
-     (ptr, 'a, (ptr, 'a) op Map_int.t) state)
+     (ptr, 'a, (ptr, 'a) op Map_int.t,'dbg) state)
       plog_ops
     = plog
-  
 
-  (* FIXME exhaustive testing? *)
+
+
+  (* debugging ------------------------------------------------------ *)
+
+  (* The debug state is a pair of lists representing the past and
+     current maps (the lists are derived from the on-disk contents). *)
+
+  type ('k,'v) dbg = {
+    dbg_current: ('k,'v) op list;
+    dbg_past: ('k,'v) op list
+  } 
+
+  let init_dbg = {
+    dbg_current=[];
+    dbg_past=[]
+  }
+
+  let dbg2list {dbg_current; dbg_past} = 
+    (List.rev dbg_current @ List.rev dbg_past)
+
+  let dbg2assoc_list dbg = dbg |> dbg2list |> List.map (fun op -> (op2k op,op))
+
+  let find k dbg = 
+    dbg |> dbg2assoc_list |> fun xs ->
+    match List.assoc k xs with
+    | exception _ -> None
+    | v -> Some v 
+
+
+  let read_node ptr = fun s ->
+    (* Printf.printf "ptr is: %d\n" ptr; *)
+    (* tap:=s.map; *)
+    (s, Ok (List.assoc ptr s.map))  (* ASSUMES ptr in map *)
+
+  (* take an existing plog ops, and add testing code based on the dbg state *)
+  let make_checked_plog_ops plog_ops = 
+    let get_state () = fun s -> (s,Ok s) in
+    let set_state s' = fun s -> (s',Ok ()) in
+    let find k = 
+      get_state () |> bind @@ fun s ->
+      let expected = find k s.dbg in
+      plog_ops.find k |> bind @@ fun v ->
+      assert(v=expected);
+      return v
+    in
+    let add op = 
+      get_state () |> bind @@ fun s ->
+      plog_ops.add op |> bind @@ fun () ->
+      get_state () |> bind @@ fun s' ->
+      assert(dbg2list s'.dbg = (op::(dbg2list s.dbg)));
+      (* now need to update the dbg state *)
+      Pl.plist_to_list ~read_node ~ptr:s'.plog_state.start_block |> bind @@ fun xs ->
+      Pl.plist_to_list ~read_node ~ptr:s'.plog_state.current_block |> bind @@ fun ys ->
+      assert(List.length xs >= List.length ys);
+      assert(Tjr_list.suffix ~suffix:ys xs);
+      let dbg_past = 
+        Tjr_list.split_at (List.length xs - List.length ys) xs 
+        |> fun (xs,_) -> xs
+      in
+      let dbg_current = ys in
+      let dbg = { dbg_past; dbg_current } in
+      set_state {s' with dbg} |> bind @@ fun () ->
+      return ()
+    in
+    let detach () = plog_ops.detach () in  (* FIXME worth checking? *)
+    { find; add; detach }
+      
+    
+
+   (* FIXME exhaustive testing? *)
   let main () = ()
     
 

@@ -40,16 +40,6 @@ let make_persistent_list
     ~(alloc : unit -> ('ptr,'t) m)
     : ('a,'ptr,'t) list_ops
   =
-(*
-  let create ~ptr ~contents = 
-    let node = {
-      next=None;
-      contents
-    }
-    in
-    write_node ptr node
-  in
-*)
   let read_state,write_state = plist_state_ref.get, plist_state_ref.set in
   let replace_last contents = 
     read_state () |> bind @@ fun s ->
@@ -77,6 +67,23 @@ let make_persistent_list
 let _ = make_persistent_list
 
 
+let plist_to_nodes ~read_node ~ptr : ('ptr * ('ptr,'a)list_node) list =
+  let rec loop ptr = 
+    read_node ptr |> fun node ->
+    match node.next with 
+    | None -> [(ptr,node)]
+    | Some ptr' -> (ptr,node)::(loop ptr')
+  in
+  loop ptr
+
+let _ = plist_to_nodes
+
+
+let plist_to_list ~read_node ~ptr = 
+  plist_to_nodes ~read_node ~ptr |> List.map (fun (_,n) -> n.contents)
+
+
+(*
 let rec plist_to_list ~read_node ~ptr =
   let acc = ref [] in
   let rec loop ptr = 
@@ -91,7 +98,7 @@ let rec plist_to_list ~read_node ~ptr =
 
 
 let _ = plist_to_list
-
+*)
 
 
 (* testing ---------------------------------------------------------- *)
@@ -113,12 +120,20 @@ module Test = struct
 
   (* let tap = ref [] *)
 
+  (*
   let read_node ptr = fun s ->
     (* Printf.printf "ptr is: %d\n" ptr; *)
     (* tap:=s.map; *)
     (s, Ok (List.assoc ptr s.map))  (* ASSUMES ptr in map *)
 
   let _ = read_node
+
+  (* don't really need it to be in the monad *)
+  let read_node ptr = fun s ->
+    (* Printf.printf "ptr is: %d\n" ptr; *)
+    (* tap:=s.map; *)
+    (List.assoc ptr s.map)  (* ASSUMES ptr in map *)
+     *)
 
 
   let read_state () = fun s -> 
@@ -174,12 +189,15 @@ module Test = struct
   (* Write some new nodes, update some, and finally print out the list *)
   let main () = 
     let ops = ops () in
+    let get_state () = fun s -> (s,Ok s) in
     let cmds = 
       ops.replace_last "New start" |> bind @@ fun () ->
       ops.new_node "second node" |> bind @@ fun _ ->
       ops.new_node "third node" |> bind @@ fun _ ->
       ops.replace_last "alternative third node" |> bind @@ fun () ->
-      plist_to_list ~read_node ~ptr:0
+      get_state () |> bind @@ fun s ->
+      let read_node ptr = List.assoc ptr s.map in
+      return (plist_to_list ~read_node ~ptr:0)
     in
     cmds init |> fun (s,Ok xs) ->
     assert(xs = ["New start";"second node";"alternative third node"]);

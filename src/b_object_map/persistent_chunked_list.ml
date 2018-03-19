@@ -32,21 +32,27 @@ type ('e,'repr) pcl_state = {
 (* what we need from marshalling *)
 type ('e,'repr) repr_ops = {
   nil: 'repr;
+
   snoc: 'e -> 'repr -> [ `Ok of 'repr | `Error_too_large ];  
   (* may not be able to snoc an element if it won't fit in the node *)
+
+  repr_to_list: 'repr -> 'e list  (* inverse of marshalling *)
 }
 
 
-(* we also need persistent_list ops *)
-
 type 'ptr inserted_type = 
   Inserted_in_current_node | Inserted_in_new_node of 'ptr
+
+type ('e,'ptr,'t) pcl_ops = {
+  insert:'e -> ('ptr inserted_type,'t) m
+}
+
 
 let make_persistent_chunked_list 
     ~list_ops 
     ~repr_ops 
     ~(pcl_state_ref : (('e,'repr) pcl_state,'t) mref)
-    : (insert:('e -> ('ptr inserted_type, 't) m) -> 'a) -> 'a
+    : ('e,'ptr,'t) pcl_ops
   =
   let read_state,write_state = pcl_state_ref.get, pcl_state_ref.set in
   let { replace_last; new_node } = list_ops in
@@ -74,19 +80,29 @@ let make_persistent_chunked_list
         new_node new_elts_repr |> bind @@ fun ptr ->
         return (Inserted_in_new_node ptr)
   in
-  fun f -> f ~insert
+  { insert }
 
 
 let _ : 
   list_ops:('repr, 'ptr, 't) list_ops -> 
   repr_ops:('e, 'repr) repr_ops -> 
   pcl_state_ref:(('e, 'repr) pcl_state, 't) mref 
-  -> (insert:('e -> ('ptr inserted_type, 't) m) -> 'a) -> 'a
+  -> ('e,'ptr,'t) pcl_ops
   = 
   make_persistent_chunked_list
 
 
 
+
+(* debugging -------------------------------------------------------- *)
+
+(* we use the plist debug code, but map usign repr_to_list *)
+
+let pclist_to_nodes ~repr_to_list ~plist_to_nodes ~(ptr:'ptr) : ('ptr * 'e list) list =
+  plist_to_nodes ptr 
+  |> List.map (fun (ptr,n) -> (ptr,n.contents |> repr_to_list))
+
+let _ = pclist_to_nodes
 
 
 (* test  ---------------------------------------------------------- *)
@@ -114,6 +130,7 @@ module Test = struct
     let repr_ops = {
       nil=[];
       snoc=(fun e es -> if List.length es < 10 then `Ok (es@[e]) else `Error_too_large);
+      repr_to_list=(fun r -> r)
     }
   end
   open Repr
@@ -180,7 +197,7 @@ module Test = struct
         set=(fun pclist_state -> fun s -> ({s with pclist_state},Ok ()));
       }
 
-  let _ : unit -> (insert:(('a, 'b) op -> ('ptr inserted_type, ('a, 'b) state) m) -> 'c) -> 'c 
+  let _ : unit -> ('e,'ptr,'t) pcl_ops
     = chunked_list
 
 
@@ -189,7 +206,7 @@ module Test = struct
 
   (* run some tests *)
   let main () = 
-    chunked_list () @@ fun ~insert ->
+    chunked_list () |> function { insert } ->
     let cmds = 
       Tjr_list.from_to 0 20 |> List.map (fun x -> (x,2*x)) |> fun xs ->
       let rec f xs = 
