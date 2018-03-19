@@ -77,6 +77,8 @@ let make_persistent_chunked_list
       | `Ok new_elts_repr ->
         let s = { elts=[e]; elts_repr=new_elts_repr } in
         write_state s |> bind @@ fun () ->
+        (* NOTE the following allocates a new node and updates the
+           pointer in the old node *)
         new_node new_elts_repr |> bind @@ fun ptr ->
         return (Inserted_in_new_node ptr)
   in
@@ -121,7 +123,7 @@ module Test = struct
 
   module Pl = Persistent_list
 
-  type ('k,'v) op = Insert of 'k * 'v | Delete of 'k
+  type ('k,'v) op = Insert of 'k * 'v | Delete of 'k  [@@deriving yojson]
 
   (* on-disk representation ----------------------------------------- *)
   (* we have to fix on a representation for the list of ops; for the
@@ -135,7 +137,7 @@ module Test = struct
     type ('k,'v) repr = ('k,'v) op  list
     let repr_ops n = {
       nil=[];
-      snoc=(fun e es -> if List.length es < n then `Ok(es@[e]) else `Error_too_large);
+      snoc=(fun e es -> if List.length es <= n then `Ok(es@[e]) else `Error_too_large);
       repr_to_list=(fun r -> r)
     }
   end

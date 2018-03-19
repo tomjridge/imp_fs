@@ -14,6 +14,18 @@ TODO:
 
 *)
 
+
+(*
+
+Interactive:
+
+#thread;;
+#require "imp_fs";;
+
+open Imp_fs;;
+
+*)
+
 open Tjr_map
 
 open Tjr_fs_shared.Monad
@@ -78,7 +90,7 @@ type ('k,'v,'map,'ptr,'t) plog_ops = {
 
 
 type ('map,'ptr) plog_state = {
-  start_block: 'ptr;
+  start_block: 'ptr;  
   current_block: 'ptr;
   map_past: 'map;  (* in reverse order *)
   map_current: 'map;
@@ -117,6 +129,7 @@ let make_plog_ops
   =
   let { map_find; map_add; map_empty } = map_ops in
   let map_union m1 m2 = Tjr_map.map_union ~map_ops ~m1 ~m2 in
+  (* NOTE get and set are for the plog_state component of the state *)
   let {get;set} = plog_state_ref in
   (* ASSUME start_block is initialized and consistent with pcl_state *)
   let find k : (('k,'v) op option,'t) m =
@@ -126,15 +139,16 @@ let make_plog_ops
     return r
   in    
   let add op =
+    get () |> bind @@ fun s ->
     insert op |> bind @@ function
     | Inserted_in_current_node ->
-      get () |> bind @@ fun s ->
-      set { s with map_current=map_ops.map_add (op2k op) op s.map_current } 
+      get () |> bind @@ fun s' ->
+      set { s' with map_current=map_ops.map_add (op2k op) op s'.map_current } 
     | Inserted_in_new_node ptr ->
-      get () |> bind @@ fun s ->
-      set { s with 
+      get () |> bind @@ fun s' ->
+      set { s' with 
             map_past=map_union s.map_past s.map_current;
-            map_current=map_empty }      
+            map_current=map_ops.map_add (op2k op) op map_empty }
   in
   (* FIXME be clear about concurrency here: detach happens in memory,
      almost instantly, but other operations cannot interleave with it
@@ -144,6 +158,8 @@ let make_plog_ops
   let detach () =  
     get () |> bind @@ fun s ->
     let r = (s.start_block,s.map_past,s.current_block) in
+    (* we need to adjust the start block and the map_past - we are
+       forgetting everything in previous blocks *)
     set { s with start_block=s.current_block; map_past=map_empty } |> bind @@ fun () ->
     return r
   in
@@ -162,24 +178,42 @@ let _ = make_plog_ops
 
 (* The debug state is a pair of lists representing the past and
    current maps (the lists are derived from the on-disk contents). *)
-
+(*
 type ('k,'v) dbg = {
   dbg_current: ('k,'v) op list;
   dbg_past: ('k,'v) op list
 } 
+*)
+
+(* specialize for yojson *)
+let op_to_yojson a b op : Yojson.Safe.json = match op with
+  Insert(k,v) -> `String (Printf.sprintf "Insert(%d,%d)" k v)
+  | Delete k -> `String (Printf.sprintf "Delete(%d)" k)
+
+let op_of_yojson a b op = failwith __LOC__
+
+type find_result = (int,int) op option [@@deriving yojson]
+
+type dbg = {
+  dbg_current: (int,int) op list;
+  dbg_past: (int,int) op list
+} [@@deriving yojson]
 
 let init_dbg = {
   dbg_current=[];
   dbg_past=[]
 }
 
-let plog_to_dbg ~pclist_to_nodes ~ptr ~get_plog_state (s:'t) : ('k,'v) dbg =
-  pclist_to_nodes ~ptr s
+(* note this has a separate ptr FIXME needed? *)
+let plog_to_dbg ~pclist_to_nodes ~get_plog_state (s:'t) : (* ('k,'v) *) dbg =
+  let plog_state = s|>get_plog_state in
+  pclist_to_nodes ~ptr:plog_state.start_block s
   |> List.map (fun (ptr,es) -> es)
   |> fun ess ->
-  let plog_state = s|>get_plog_state in
   match plog_state.start_block = plog_state.current_block with
-  | true -> {dbg_past=[]; dbg_current=List.concat ess}
+  | true -> 
+    assert(List.length ess=1); (* ptr is s.start_block *)
+    {dbg_past=[]; dbg_current=List.concat ess}
   | false -> 
     assert(ess <> []);
     {dbg_past=(Tjr_list.butlast ess |> List.concat); dbg_current=(Tjr_list.last ess) }
@@ -200,6 +234,8 @@ let find k dbg =
   | v -> Some v 
 
 
+type tmp = Yojson.Safe.json option [@@deriving yojson]
+
 (* take an existing plog ops, and add testing code based on the dbg state *)
 let make_checked_plog_ops ~plog_ops ~plog_to_dbg ~set_dbg ~get_dbg ~start_block 
   : ('k,'v,'map,'ptr,'t) plog_ops
@@ -210,6 +246,13 @@ let make_checked_plog_ops ~plog_ops ~plog_to_dbg ~set_dbg ~get_dbg ~start_block
     get_state () |> bind @@ fun s ->
     let expected = find k (get_dbg s) in
     plog_ops.find k |> bind @@ fun v ->
+    Imp_pervasives.log_ops.Tjr_log.log_lazy (fun () ->
+        expected |> find_result_to_yojson |> fun expected ->
+        v |> find_result_to_yojson |> fun v ->
+        Printf.sprintf "%s:\n    expected(%s)\n    actual(%s)"
+          "make_checked_plog_ops.find"
+          (expected |> Yojson.Safe.pretty_to_string)
+          (v |> Yojson.Safe.pretty_to_string));
     assert(v=expected);
     return v
   in
@@ -218,13 +261,26 @@ let make_checked_plog_ops ~plog_ops ~plog_to_dbg ~set_dbg ~get_dbg ~start_block
     plog_ops.add op |> bind @@ fun () ->
     get_state () |> bind @@ fun s' ->
     get_dbg s |> fun dbg ->
-    plog_to_dbg ~ptr:(s|>start_block) s |> fun dbg' ->
+    plog_to_dbg (* ~ptr:(s'|>start_block) *) s' |> fun dbg' ->
+    Imp_pervasives.log_ops.Tjr_log.log_lazy (fun () ->
+        Printf.sprintf "%s: %s %s"
+          "make_checked_plog_ops.add"
+          (dbg_to_yojson dbg |> Yojson.Safe.pretty_to_string)
+          (dbg_to_yojson dbg' |> Yojson.Safe.pretty_to_string));
     assert(dbg2list dbg' = (op::(dbg2list dbg)));
     (* now need to update the dbg state *)
-    set_state (s |> set_dbg dbg') |> bind @@ fun () ->
+    set_state (s' |> set_dbg dbg') |> bind @@ fun () ->
     return ()
   in
-  let detach () = plog_ops.detach () in  (* FIXME worth checking? *)
+  let detach () = 
+    plog_ops.detach () |> bind @@ fun r ->
+    get_state () |> bind @@ fun s' ->
+    (* set dbg state *)
+    plog_to_dbg (* ~ptr:(s'|>start_block) *) s' |> fun dbg' ->
+    set_dbg dbg' s' |> fun s' ->
+    set_state s' |> bind @@ fun () ->
+    return r
+  in  
   { find; add; detach }
 
 
@@ -262,12 +318,13 @@ module Test : sig val main : unit -> unit end = struct
       ~write_node:(fun ptr node -> fun s -> ({ s with map=(ptr,node)::s.map },Ok ()))
       ~plist_state_ref:{
         get=(fun () -> fun s -> (s,Ok s.plist_state));
-        set=(fun plist_state -> fun s -> failwith "" (* ({s with plist_state},Ok ()) *))
+        set=(fun plist_state -> fun s -> ({s with plist_state},Ok ()))
       }
       ~alloc:(fun () -> fun s -> ({ s with free=s.free+1 },Ok s.free))
 
   let _ = list_ops
 
+  (* this should ensure no more than 2 items in each block *)
   let repr_ops = Pcl.Test.Repr.repr_ops 2 (* FIXME parameterize tests by this *)
 
   let chunked_list () =
@@ -326,10 +383,9 @@ module Test : sig val main : unit -> unit end = struct
       Pcl.pclist_to_nodes ~repr_to_list ~plist_to_nodes ~ptr s
     in
     let _ = pclist_to_nodes in
-    let plog_to_dbg ~ptr s = 
+    let plog_to_dbg s = 
       plog_to_dbg
         ~pclist_to_nodes
-        ~ptr 
         ~get_plog_state:(fun s -> s.plog_state)
         s
     in
@@ -369,10 +425,15 @@ module Test : sig val main : unit -> unit end = struct
       };
       dbg=init_dbg
     }
+    [@@ocaml.warning "-40"]
       
 
+  open Tjr_log
+
   let test () = 
+    let num_tests = ref 0 in
     let plog_ops = checked_plog () in
+    (* let plog_ops = plog () in *)
     (* the operations are: find k; add op; detach 
 
        given some finite range for k, we want to attempt each
@@ -387,29 +448,41 @@ module Test : sig val main : unit -> unit end = struct
        the test state is a decreasing count paired with the system
        state *)
     let rec step (count,s) =
-      if count <= 0 then () else
-        ops 
-        |> List.iter (fun op -> 
-            match op with
-            | `Detach -> 
-              plog_ops.detach () s |> fun (s',Ok _) -> 
-              step (count-1,s')
-            | `Delete k -> 
-              plog_ops.add (Delete(k)) s |> fun (s',Ok _) ->
-              step (count-1,s')
-            | `Find k ->
-              plog_ops.find k s |> fun (s',Ok _) ->
-              step (count-1,s')
-            | `Insert(k,v) -> 
-              plog_ops.add (Insert(k,v)) s |> fun (s',Ok _) ->
-              step (count-1,s'))
+      let f op = 
+        num_tests:=!num_tests+1;
+        match op with
+        | `Detach -> 
+          Imp_pervasives.log_ops.log "detach";
+          plog_ops.detach () s |> fun (s',_) -> s'
+        | `Delete k -> 
+          Printf.sprintf "delete(%d)" k |> Imp_pervasives.log_ops.log;
+          plog_ops.add (Delete(k)) s |> fun (s',_) -> s'
+        | `Find k ->
+          Printf.sprintf "find(%d)" k |> Imp_pervasives.log_ops.log;
+          plog_ops.find k s |> fun (s',_) -> s'
+        | `Insert(k,v) -> 
+          Printf.sprintf "insert(%d,%d)" k (k*2) |> Imp_pervasives.log_ops.log;
+          plog_ops.add (Insert(k,v)) s |> fun (s',_) -> s'
+      in
+      let f op = 
+        f op |> fun s' ->        
+        Imp_pervasives.log_ops.Tjr_log.log_lazy (fun () ->
+        Printf.sprintf "%s: %s"
+          "test, post op"
+          (dbg_to_yojson s'.dbg |> Yojson.Safe.pretty_to_string));
+        step (count-1,s')
+      in
+      if count <= 0 then () else ops |> List.iter f
     in
     Printf.printf "%s: tests starting...\n" __LOC__;
     step (4,init_state);
-    Printf.printf "%s: tests finished\n" __LOC__
+    Printf.printf "%s: tests finished\n" __LOC__;
+    Printf.printf "%d tests executed\n" !num_tests
+  [@@ocaml.warning "-8"]
 
-   (* FIXME exhaustive testing? *)
-  let main () = test ()
+
+(* FIXME exhaustive testing? *)
+let main () = test ()
     
 
 end

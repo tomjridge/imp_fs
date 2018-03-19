@@ -37,3 +37,6 @@ let bp_size_oid = X.Bin_prot_util.bp_size_int
 let option_case ~_None ~_Some x = (match x with
   | None -> _None
   | Some x -> _Some x)
+
+
+let log_ops = Tjr_log.mk_log_ops ()
