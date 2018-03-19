@@ -135,9 +135,13 @@ module Test = struct
     val repr_ops : int -> ( ('k,'v)op, ('k,'v)repr) repr_ops
   end = struct
     type ('k,'v) repr = ('k,'v) op  list
-    let repr_ops n = {
+    let repr_ops n = 
+      {
       nil=[];
-      snoc=(fun e es -> if List.length es <= n then `Ok(es@[e]) else `Error_too_large);
+      snoc=(fun e es -> 
+          if List.length es + 1 <= n 
+          then `Ok(es@[e]) 
+          else `Error_too_large);
       repr_to_list=(fun r -> r)
     }
   end
@@ -163,10 +167,7 @@ module Test = struct
     pclist_state: (('k,'v)op,('k,'v)repr) pcl_state
   }
 
-  let repr_ops = repr_ops 10  (* example *)
-
-
-  let init_state = 
+  let init_state ~repr_ops = 
     let start_block = Persistent_list.Test.start_block in
     (* NOTE we can't reuse Pl.Test.init_state because the values on
        disk are of a different type *)
@@ -202,7 +203,7 @@ module Test = struct
   (* chunked list ops ----------------------------------------------- *)
 
 
-  let chunked_list () =
+  let chunked_list ~repr_ops =
     make_persistent_chunked_list
       ~list_ops:(list_ops ())
       ~repr_ops
@@ -211,7 +212,7 @@ module Test = struct
         set=(fun pclist_state -> fun s -> ({s with pclist_state},Ok ()));
       }
 
-  let _ : unit -> ('e,'ptr,'t) pcl_ops
+  let _ : repr_ops:('e,'repr)repr_ops -> ('e,'ptr,'t) pcl_ops
     = chunked_list
 
 
@@ -220,7 +221,9 @@ module Test = struct
 
   (* run some tests *)
   let main () = 
-    chunked_list () |> function { insert } ->
+    let repr_ops = repr_ops 2 in
+    let init_state = init_state ~repr_ops in
+    chunked_list ~repr_ops |> function { insert } ->
     let cmds = 
       Tjr_list.from_to 0 20 |> List.map (fun x -> (x,2*x)) |> fun xs ->
       let rec f xs = 

@@ -147,6 +147,7 @@ let make_plog_ops
     | Inserted_in_new_node ptr ->
       get () |> bind @@ fun s' ->
       set { s' with 
+            current_block=ptr;
             map_past=map_union s.map_past s.map_current;
             map_current=map_ops.map_add (op2k op) op map_empty }
   in
@@ -213,7 +214,9 @@ let plog_to_dbg ~pclist_to_nodes ~get_plog_state (s:'t) : (* ('k,'v) *) dbg =
   match plog_state.start_block = plog_state.current_block with
   | true -> 
     assert(List.length ess=1); (* ptr is s.start_block *)
-    {dbg_past=[]; dbg_current=List.concat ess}
+    let dbg_current=List.concat ess in
+    (* FIXME are we sure dbg_current is wellformed? *)
+    {dbg_past=[]; dbg_current}
   | false -> 
     assert(ess <> []);
     {dbg_past=(Tjr_list.butlast ess |> List.concat); dbg_current=(Tjr_list.last ess) }
@@ -237,7 +240,7 @@ let find k dbg =
 type tmp = Yojson.Safe.json option [@@deriving yojson]
 
 (* take an existing plog ops, and add testing code based on the dbg state *)
-let make_checked_plog_ops ~plog_ops ~plog_to_dbg ~set_dbg ~get_dbg ~start_block 
+let make_checked_plog_ops ~plog_ops ~plog_to_dbg ~set_dbg ~get_dbg 
   : ('k,'v,'map,'ptr,'t) plog_ops
   = 
   let get_state () = fun s -> (s,Ok s) in
@@ -293,7 +296,7 @@ let _ = make_checked_plog_ops
 (* test  ---------------------------------------------------------- *)
 
 
-module Test : sig val main : unit -> unit end = struct
+module Test : sig val test : depth:int -> unit end = struct
 
   include struct
     type ptr = int
@@ -324,7 +327,8 @@ module Test : sig val main : unit -> unit end = struct
 
   let _ = list_ops
 
-  (* this should ensure no more than 2 items in each block *)
+  (* this should ensure no more than 2 items in each block FIXME but
+     it seems that this is not enforced BUG *)
   let repr_ops = Pcl.Test.Repr.repr_ops 2 (* FIXME parameterize tests by this *)
 
   let chunked_list () =
@@ -392,13 +396,11 @@ module Test : sig val main : unit -> unit end = struct
     let plog_ops = plog () in
     let set_dbg = fun dbg s -> {s with dbg} in
     let get_dbg = fun s -> s.dbg in
-    let start_block = fun s -> s.plog_state.start_block in
     make_checked_plog_ops
       ~plog_ops
       ~plog_to_dbg
       ~set_dbg
       ~get_dbg
-      ~start_block
 
 
 
@@ -411,7 +413,7 @@ module Test : sig val main : unit -> unit end = struct
 
   let init_state = 
     let start_block = Pl.Test.start_block in
-    let i = Pcl.Test.init_state in
+    let i = Pcl.Test.init_state ~repr_ops in
     {
       map=i.map;
       free=i.free;
@@ -430,7 +432,7 @@ module Test : sig val main : unit -> unit end = struct
 
   open Tjr_log
 
-  let test () = 
+  let test ~depth = 
     let num_tests = ref 0 in
     let plog_ops = checked_plog () in
     (* let plog_ops = plog () in *)
@@ -474,15 +476,13 @@ module Test : sig val main : unit -> unit end = struct
       in
       if count <= 0 then () else ops |> List.iter f
     in
-    Printf.printf "%s: tests starting...\n" __LOC__;
-    step (4,init_state);
-    Printf.printf "%s: tests finished\n" __LOC__;
-    Printf.printf "%d tests executed\n" !num_tests
+    Printf.printf "%s: tests starting...\n" __FILE__;
+    step (depth,init_state);
+    Printf.printf "%s: ...tests finished\n" __FILE__;
+    Printf.printf "%s: %d tests executed in total\n" __FILE__ !num_tests
   [@@ocaml.warning "-8"]
 
 
-(* FIXME exhaustive testing? *)
-let main () = test ()
     
 
 end
