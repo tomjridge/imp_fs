@@ -104,7 +104,7 @@ let map_union ~map_ops ~m1 ~m2 =
 
 (* FIXME what about initialization? *)
 
-let make_plog
+let make_plog_ops
     ~map_ops
     ~insert
     ~plog_state_ref
@@ -145,7 +145,7 @@ let make_plog
   { find; add; detach }  
 
 
-let _ = make_plog
+let _ = make_plog_ops
 
 
 (* debug ------------------------------------------------------------ *)
@@ -166,11 +166,12 @@ let init_dbg = {
   dbg_past=[]
 }
 
-let plog_to_dbg ~pclist_to_nodes ~ptr s : ('k,'v) dbg =
+let plog_to_dbg ~pclist_to_nodes ~ptr ~get_plog_state (s:'t) : ('k,'v) dbg =
   pclist_to_nodes ~ptr s
   |> List.map (fun (ptr,es) -> es)
   |> fun ess ->
-  match s.start_block = s.current_block with
+  let plog_state = s|>get_plog_state in
+  match plog_state.start_block = plog_state.current_block with
   | true -> {dbg_past=[]; dbg_current=List.concat ess}
   | false -> 
     assert(ess <> []);
@@ -275,7 +276,7 @@ module Test = struct
   
   let plog ~map_ops = 
     chunked_list () |> fun { insert } -> 
-    make_plog
+    make_plog_ops
       ~map_ops
       ~insert
       ~plog_state_ref:{
@@ -300,11 +301,36 @@ module Test = struct
 
   let plog () = plog ~map_ops
 
+
   let _ : unit ->
     (ptr, 'a, (ptr, 'a) op Map_int.t, ptr,
      (ptr, 'a, (ptr, 'a) op Map_int.t,'dbg) state)
       plog_ops
     = plog
+
+
+  let checked_plog () = 
+    let read_node ptr s = List.assoc ptr s.map in
+    let plist_to_nodes ~(ptr:ptr) (s:('k,'v,'map,'dbg)state) = 
+      Pl.plist_to_nodes ~read_node ~ptr s 
+    in
+    let repr_to_list = repr_ops.repr_to_list in
+    let pclist_to_nodes ~ptr s = 
+      Pcl.pclist_to_nodes ~repr_to_list ~plist_to_nodes ~ptr s
+    in
+    let _ = pclist_to_nodes in
+    let plog_to_dbg ~ptr s = 
+      plog_to_dbg
+        ~pclist_to_nodes
+        ~ptr 
+        ~get_plog_state:(fun s -> s.plog_state)
+        s
+    in
+    let plog_ops = plog () in
+    make_checked_plog_ops
+      ~plog_ops
+      ~plog_to_dbg
+
 
 
 

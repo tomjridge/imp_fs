@@ -67,7 +67,14 @@ let make_persistent_list
 let _ = make_persistent_list
 
 
-let plist_to_nodes ~read_node ~ptr s : ('ptr * ('ptr,'a)list_node) list =
+let plist_to_nodes 
+    ~(read_node:'ptr -> 't -> ('ptr,'a)list_node) 
+    ~(ptr:'ptr)
+    s 
+  : ('ptr * ('ptr,'a)list_node) list 
+  (* NOTE in the return type, the first ptr is the pointer to the
+     node; the snd is the optional link in the list_node *)
+  =
   let rec loop ptr = 
     read_node ptr s |> fun node ->
     match node.next with 
