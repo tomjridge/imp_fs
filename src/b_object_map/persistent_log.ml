@@ -148,6 +148,8 @@ let make_plog_ops
 let _ = make_plog_ops
 
 
+
+
 (* debug ------------------------------------------------------------ *)
 
 
@@ -230,7 +232,7 @@ let _ = make_checked_plog_ops
 (* test  ---------------------------------------------------------- *)
 
 
-module Test = struct
+module Test : sig end = struct
 
   include struct
     type ptr = int
@@ -261,7 +263,7 @@ module Test = struct
 
   let _ = list_ops
 
-  let repr_ops = Pcl.Test.Repr.repr_ops
+  let repr_ops = Pcl.Test.Repr.repr_ops 2 (* FIXME parameterize tests by this *)
 
   let chunked_list () =
     make_persistent_chunked_list
@@ -309,7 +311,7 @@ module Test = struct
     = plog
 
 
-  let checked_plog () = 
+  let checked_plog () : ('k,'v,'map,'ptr,'t) plog_ops = 
     let read_node ptr s = List.assoc ptr s.map in
     let plist_to_nodes ~(ptr:ptr) (s:('k,'v,'map,'dbg)state) = 
       Pl.plist_to_nodes ~read_node ~ptr s 
@@ -327,18 +329,63 @@ module Test = struct
         s
     in
     let plog_ops = plog () in
+    let set_dbg = fun dbg s -> {s with dbg} in
+    let get_dbg = fun s -> s.dbg in
+    let start_block = fun s -> s.plog_state.start_block in
     make_checked_plog_ops
       ~plog_ops
       ~plog_to_dbg
+      ~set_dbg
+      ~get_dbg
+      ~start_block
 
 
 
+  let _ : (int,'v,'map,ptr,(int,'v,'map,'dbg)state)plog_ops = checked_plog ()
 
-  (* debugging ------------------------------------------------------ *)
 
+  (* testing ------------------------------------------------------ *)
+
+  let test () = 
+    let plog_ops = checked_plog () in
+    (* the operations are: find k; add op; detach 
+
+       given some finite range for k, we want to attempt each
+       operation in each state; we are not too bothered about
+       repeating work at this point *)
+    let ks = [1;2;3] in
+    let ops = 
+      `Detach :: 
+      (ks |> List.map (fun k -> [`Find(k);`Insert(k,2*k);`Delete(k)]) |> List.concat) 
+    in
+    (* we exhaustively test these operations up to a maximum depth;
+       the test state is a decreasing count paired with the system
+       state *)
+    let rec step (count,s) =
+      if count <= 0 then () else
+        ops 
+        |> List.iter (fun op -> 
+            match op with
+            | `Detach -> 
+              plog_ops.detach () s |> fun (s',Ok _) -> 
+              step (count-1,s')
+            | `Delete k -> 
+              plog_ops.add (Delete(k)) s |> fun (s',Ok _) ->
+              step (count-1,s')
+            | `Find k ->
+              plog_ops.find k s |> fun (s',Ok _) ->
+              step (count-1,s')
+            | `Insert(k,v) -> 
+              plog_ops.add (Insert(k,v)) s |> fun (s',Ok _) ->
+              step (count-1,s'))
+    in
+    let init_state = failwith "FIXME" in
+    Printf.printf "%s: tests starting...\n" __LOC__;
+    step (4,init_state);
+    Printf.printf "%s: tests finished\n" __LOC__
 
    (* FIXME exhaustive testing? *)
-  let main () = ()
+  let main () = test ()
     
 
 end

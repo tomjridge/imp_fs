@@ -130,12 +130,12 @@ module Test = struct
 
   module Repr : sig 
     type ('k,'v) repr
-    val repr_ops : ( ('k,'v)op, ('k,'v)repr) repr_ops
+    val repr_ops : int -> ( ('k,'v)op, ('k,'v)repr) repr_ops
   end = struct
     type ('k,'v) repr = ('k,'v) op  list
-    let repr_ops = {
+    let repr_ops n = {
       nil=[];
-      snoc=(fun e es -> if List.length es < 10 then `Ok (es@[e]) else `Error_too_large);
+      snoc=(fun e es -> if List.length es < n then `Ok(es@[e]) else `Error_too_large);
       repr_to_list=(fun r -> r)
     }
   end
@@ -160,6 +160,8 @@ module Test = struct
     plist_state: (int,('k,'v)repr) Pl.plist_state;
     pclist_state: (('k,'v)op,('k,'v)repr) pcl_state
   }
+
+  let repr_ops = repr_ops 10  (* example *)
 
   let init_state = 
     let root = 0 in
