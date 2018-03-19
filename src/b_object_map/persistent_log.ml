@@ -84,6 +84,11 @@ type ('map,'ptr) plog_state = {
   map_current: 'map;
 }
 
+(*
+let init_plog_state (s:Pcl.Test.state) =
+  {
+    start_block=s.
+*)
 
 (* a map built from two other maps; prefer m2 *)
 let map_find_union ~map_ops ~m1 ~m2 k = 
@@ -232,7 +237,7 @@ let _ = make_checked_plog_ops
 (* test  ---------------------------------------------------------- *)
 
 
-module Test : sig end = struct
+module Test : sig val main : unit -> unit end = struct
 
   include struct
     type ptr = int
@@ -346,6 +351,26 @@ module Test : sig end = struct
 
   (* testing ------------------------------------------------------ *)
 
+  
+
+  let init_state = 
+    let start_block = Pl.Test.start_block in
+    let i = Pcl.Test.init_state in
+    {
+      map=i.map;
+      free=i.free;
+      plist_state=i.plist_state;
+      pclist_state=i.pclist_state;
+      plog_state={
+        start_block;
+        current_block=start_block;
+        map_past=map_ops.map_empty;
+        map_current=map_ops.map_empty
+      };
+      dbg=init_dbg
+    }
+      
+
   let test () = 
     let plog_ops = checked_plog () in
     (* the operations are: find k; add op; detach 
@@ -379,7 +404,6 @@ module Test : sig end = struct
               plog_ops.add (Insert(k,v)) s |> fun (s',Ok _) ->
               step (count-1,s'))
     in
-    let init_state = failwith "FIXME" in
     Printf.printf "%s: tests starting...\n" __LOC__;
     step (4,init_state);
     Printf.printf "%s: tests finished\n" __LOC__

@@ -163,18 +163,22 @@ module Test = struct
 
   let repr_ops = repr_ops 10  (* example *)
 
+
   let init_state = 
-    let root = 0 in
+    let start_block = Persistent_list.Test.start_block in
+    (* NOTE we can't reuse Pl.Test.init_state because the values on
+       disk are of a different type *)
+    (* let i = Persistent_list.Test.init_state in *)
     let elts = [] in
     let elts_repr = repr_ops.nil in
     let current_node= Pl.{ next=None; contents=elts_repr } in
     {    
-      map=[(root,current_node)]; 
-      free=root+1;
-      plist_state=Pl.{
-          current_ptr=0;
-          current_node
-        };
+      map=[(start_block,current_node)]; 
+      free=(start_block+1);
+      plist_state={
+        current_ptr=start_block;
+        current_node
+      }; 
       pclist_state={ elts; elts_repr };
     }
 

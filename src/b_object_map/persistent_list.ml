@@ -184,8 +184,11 @@ module Test = struct
 
   let _ = ops
 
-  let init = 
-    let root = 0 in
+
+  let start_block = 0
+
+  let init_state = 
+    let root = start_block in
     let current_node={ next=None; contents="Start" } in
     {    
       map=[(root,current_node)]; 
@@ -208,7 +211,7 @@ module Test = struct
       get_state () |> bind @@ fun s ->
       return (plist_to_list ~read_node ~ptr:0 s)
     in
-    cmds init |> fun (s,Ok xs) ->
+    cmds init_state |> fun (s,Ok xs) ->
     assert(xs = ["New start";"second node";"alternative third node"]);
     xs |> Tjr_string.concat_strings ~sep:";" |> fun str ->
     print_endline str;

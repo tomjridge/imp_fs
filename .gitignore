@@ -38,3 +38,4 @@ _depend/
 /src/persistent_chunked_list.ml
 /src/persistent_list.ml
 /src/links
+/bin/test_persistent_log

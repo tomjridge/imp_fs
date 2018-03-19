@@ -14,7 +14,7 @@ all: links depend
 	mk_cma
 	mk_cmxa
 #	$(MAKE) $$natives $$bytes
-
+	$(MAKE) install
 
 links:
 	mk_links
