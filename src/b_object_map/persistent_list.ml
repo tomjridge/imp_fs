@@ -67,9 +67,9 @@ let make_persistent_list
 let _ = make_persistent_list
 
 
-let plist_to_nodes ~read_node ~ptr : ('ptr * ('ptr,'a)list_node) list =
+let plist_to_nodes ~read_node ~ptr s : ('ptr * ('ptr,'a)list_node) list =
   let rec loop ptr = 
-    read_node ptr |> fun node ->
+    read_node ptr s |> fun node ->
     match node.next with 
     | None -> [(ptr,node)]
     | Some ptr' -> (ptr,node)::(loop ptr')
@@ -79,8 +79,8 @@ let plist_to_nodes ~read_node ~ptr : ('ptr * ('ptr,'a)list_node) list =
 let _ = plist_to_nodes
 
 
-let plist_to_list ~read_node ~ptr = 
-  plist_to_nodes ~read_node ~ptr |> List.map (fun (_,n) -> n.contents)
+let plist_to_list ~read_node ~ptr s = 
+  plist_to_nodes ~read_node ~ptr s |> List.map (fun (_,n) -> n.contents)
 
 
 (*
@@ -111,6 +111,9 @@ module Test = struct
     cursor_state: ('ptr,'a) plist_state;
     free: int;  (* iso to ptr *)
   }
+
+  let read_node ptr s = List.assoc ptr s.map
+
 
   let write_node ptr n = fun s -> 
     { s with map=(ptr,n)::s.map } |> fun s ->
@@ -188,16 +191,15 @@ module Test = struct
 
   (* Write some new nodes, update some, and finally print out the list *)
   let main () = 
-    let ops = ops () in
     let get_state () = fun s -> (s,Ok s) in
+    let ops = ops () in
     let cmds = 
       ops.replace_last "New start" |> bind @@ fun () ->
       ops.new_node "second node" |> bind @@ fun _ ->
       ops.new_node "third node" |> bind @@ fun _ ->
       ops.replace_last "alternative third node" |> bind @@ fun () ->
       get_state () |> bind @@ fun s ->
-      let read_node ptr = List.assoc ptr s.map in
-      return (plist_to_list ~read_node ~ptr:0)
+      return (plist_to_list ~read_node ~ptr:0 s)
     in
     cmds init |> fun (s,Ok xs) ->
     assert(xs = ["New start";"second node";"alternative third node"]);

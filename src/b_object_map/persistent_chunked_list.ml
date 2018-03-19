@@ -98,8 +98,8 @@ let _ :
 
 (* we use the plist debug code, but map usign repr_to_list *)
 
-let pclist_to_nodes ~repr_to_list ~plist_to_nodes ~(ptr:'ptr) : ('ptr * 'e list) list =
-  plist_to_nodes ptr 
+let pclist_to_nodes ~repr_to_list ~plist_to_nodes ~(ptr:'ptr) s : ('ptr * 'e list) list =
+  plist_to_nodes ~ptr s
   |> List.map (fun (ptr,n) -> (ptr,n.contents |> repr_to_list))
 
 let _ = pclist_to_nodes
