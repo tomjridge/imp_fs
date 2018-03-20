@@ -39,3 +39,4 @@ _depend/
 /src/persistent_list.ml
 /src/links
 /bin/test_persistent_log
+/src/META
