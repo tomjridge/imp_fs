@@ -2,9 +2,9 @@
 
 (* Full ImpFS state ------------------------------------------------- *)
 
-open Imp_pervasives
-open X.Page_ref_int
-open X.Block
+(* open Imp_pervasives *)
+open Tjr_btree.Page_ref_int
+open Tjr_btree.Block
 open Tjr_fs_shared
 
 (* we need this early because the monad require this type *)
@@ -12,7 +12,7 @@ open Tjr_fs_shared
 type imp_state = {
 
   (* TODO this is to demo the filesystem *)
-  fd: X.Disk_on_fd.fd;
+  fd: Tjr_btree.Disk_on_fd.fd;
 
   (* We always allocate new blocks. *)
   free: page_ref;

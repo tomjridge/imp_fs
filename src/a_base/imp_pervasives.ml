@@ -1,7 +1,17 @@
 (** Common definitions including file id and dir id; X is a module alias for Tjr_btree *)
 
 (* don't open Tjr_btree - module clashes :(; use open X.Yzw *)
-module X = Tjr_btree
+(* module X = Tjr_btree *)
+
+type 't monad_ops = 't Tjr_monad.Monad.monad_ops
+
+(* keep this abstract for the time being FIXME really this is pervasive *)
+let imp_monad_ops : Imp_state.imp_state Tjr_monad.state_passing monad_ops = 
+  (fun x -> failwith __LOC__) ()  (* FIXME *)
+
+let ( >>= ) = imp_monad_ops.bind
+let return = imp_monad_ops.return
+
 
 open Bin_prot.Std
 
@@ -31,7 +41,7 @@ end = struct
 end
 include Did
 
-let bp_size_oid = X.Bin_prot_util.bp_size_int
+let bp_size_oid = Tjr_btree.Bin_prot_util.bp_size_int
 
 
 let option_case ~_None ~_Some x = (match x with

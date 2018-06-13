@@ -4,46 +4,49 @@
 
 open Tjr_fs_shared
 open Imp_pervasives
-open X.Base_types
-open X.Small_string
-open X.Bin_prot_util
-open X.Disk_ops
+open Tjr_btree.Base_types
+open Tjr_btree.Small_string
+open Tjr_btree.Bin_prot_util
+open Tjr_btree.Disk_ops
 
-open Disk_ops
+open Imp_disk_ops
 open Imp_state
-open Free_ops
+open Imp_free_ops
 
 (* int -> blk_id map *)
 module Map_int_blk_id = struct
-  let ps = X.Map_int_int.ps' ~blk_sz
-  let store_ops = X.Disk_to_store.disk_to_store ~ps ~disk_ops ~free_ops
-  let map_ops ~page_ref_ops : ('k,'v,'t) X.Map_ops.map_ops = 
-    X.Store_to_map.store_ops_to_map_ops 
-      ~ps 
+  let ps = Tjr_btree.Map_int_int.ps' ~blk_sz
+  let store_ops = Tjr_btree.Disk_to_store.disk_to_store ~monad_ops:imp_monad_ops ~ps ~disk_ops ~free_ops
+  let map_ops ~page_ref_ops : ('k,'v,'t) Tjr_btree.Map_ops.map_ops = 
+    Tjr_btree.Store_to_map.store_ops_to_map_ops
+      ~monad_ops:imp_monad_ops
+      ~constants:(ps#constants)
+      ~cmp:(ps#cmp)
       ~store_ops  
       ~page_ref_ops 
 end
 include Map_int_blk_id
 
 let read,write = 
-  X.Disk_ops.dest_disk_ops disk_ops @@ fun ~blk_sz ~read ~write -> 
+  Tjr_btree.Disk_ops.dest_disk_ops disk_ops @@ fun ~blk_sz ~read ~write -> 
   read,write
+
 
 (* write_blk and read_blk based on disk_ops *)
 let imp_write_block blk = 
-  free_ops.get () |> bind @@ fun blk_id -> 
-  write blk_id blk |> bind @@ fun _ -> 
-  free_ops.set (blk_id+1) |> bind @@ fun () -> 
+  free_ops.get () >>= fun blk_id -> 
+  write blk_id blk >>= fun _ -> 
+  free_ops.set (blk_id+1) >>= fun () -> 
   return blk_id
 
 let imp_read_block blk_id =
-  read blk_id |> bind @@ fun blk ->
+  read blk_id >>= fun blk ->
   return (Some blk)
 
 (* files are implemented using the (index -> blk) map *)
 let mk_map_int_blk_ops ~page_ref_ops (* : map_ops *) = 
   let map_ops = map_ops ~page_ref_ops in
-  X.Map_int_blk.mk_int_blk_map 
+  Tjr_btree.Map_int_blk.mk_int_blk_map 
     ~write_blk:imp_write_block 
     ~read_blk:imp_read_block 
     ~map_ops
@@ -68,13 +71,13 @@ let blit_buffer_string = Core.Bigstring.To_string.blit
 (* requires dst_pos + src_len <= blk_sz; FIXME inefficient *)
 let buf_block_blit ~blk_sz ~src ~src_pos ~len ~dst ~dst_pos = (
   assert (dst_pos + len <= blk_sz);
-  dst |> X.Block.to_string |> fun dst -> 
+  dst |> Tjr_btree.Block.to_string |> fun dst -> 
   blit_buffer_string ~src ~src_pos ~len ~dst ~dst_pos : unit)
 
 let block_buf_blit ~blk_sz ~src ~src_pos ~len ~dst ~dst_pos = (
   assert (dst_pos + len <= buffer_length dst);
   assert (src_pos + len <= blk_sz);
-  src |> X.Block.to_string |> fun src ->
+  src |> Tjr_btree.Block.to_string |> fun src ->
   blit_string_buffer ~src ~src_pos ~len ~dst ~dst_pos : unit)
 
 
@@ -115,9 +118,10 @@ let rec assoc_list_to_bst kvs =
     fun k' -> if k' < k then f1 k' else f2 k'
 [@@warning "-8"]
 
-type ('k,'r)rstk = ('k,'r) X.Rstk.rstk
+type ('k,'r)rstk = ('k,'r) Tjr_btree.Rstk.rstk
 
-let stack_to_lu_of_child = X.Isa_export.Tree_stack.rstack_get_bounds
+
+let stack_to_lu_of_child = Isa_export.Tree_stack.rstack_get_bounds
 
 (* t is the root block of the idx_map; TODO this should make sure
    not to read beyond the end of file *)
@@ -150,7 +154,7 @@ let pread'
   assert (dst_pos + len <= buffer_length dst);
   (* read the relevant leaf *)
   let blk_i = src_pos / blk_sz in
-  find_leaf blk_i r |> bind @@ fun (_,kvs,rstk) ->
+  find_leaf blk_i r >>= fun (_,kvs,rstk) ->
   (* kvs is the map from idx -> block_id; rstk tells us the
      maximum block we can try to read; restrict len so that we
      do not try to read past u; NOTE that u is strictly
@@ -161,7 +165,7 @@ let pread'
   let limit_blk = u |> option_case ~_None:max_int ~_Some:(fun i -> i) in
   (* convert kvs to map for ease of use *)
   let map = assoc_list_to_bst kvs in
-  let empty_blk = lazy (X.Block.of_string blk_sz "") in
+  let empty_blk = lazy (Tjr_btree.Block.of_string blk_sz "") in
   let rec loop ~src_pos ~len ~dst_pos ~n_read = 
     let blk_i = src_pos / blk_sz in
     match len=0 || blk_i >= limit_blk with
@@ -173,7 +177,7 @@ let pread'
       |> option_case 
         ~_None:(return (Lazy.force empty_blk))
         ~_Some:(fun i -> i)
-      |> bind @@ fun blk -> 
+      >>= fun blk -> 
       (* NOTE len > 0 and 0 <= blk_offset < blk_sz *)
       let len' = min len (blk_sz - blk_offset) in
       block_buf_blit 
@@ -223,7 +227,7 @@ let pwrite'
   assert (src_pos + len <= buffer_length src);
   (* for dst, file size can grow *)
   let blk_i = dst_pos / blk_sz in
-  find_leaf blk_i r |> bind @@ fun (_,kvs,rstk) ->
+  find_leaf blk_i r >>= fun (_,kvs,rstk) ->
   (* kvs is the map from idx -> block_id *)
   let (_,u) = stack_to_lu_of_child rstk in
   (* do not attempt to write block u or higher *)
@@ -237,7 +241,7 @@ let pwrite'
     match len=0 || blk_i >= limit_blk || List.length kvs >= 2*max_leaf_keys with
     | true -> 
       (* Now execute the up stage of insert_many to get a new page_ref *)
-      insert_many_up kvs rstk |> bind @@ fun r ->
+      insert_many_up kvs rstk >>= fun r ->
       kk ~r ~sz:(max dst_size (dst_pos+n_wrote)) ~n_wrote
     | _ -> 
       let blk_offset = src_pos mod blk_sz in
@@ -249,9 +253,9 @@ let pwrite'
           (* a partial block write; read the original block *)
           map blk_i 
           |> option_case
-            ~_None:(return (X.Block.of_string blk_sz ""))
+            ~_None:(return (Tjr_btree.Block.of_string blk_sz ""))
             ~_Some:(fun i -> read_block i)
-          |> bind @@ fun orig_blk -> 
+          >>= fun orig_blk -> 
           buf_block_blit 
             ~blk_sz ~src ~src_pos ~len:len' ~dst:orig_blk ~dst_pos:blk_offset; 
           return orig_blk
@@ -260,14 +264,14 @@ let pwrite'
         | false ->
           (* NOTE blk_offset = 0 && len' >= blk_sz ie len'=blk_sz *)
           assert (blk_offset = 0 && len' = blk_sz);
-          X.Block.of_string blk_sz "" |> fun dst -> 
+          Tjr_btree.Block.of_string blk_sz "" |> fun dst -> 
           buf_block_blit ~blk_sz ~src ~src_pos ~len:blk_sz ~dst ~dst_pos:0;
           return dst
           (* FIXME inefficient create of initial block? *)
       end
-      |> bind @@ fun blk ->
+      >>= fun blk ->
       (* now write the blk and get a new blk_id to insert into kvs *)
-      write_block blk |> bind @@ fun r ->
+      write_block blk >>= fun r ->
       let kvs = kvs_insert blk_i r kvs in
       loop 
         ~src_pos:(src_pos+len') ~len:(len-len') ~dst_pos:(dst_pos+len') 

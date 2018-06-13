@@ -5,11 +5,13 @@
 (* all stores share the same free space map *)
 
 open Imp_pervasives
-open X.Base_types
+open Tjr_btree.Base_types  (* mref *)
 
 open Imp_state
 
+let with_world = Tjr_monad.State_passing_instance.with_world
+
 let free_ops = {
-  get=(fun () -> fun t -> (t,Ok t.free));
-  set=(fun free -> fun t -> ({t with free}, Ok ()));
+  get=(fun () -> with_world (fun t -> t.free,t));
+  set=(fun free -> with_world (fun t -> ((), {t with free})));
 }
