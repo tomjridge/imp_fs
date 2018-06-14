@@ -18,7 +18,8 @@
 
 *)
 
-open Tjr_fs_shared.Monad
+open Tjr_btree.Base_types (* mref *)
+open Tjr_monad.Monad
 open Persistent_list
 
 
@@ -49,23 +50,26 @@ type ('e,'ptr,'t) pcl_ops = {
 
 
 let make_persistent_chunked_list 
+    ~monad_ops
     ~list_ops 
     ~repr_ops 
     ~(pcl_state_ref : (('e,'repr) pcl_state,'t) mref)
     : ('e,'ptr,'t) pcl_ops
   =
+  let ( >>= ) = monad_ops.bind in
+  let return = monad_ops.return in
   let read_state,write_state = pcl_state_ref.get, pcl_state_ref.set in
   let { replace_last; new_node } = list_ops in
   let { nil; snoc } = repr_ops in
   let insert (e:'e) = 
-    read_state () |> bind @@ fun s ->
+    read_state () >>= fun s ->
     let { elts; elts_repr } = s in
     snoc e elts_repr |> function
     | `Ok new_elts_repr -> 
       let s = { elts=s.elts@[e]; elts_repr = new_elts_repr } in
-      write_state s |> bind @@ fun () ->
+      write_state s >>= fun () ->
       (* we can write the new contents into the list *)
-      replace_last new_elts_repr |> bind @@ fun () ->
+      replace_last new_elts_repr >>= fun () ->
       return Inserted_in_current_node
     | `Error_too_large ->
       (* we can't fit this new elt; so make a new node and try again *)
@@ -76,16 +80,17 @@ let make_persistent_chunked_list
         failwith __LOC__
       | `Ok new_elts_repr ->
         let s = { elts=[e]; elts_repr=new_elts_repr } in
-        write_state s |> bind @@ fun () ->
+        write_state s >>= fun () ->
         (* NOTE the following allocates a new node and updates the
            pointer in the old node *)
-        new_node new_elts_repr |> bind @@ fun ptr ->
+        new_node new_elts_repr >>= fun ptr ->
         return (Inserted_in_new_node ptr)
   in
   { insert }
 
 
 let _ : 
+  monad_ops:'t monad_ops ->
   list_ops:('repr, 'ptr, 't) list_ops -> 
   repr_ops:('e, 'repr) repr_ops -> 
   pcl_state_ref:(('e, 'repr) pcl_state, 't) mref 
@@ -185,17 +190,34 @@ module Test = struct
       pclist_state={ elts; elts_repr };
     }
 
+  
+  (* monad ops ------------------------------------------------------ *)
+
+  open Tjr_monad
+  open Tjr_monad.Monad
+
+  let monad_ops : ('k,'v) state state_passing monad_ops = 
+    Tjr_monad.State_passing_instance.monad_ops ()
+
+  let ( >>= ) = monad_ops.bind 
+  let return = monad_ops.return
+
+  let with_world = Tjr_monad.State_passing_instance.with_world
+  
+
 
   (* list ops ------------------------------------------------------- *)
 
-  let list_ops () : (('k, 'v) repr, 'ptr, ('k, 'v) state) Pl.list_ops = 
+  let list_ops () : (('k, 'v) repr, 'ptr, ('k, 'v) state state_passing) Pl.list_ops = 
     Pl.make_persistent_list
-      ~write_node:(fun ptr node -> fun s -> ({ s with map=(ptr,node)::s.map },Ok ()))
+      ~monad_ops
+      ~write_node:(fun ptr node -> 
+          with_world (fun s -> ((),{ s with map=(ptr,node)::s.map })))
       ~plist_state_ref:{
-        get=(fun () -> fun s -> (s,Ok s.plist_state));
-        set=(fun plist_state -> fun s -> ({s with plist_state},Ok ()))
+        get=(fun () -> with_world (fun s -> (s.plist_state,s)));
+        set=(fun plist_state -> with_world (fun s -> ((),{s with plist_state})))
       }
-      ~alloc:(fun () -> fun s -> ({ s with free=s.free+1 },Ok s.free))
+      ~alloc:(fun () -> with_world (fun s -> (s.free,{ s with free=s.free+1 })))
 
   let _ = list_ops
 
@@ -205,11 +227,12 @@ module Test = struct
 
   let chunked_list ~repr_ops =
     make_persistent_chunked_list
+      ~monad_ops
       ~list_ops:(list_ops ())
       ~repr_ops
       ~pcl_state_ref:{
-        get=(fun () -> fun s -> (s,Ok s.pclist_state));
-        set=(fun pclist_state -> fun s -> ({s with pclist_state},Ok ()));
+        get=(fun () -> with_world (fun s -> (s.pclist_state,s)));
+        set=(fun pclist_state -> with_world (fun s -> ((),{s with pclist_state})));
       }
 
   let _ : repr_ops:('e,'repr)repr_ops -> ('e,'ptr,'t) pcl_ops
@@ -230,12 +253,12 @@ module Test = struct
         match xs with 
         | [] -> return ()
         | (k,v)::xs -> 
-          insert (Insert(k,v)) |> bind @@ fun _ ->
+          insert (Insert(k,v)) >>= fun _ ->
           f xs
       in
       f xs
     in  
-    cmds init_state |> fun (s,Ok x) -> 
+    State_passing_instance.run ~init_state cmds |> fun (x,s) -> 
     assert(x=());
     s
 

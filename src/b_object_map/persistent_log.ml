@@ -28,10 +28,10 @@ open Imp_fs;;
 
 open Tjr_map
 
-open Tjr_fs_shared.Monad
+open Tjr_monad.Monad
 open Imp_pervasives
-open X.Block
-
+open Tjr_btree.Block
+open Tjr_btree.Base_types  (* mref *)
 
 (* we construct on top of a persistent_chunked_list *)
 
@@ -122,30 +122,33 @@ let map_union ~map_ops ~m1 ~m2 =
 (* FIXME what about initialization? *)
 
 let make_plog_ops
+    ~monad_ops
     ~map_ops
     ~insert
     ~plog_state_ref
   : ('k,'v,'map,'ptr,'t) plog_ops 
   =
+  let ( >>= ) = monad_ops.bind in
+  let return = monad_ops.return in  
   let { map_find; map_add; map_empty } = map_ops in
   let map_union m1 m2 = Tjr_map.map_union ~map_ops ~m1 ~m2 in
   (* NOTE get and set are for the plog_state component of the state *)
   let {get;set} = plog_state_ref in
   (* ASSUME start_block is initialized and consistent with pcl_state *)
   let find k : (('k,'v) op option,'t) m =
-    get () |> bind @@ fun s ->
+    get () >>= fun s ->
     let map_find = map_find_union ~map_ops ~m1:s.map_past ~m2:s.map_current in    
     let r = map_find k in
     return r
   in    
   let add op =
-    get () |> bind @@ fun s ->
-    insert op |> bind @@ function
+    get () >>= fun s ->
+    insert op >>= function
     | Inserted_in_current_node ->
-      get () |> bind @@ fun s' ->
+      get () >>= fun s' ->
       set { s' with map_current=map_ops.map_add (op2k op) op s'.map_current } 
     | Inserted_in_new_node ptr ->
-      get () |> bind @@ fun s' ->
+      get () >>= fun s' ->
       set { s' with 
             current_block=ptr;
             map_past=map_union s.map_past s.map_current;
@@ -157,11 +160,11 @@ let make_plog_ops
      step" detach without the use of bind, which introduces
      non-atomicity *)
   let detach () =  
-    get () |> bind @@ fun s ->
+    get () >>= fun s ->
     let r = (s.start_block,s.map_past,s.current_block) in
     (* we need to adjust the start block and the map_past - we are
        forgetting everything in previous blocks *)
-    set { s with start_block=s.current_block; map_past=map_empty } |> bind @@ fun () ->
+    set { s with start_block=s.current_block; map_past=map_empty } >>= fun () ->
     return r
   in
   { find; add; detach }  
@@ -239,16 +242,21 @@ let find k dbg =
 
 type tmp = Yojson.Safe.json option [@@deriving yojson]
 
+let with_world = Tjr_monad.State_passing_instance.with_world
+
+
 (* take an existing plog ops, and add testing code based on the dbg state *)
-let make_checked_plog_ops ~plog_ops ~plog_to_dbg ~set_dbg ~get_dbg 
+let make_checked_plog_ops ~monad_ops ~plog_ops ~plog_to_dbg ~set_dbg ~get_dbg 
   : ('k,'v,'map,'ptr,'t) plog_ops
   = 
-  let get_state () = fun s -> (s,Ok s) in
-  let set_state s' = fun s -> (s',Ok ()) in
+  let ( >>= ) = monad_ops.bind in
+  let return = monad_ops.return in  
+  let get_state () = with_world (fun s -> (s,s)) in
+  let set_state s' = with_world (fun s -> ((),s')) in
   let find k = 
-    get_state () |> bind @@ fun s ->
+    get_state () >>= fun s ->
     let expected = find k (get_dbg s) in
-    plog_ops.find k |> bind @@ fun v ->
+    plog_ops.find k >>= fun v ->
     Imp_pervasives.log_ops.Tjr_log.log_lazy (fun () ->
         expected |> find_result_to_yojson |> fun expected ->
         v |> find_result_to_yojson |> fun v ->
@@ -260,9 +268,9 @@ let make_checked_plog_ops ~plog_ops ~plog_to_dbg ~set_dbg ~get_dbg
     return v
   in
   let add op = 
-    get_state () |> bind @@ fun s ->
-    plog_ops.add op |> bind @@ fun () ->
-    get_state () |> bind @@ fun s' ->
+    get_state () >>= fun s ->
+    plog_ops.add op >>= fun () ->
+    get_state () >>= fun s' ->
     get_dbg s |> fun dbg ->
     plog_to_dbg (* ~ptr:(s'|>start_block) *) s' |> fun dbg' ->
     Imp_pervasives.log_ops.Tjr_log.log_lazy (fun () ->
@@ -272,16 +280,16 @@ let make_checked_plog_ops ~plog_ops ~plog_to_dbg ~set_dbg ~get_dbg
           (dbg_to_yojson dbg' |> Yojson.Safe.pretty_to_string));
     assert(dbg2list dbg' = (op::(dbg2list dbg)));
     (* now need to update the dbg state *)
-    set_state (s' |> set_dbg dbg') |> bind @@ fun () ->
+    set_state (s' |> set_dbg dbg') >>= fun () ->
     return ()
   in
   let detach () = 
-    plog_ops.detach () |> bind @@ fun r ->
-    get_state () |> bind @@ fun s' ->
+    plog_ops.detach () >>= fun r ->
+    get_state () >>= fun s' ->
     (* set dbg state *)
     plog_to_dbg (* ~ptr:(s'|>start_block) *) s' |> fun dbg' ->
     set_dbg dbg' s' |> fun s' ->
-    set_state s' |> bind @@ fun () ->
+    set_state s' >>= fun () ->
     return r
   in  
   { find; add; detach }
@@ -316,14 +324,23 @@ module Test : sig val test : depth:int -> unit end = struct
     }
   end
 
+
+  open Tjr_monad
+  open Tjr_monad.Monad
+
+  let monad_ops : ('k,'v,'map,'dbg) state state_passing monad_ops = 
+    Tjr_monad.State_passing_instance.monad_ops ()
+  
+
   (* NOTE FIXME copied from pcl *)
   let list_ops () = Pl.make_persistent_list
-      ~write_node:(fun ptr node -> fun s -> ({ s with map=(ptr,node)::s.map },Ok ()))
+      ~monad_ops
+      ~write_node:(fun ptr node -> with_world (fun s -> ((),{ s with map=(ptr,node)::s.map })))
       ~plist_state_ref:{
-        get=(fun () -> fun s -> (s,Ok s.plist_state));
-        set=(fun plist_state -> fun s -> ({s with plist_state},Ok ()))
+        get=(fun () -> with_world (fun s -> (s.plist_state,s)));
+        set=(fun plist_state -> with_world (fun s -> ((),{s with plist_state})))
       }
-      ~alloc:(fun () -> fun s -> ({ s with free=s.free+1 },Ok s.free))
+      ~alloc:(fun () -> with_world (fun s -> (s.free,{ s with free=s.free+1 })))
 
   let _ = list_ops
 
@@ -333,11 +350,12 @@ module Test : sig val test : depth:int -> unit end = struct
 
   let chunked_list () =
     make_persistent_chunked_list
+      ~monad_ops
       ~list_ops:(list_ops ())
       ~repr_ops
       ~pcl_state_ref:{
-        get=(fun () -> fun s -> (s,Ok s.pclist_state));
-        set=(fun pclist_state -> fun s -> ({s with pclist_state},Ok ()));
+        get=(fun () -> with_world (fun s -> (s.pclist_state,s)));
+        set=(fun pclist_state -> with_world (fun s -> ((),{s with pclist_state})));
       }
 
   let _ = chunked_list
@@ -345,16 +363,17 @@ module Test : sig val test : depth:int -> unit end = struct
   let plog ~map_ops = 
     chunked_list () |> fun { insert } -> 
     make_plog_ops
+      ~monad_ops
       ~map_ops
       ~insert
       ~plog_state_ref:{
-        get=(fun () -> fun s -> (s,Ok s.plog_state));
-        set=(fun plog_state -> fun s -> ({s with plog_state}, Ok ()))
+        get=(fun () -> with_world (fun s -> (s.plog_state,s)));
+        set=(fun plog_state -> with_world (fun s -> ((),{s with plog_state})))
       }
 
   let _ : 
     map_ops:('k, ('k, 'v) op, 'map) Tjr_map.map_ops -> 
-    ('k, 'v, 'map, ptr, ('k, 'v, 'map,'dbg) state) plog_ops 
+    ('k, 'v, 'map, ptr, ('k, 'v, 'map,'dbg) state state_passing) plog_ops 
     = plog
 
 
@@ -372,7 +391,7 @@ module Test : sig val test : depth:int -> unit end = struct
 
   let _ : unit ->
     (ptr, 'a, (ptr, 'a) op Map_int.t, ptr,
-     (ptr, 'a, (ptr, 'a) op Map_int.t,'dbg) state)
+     (ptr, 'a, (ptr, 'a) op Map_int.t,'dbg) state state_passing)
       plog_ops
     = plog
 
@@ -397,6 +416,7 @@ module Test : sig val test : depth:int -> unit end = struct
     let set_dbg = fun dbg s -> {s with dbg} in
     let get_dbg = fun s -> s.dbg in
     make_checked_plog_ops
+      ~monad_ops
       ~plog_ops
       ~plog_to_dbg
       ~set_dbg
@@ -404,7 +424,8 @@ module Test : sig val test : depth:int -> unit end = struct
 
 
 
-  let _ : (int,'v,'map,ptr,(int,'v,'map,'dbg)state)plog_ops = checked_plog ()
+  let _ : (int,'v,'map,ptr,(int,'v,'map,'dbg)state state_passing)plog_ops = 
+    checked_plog ()
 
 
   (* testing ------------------------------------------------------ *)
@@ -449,22 +470,23 @@ module Test : sig val test : depth:int -> unit end = struct
     (* we exhaustively test these operations up to a maximum depth;
        the test state is a decreasing count paired with the system
        state *)
+    let run = State_passing_instance.run in
     let rec step (count,s) =
       let f op = 
         num_tests:=!num_tests+1;
         match op with
         | `Detach -> 
           Imp_pervasives.log_ops.log "detach";
-          plog_ops.detach () s |> fun (s',_) -> s'
+          run ~init_state:s (plog_ops.detach ()) |> fun (_,s') -> s'
         | `Delete k -> 
           Printf.sprintf "delete(%d)" k |> Imp_pervasives.log_ops.log;
-          plog_ops.add (Delete(k)) s |> fun (s',_) -> s'
+          run ~init_state:s (plog_ops.add (Delete(k))) |> fun (_,s') -> s'
         | `Find k ->
           Printf.sprintf "find(%d)" k |> Imp_pervasives.log_ops.log;
-          plog_ops.find k s |> fun (s',_) -> s'
+          run ~init_state:s (plog_ops.find k) |> fun (_,s') -> s'
         | `Insert(k,v) -> 
           Printf.sprintf "insert(%d,%d)" k (k*2) |> Imp_pervasives.log_ops.log;
-          plog_ops.add (Insert(k,v)) s |> fun (s',_) -> s'
+          run ~init_state:s (plog_ops.add (Insert(k,v))) |> fun (_,s') -> s'
       in
       let f op = 
         f op |> fun s' ->        

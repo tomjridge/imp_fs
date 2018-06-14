@@ -7,8 +7,9 @@
 #require "tjr_lib";;
 *)
 
-open Tjr_fs_shared.Monad
-
+(* FIXME mref should be in tjr_monad *)
+open Tjr_btree.Base_types  (* mref *)
+open Tjr_monad.Monad
 
 (* nodes in the list have an optional next pointer, and contents *)
 (* FIXME rename to plist_node *)
@@ -35,30 +36,33 @@ type ('a,'ptr,'t) list_ops = {
 
 
 let make_persistent_list 
+    ~monad_ops
     ~(write_node : 'ptr -> ('ptr,'a) list_node -> (unit,'t) m) 
     ~(plist_state_ref : (('ptr,'a) plist_state,'t) mref)
     ~(alloc : unit -> ('ptr,'t) m)
     : ('a,'ptr,'t) list_ops
   =
+  let ( >>= ) = monad_ops.bind in
+  let return = monad_ops.return in
   let read_state,write_state = plist_state_ref.get, plist_state_ref.set in
   let replace_last contents = 
-    read_state () |> bind @@ fun s ->
+    read_state () >>= fun s ->
     let current_node = { s.current_node with contents } in
-    write_node s.current_ptr current_node |> bind @@ fun () ->
-    write_state { s with current_node } |> bind @@ fun () -> 
+    write_node s.current_ptr current_node >>= fun () ->
+    write_state { s with current_node } >>= fun () -> 
     return ()
   in
   let new_node contents = 
-    alloc () |> bind @@ fun new_ptr ->
-    read_state () |> bind @@ fun { current_ptr; current_node } ->
+    alloc () >>= fun new_ptr ->
+    read_state () >>= fun { current_ptr; current_node } ->
     (* write the current block with a valid next ptr *)
     let next = Some new_ptr in
-    {current_node with next } |> write_node current_ptr |> bind @@ fun () ->
+    {current_node with next } |> write_node current_ptr >>= fun () ->
     (* construct new node *)
     { next=None; contents } |> fun new_node ->
-    write_node new_ptr new_node |> bind @@ fun () ->
+    write_node new_ptr new_node >>= fun () ->
     { current_ptr=new_ptr; current_node=new_node } |> fun s ->
-    write_state s |> bind @@ fun () ->
+    write_state s >>= fun () ->
     return new_ptr
   in
   { replace_last; new_node }
@@ -94,7 +98,7 @@ let plist_to_list ~read_node ~ptr s =
 let rec plist_to_list ~read_node ~ptr =
   let acc = ref [] in
   let rec loop ptr = 
-    read_node ptr |> bind @@ fun { next; contents } ->
+    read_node ptr >>= fun { next; contents } ->
     acc:=contents::!acc;
     match next with
     | None -> return (List.rev !acc)
@@ -112,6 +116,9 @@ let _ = plist_to_list
 
 module Test = struct 
 
+  open Tjr_monad
+  open Tjr_monad.Monad
+
   (* the state of the whole system; 'a is the type of  *)
   type ('ptr,'a) state = {
     map: ('ptr*('ptr,'a)list_node) list;  (* association list *)
@@ -119,12 +126,20 @@ module Test = struct
     free: int;  (* iso to ptr *)
   }
 
+  let monad_ops : ('ptr,'a) state state_passing monad_ops = 
+    Tjr_monad.State_passing_instance.monad_ops ()
+
+  let ( >>= ) = monad_ops.bind 
+  let return = monad_ops.return
+
+  let with_world = Tjr_monad.State_passing_instance.with_world
+
   let read_node ptr s = List.assoc ptr s.map
 
 
-  let write_node ptr n = fun s -> 
+  let write_node ptr n = with_world (fun s -> 
     { s with map=(ptr,n)::s.map } |> fun s ->
-    (s,Ok ())
+    ((),s))
 
   let _ = write_node
 
@@ -146,14 +161,13 @@ module Test = struct
      *)
 
 
-  let read_state () = fun s -> 
-    (s,Ok s.cursor_state)
+  let read_state () = with_world (fun s -> (s.cursor_state,s))
 
   let _ = read_state
 
-  let write_state cursor_state = fun s ->
+  let write_state cursor_state = with_world (fun s ->
     { s with cursor_state } |> fun s ->
-    (s, Ok ())
+    ((),s))
 
   let _ = write_state
 
@@ -164,8 +178,8 @@ module Test = struct
   }
 
 
-  let alloc ~int_to_ptr = fun () -> fun s -> 
-    ({s with free=s.free+1},Ok (s.free |> int_to_ptr))
+  let alloc ~int_to_ptr = fun () -> with_world (fun s -> 
+      ((s.free |> int_to_ptr),{s with free=s.free+1}))
 
 
   let _ = alloc
@@ -180,7 +194,7 @@ module Test = struct
 
 
   (* FIXME note eta expansion; can we avoid? *)
-  let ops () = make_persistent_list ~write_node ~plist_state_ref ~alloc
+  let ops () = make_persistent_list ~monad_ops ~write_node ~plist_state_ref ~alloc
 
   let _ = ops
 
@@ -201,17 +215,17 @@ module Test = struct
 
   (* Write some new nodes, update some, and finally print out the list *)
   let main () = 
-    let get_state () = fun s -> (s,Ok s) in
+    let get_state () = with_world (fun s -> (s,s)) in
     let ops = ops () in
     let cmds = 
-      ops.replace_last "New start" |> bind @@ fun () ->
-      ops.new_node "second node" |> bind @@ fun _ ->
-      ops.new_node "third node" |> bind @@ fun _ ->
-      ops.replace_last "alternative third node" |> bind @@ fun () ->
-      get_state () |> bind @@ fun s ->
+      ops.replace_last "New start" >>= fun () ->
+      ops.new_node "second node" >>= fun _ ->
+      ops.new_node "third node" >>= fun _ ->
+      ops.replace_last "alternative third node" >>= fun () ->
+      get_state () >>= fun s ->
       return (plist_to_list ~read_node ~ptr:0 s)
     in
-    cmds init_state |> fun (s,Ok xs) ->
+    State_passing_instance.run ~init_state cmds |> fun (xs,s) ->
     assert(xs = ["New start";"second node";"alternative third node"]);
     xs |> Tjr_string.concat_strings ~sep:";" |> fun str ->
     print_endline str;
