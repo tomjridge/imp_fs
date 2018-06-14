@@ -7,7 +7,7 @@ type 't monad_ops = 't Tjr_monad.Monad.monad_ops
 
 (* keep this abstract for the time being FIXME really this is pervasive *)
 let imp_monad_ops : Imp_state.imp_state Tjr_monad.state_passing monad_ops = 
-  (fun x -> failwith __LOC__) ()  (* FIXME *)
+  Tjr_monad.State_passing_instance.monad_ops ()
 
 let ( >>= ) = imp_monad_ops.bind
 let return = imp_monad_ops.return

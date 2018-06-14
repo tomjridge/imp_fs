@@ -498,7 +498,7 @@ module Test : sig val test : depth:int -> unit end = struct
       in
       if count <= 0 then () else ops |> List.iter f
     in
-    Printf.printf "%s: tests starting...\n" __FILE__;
+    Printf.printf "%s: tests starting...\n%!" __FILE__;
     step (depth,init_state);
     Printf.printf "%s: ...tests finished\n" __FILE__;
     Printf.printf "%s: %d tests executed in total\n" __FILE__ !num_tests
