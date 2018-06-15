@@ -1,4 +1,4 @@
-(* FIXME commented for the time being
+(* FIXME commented for the time being; use mini-fs version
 
 (** FuSE integration *)
 

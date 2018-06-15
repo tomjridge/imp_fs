@@ -1,5 +1,7 @@
 (** POSIX operations on top of the object map *)
 
+(* FIXME replace this with mini-fs implementation
+
 (* imp_posix, various posix ops ------------------------------------ *)
 
 (* create and delete files and dirs; rename files and dirs; truncate
@@ -95,3 +97,4 @@ let _ = rename'
 
 let truncate () = failwith "TODO"
 
+*)

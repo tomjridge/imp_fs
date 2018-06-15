@@ -1,6 +1,6 @@
 (** The oft-repeated-almost-verbatim path resolution code *)
 
-(* FIXME replace with path_resolution from the separate gh repo *)
+(* FIXME replace with path_resolution from the separate gh repo 
 
 (* simple resolution of fuse absolute paths *)
 open Tjr_string
@@ -65,3 +65,4 @@ let _ = resolve'
 let resolve ~root_did ~did_to_map_ops ~_Error ~_Missing ~_Dir ~_File s = 
   string_to_components s (fun ~cs ~ends_with_slash ->
     resolve' ~root_did ~did_to_map_ops ~_Error ~_Missing ~_Dir ~_File ~cs ~ends_with_slash)
+*)

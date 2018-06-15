@@ -5,11 +5,11 @@ libname=imp_fs
 Libname=Imp_fs
 
 # for depend
-src_subdirs=`echo {a,b,c,d}_*`
-src_subdirs=`echo {a,am,b}_*`
+src_subdirs=`echo {a,am,b,c,d}_*`
+src_subdirs=`echo {a,am,b,c}_*`
 
-mls_in_subdirs=`ls {a,b,c,d}_*/*.ml`
-mls_in_subdirs=`ls {a,am,b}_*/*.ml`
+mls_in_subdirs=`ls {a,am,b,c,d}_*/*.ml`
+mls_in_subdirs=`ls {a,am,b,c}_*/*.ml`
 
 
 meta_description="ImpFS, a modern filesystem with some interesting features."
