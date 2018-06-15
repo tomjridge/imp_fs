@@ -239,7 +239,8 @@ let pread'
   let _ = kvs in
   let (_,u) = stack_to_lu_of_child rstk in
   (* do not attempt to read block u or higher; assume no file anywhere
-     near max_int blocks TODO *)
+     near max_int blocks TODO; FIXME also, check SibylFS spec for
+     pread beyond end of file *)
   let limit_blk = 
     u |> option_case 
       ~_None:(Blk_index.int2t max_int) 
