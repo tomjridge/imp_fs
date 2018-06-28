@@ -14,7 +14,7 @@ mls_in_subdirs=`ls {a,am,b,c}_*/*.ml`
 
 meta_description="ImpFS, a modern filesystem with some interesting features."
 
-required_packages="tjr_btree,tjr_lib,ppx_poly_record,Fuse,extunix,core,bin_prot,ppx_bin_prot"
+required_packages="tjr_btree,tjr_lib,Fuse,extunix,core,bin_prot,ppx_bin_prot" # ppx_poly_record,
 
 natives=""
 bytes=""
