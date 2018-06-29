@@ -1,0 +1,3 @@
+-*- org -*-
+
+- in dockerfile, run tests for all packages
