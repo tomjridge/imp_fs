@@ -200,18 +200,8 @@ So:
   - can take the blksz to be 2, 3, 4
 *)
 
-(* FIXME put this in tjr_lib or similar *)
-module Make_type_isomorphic_to_int() : sig
-  type t
-  val int2t: int -> t
-  val t2int: t -> int
-end = struct
-  type t = int
-  let int2t i = i
-  let t2int i = i
-end
 
-module Blk_index = Make_type_isomorphic_to_int()
+module Blk_index = Tjr_lib.Make_type_isomorphic_to_int()
 type blk_index = Blk_index.t
 
 (* FIXME this should be elsewhere *)
