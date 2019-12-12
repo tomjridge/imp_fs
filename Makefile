@@ -1,8 +1,12 @@
-all:
-	$(MAKE) -C src   all
-	$(MAKE) -C src   install
-	$(MAKE) -C bin   all
+TMP_DOC_DIR:=/tmp/tjr_impfs
+scratch:=/tmp/l/github/scratch
 
-clean:
-	$(MAKE) -C src clean
-	$(MAKE) -C bin clean
+default: all
+
+-include Makefile.ocaml
+
+run:
+	time $(DUNE) exec main
+
+# for auto-completion of Makefile target
+clean::

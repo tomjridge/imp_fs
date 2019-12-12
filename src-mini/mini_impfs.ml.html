@@ -1,0 +1,258 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN"
+"http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <title>mini_impfs.ml</title>
+<meta name="generator" content="emacs 26.3; htmlfontify 0.21" />
+<style type="text/css"><!-- 
+body { font-family: Ubuntu Mono;  font-stretch: normal;  font-weight: 500;  font-style: normal;  color: #232627;  background: #fcfcfc;  font-size: 11pt;  text-decoration: none; }
+span.default   { font-family: Ubuntu Mono;  font-stretch: normal;  font-weight: 500;  font-style: normal;  color: #232627;  background: #fcfcfc;  font-size: 11pt;  text-decoration: none; }
+span.default a { font-family: Ubuntu Mono;  font-stretch: normal;  font-weight: 500;  font-style: normal;  color: #232627;  background: #fcfcfc;  font-size: 11pt;  text-decoration: underline; }
+span.constant   { color: #008b8b;  font-family: Ubuntu Mono;  font-stretch: normal;  font-weight: 500;  font-style: normal;  background: #fcfcfc;  font-size: 11pt;  text-decoration: none; }
+span.constant a { color: #008b8b;  font-family: Ubuntu Mono;  font-stretch: normal;  font-weight: 500;  font-style: normal;  background: #fcfcfc;  font-size: 11pt;  text-decoration: underline; }
+span.keyword   { color: #a020f0;  font-family: Ubuntu Mono;  font-stretch: normal;  font-weight: 500;  font-style: normal;  background: #fcfcfc;  font-size: 11pt;  text-decoration: none; }
+span.keyword a { color: #a020f0;  font-family: Ubuntu Mono;  font-stretch: normal;  font-weight: 500;  font-style: normal;  background: #fcfcfc;  font-size: 11pt;  text-decoration: underline; }
+span.function-name   { color: #0000ff;  font-family: Ubuntu Mono;  font-stretch: normal;  font-weight: 500;  font-style: normal;  background: #fcfcfc;  font-size: 11pt;  text-decoration: none; }
+span.function-name a { color: #0000ff;  font-family: Ubuntu Mono;  font-stretch: normal;  font-weight: 500;  font-style: normal;  background: #fcfcfc;  font-size: 11pt;  text-decoration: underline; }
+span.string   { color: #8b2252;  font-family: Ubuntu Mono;  font-stretch: normal;  font-weight: 500;  font-style: normal;  background: #fcfcfc;  font-size: 11pt;  text-decoration: none; }
+span.string a { color: #8b2252;  font-family: Ubuntu Mono;  font-stretch: normal;  font-weight: 500;  font-style: normal;  background: #fcfcfc;  font-size: 11pt;  text-decoration: underline; }
+span.builtin   { color: #483d8b;  font-family: Ubuntu Mono;  font-stretch: normal;  font-weight: 500;  font-style: normal;  background: #fcfcfc;  font-size: 11pt;  text-decoration: none; }
+span.builtin a { color: #483d8b;  font-family: Ubuntu Mono;  font-stretch: normal;  font-weight: 500;  font-style: normal;  background: #fcfcfc;  font-size: 11pt;  text-decoration: underline; }
+span.variable-name   { color: #a0522d;  font-family: Ubuntu Mono;  font-stretch: normal;  font-weight: 500;  font-style: normal;  background: #fcfcfc;  font-size: 11pt;  text-decoration: none; }
+span.variable-name a { color: #a0522d;  font-family: Ubuntu Mono;  font-stretch: normal;  font-weight: 500;  font-style: normal;  background: #fcfcfc;  font-size: 11pt;  text-decoration: underline; }
+span.constructor   { font-family: Ubuntu Mono;  font-stretch: normal;  font-weight: 500;  font-style: normal;  color: #232627;  background: #fcfcfc;  font-size: 11pt;  text-decoration: none; }
+span.constructor a { font-family: Ubuntu Mono;  font-stretch: normal;  font-weight: 500;  font-style: normal;  color: #232627;  background: #fcfcfc;  font-size: 11pt;  text-decoration: underline; }
+span.comment   { color: #b22222;  font-family: Ubuntu Mono;  font-stretch: normal;  font-weight: 500;  font-style: normal;  background: #fcfcfc;  font-size: 11pt;  text-decoration: none; }
+span.comment a { color: #b22222;  font-family: Ubuntu Mono;  font-stretch: normal;  font-weight: 500;  font-style: normal;  background: #fcfcfc;  font-size: 11pt;  text-decoration: underline; }
+span.comment-delimiter   { color: #b22222;  font-family: Ubuntu Mono;  font-stretch: normal;  font-weight: 500;  font-style: normal;  background: #fcfcfc;  font-size: 11pt;  text-decoration: none; }
+span.comment-delimiter a { color: #b22222;  font-family: Ubuntu Mono;  font-stretch: normal;  font-weight: 500;  font-style: normal;  background: #fcfcfc;  font-size: 11pt;  text-decoration: underline; }
+span.type   { color: #228b22;  font-family: Ubuntu Mono;  font-stretch: normal;  font-weight: 500;  font-style: normal;  background: #fcfcfc;  font-size: 11pt;  text-decoration: none; }
+span.type a { color: #228b22;  font-family: Ubuntu Mono;  font-stretch: normal;  font-weight: 500;  font-style: normal;  background: #fcfcfc;  font-size: 11pt;  text-decoration: underline; }
+span.operator   { color: #a52a2a;  font-family: Ubuntu Mono;  font-stretch: normal;  font-weight: 500;  font-style: normal;  background: #fcfcfc;  font-size: 11pt;  text-decoration: none; }
+span.operator a { color: #a52a2a;  font-family: Ubuntu Mono;  font-stretch: normal;  font-weight: 500;  font-style: normal;  background: #fcfcfc;  font-size: 11pt;  text-decoration: underline; }
+span.module   { color: #228b22;  font-family: Ubuntu Mono;  font-stretch: normal;  font-weight: 500;  font-style: normal;  background: #fcfcfc;  font-size: 11pt;  text-decoration: none; }
+span.module a { color: #228b22;  font-family: Ubuntu Mono;  font-stretch: normal;  font-weight: 500;  font-style: normal;  background: #fcfcfc;  font-size: 11pt;  text-decoration: underline; }
+span.governing   { color: #000000;  background: #ffdead;  font-family: Ubuntu Mono;  font-stretch: normal;  font-weight: 500;  font-style: normal;  font-size: 11pt;  text-decoration: none; }
+span.governing a { color: #000000;  background: #ffdead;  font-family: Ubuntu Mono;  font-stretch: normal;  font-weight: 500;  font-style: normal;  font-size: 11pt;  text-decoration: underline; }
+span.doc   { color: #8b2252;  font-family: Ubuntu Mono;  font-stretch: normal;  font-weight: 500;  font-style: normal;  background: #fcfcfc;  font-size: 11pt;  text-decoration: none; }
+span.doc a { color: #8b2252;  font-family: Ubuntu Mono;  font-stretch: normal;  font-weight: 500;  font-style: normal;  background: #fcfcfc;  font-size: 11pt;  text-decoration: underline; }
+ --></style>
+
+    <script type="text/javascript"><!--
+  // this function is needed to work around
+  // a bug in IE related to element attributes
+  function hasClass(obj)
+  {
+      var result = false;
+      if (obj.getAttributeNode("class") != null)
+      {
+          result = obj.getAttributeNode("class").value;
+      }
+      return result;
+  }
+
+  function stripe(id)
+  {
+      // the flag we'll use to keep track of
+      // whether the current row is odd or even
+      var even = false;
+
+      // if arguments are provided to specify the colors
+      // of the even & odd rows, then use them;
+      // otherwise use the following defaults:
+      var evenColor = arguments[1] ? arguments[1] : "#fff";
+      var oddColor  = arguments[2] ? arguments[2] : "#ddd";
+
+      // obtain a reference to the desired table
+      // if no such table exists, abort
+      var table = document.getElementById(id);
+      if (! table) { return; }
+
+      // by definition, tables can have more than one tbody
+      // element, so we'll have to get the list of child
+      // &lt;tbody&gt;s
+      var tbodies = table.getElementsByTagName("tbody");
+
+      // and iterate through them...
+      for (var h = 0; h < tbodies.length; h++)
+      {
+          // find all the &lt;tr&gt; elements...
+          var trs = tbodies[h].getElementsByTagName("tr");
+
+          // ... and iterate through them
+          for (var i = 0; i < trs.length; i++)
+          {
+              // avoid rows that have a class attribute
+              // or backgroundColor style
+              if (! hasClass(trs[i]) &&
+                  ! trs[i].style.backgroundColor)
+              {
+                  // get all the cells in this row...
+                  var tds = trs[i].getElementsByTagName("td");
+
+                  // and iterate through them...
+                  for (var j = 0; j < tds.length; j++)
+                  {
+                      var mytd = tds[j];
+
+                      // avoid cells that have a class attribute
+                      // or backgroundColor style
+                      if (! hasClass(mytd) &&
+                          ! mytd.style.backgroundColor)
+                      {
+                          mytd.style.backgroundColor =
+                            even ? evenColor : oddColor;
+                      }
+                  }
+              }
+              // flip from odd to even, or vice-versa
+              even =  ! even;
+          }
+      }
+  }
+
+  function toggle_invis( name )
+  {
+      var filter =
+        { acceptNode:
+          function( node )
+          { var classname = node.id;
+            if( classname )
+            { var classbase = classname.substr( 0, name.length );
+              if( classbase == name ) { return NodeFilter.FILTER_ACCEPT; } }
+            return NodeFilter.FILTER_SKIP; } };
+      var walker = document.createTreeWalker( document.body           ,
+                                              NodeFilter.SHOW_ELEMENT ,
+                                              filter                  ,
+                                              false                   );
+      while( walker.nextNode() )
+      {
+          var e = walker.currentNode;
+          if( e.style.display == "none" ) { e.style.display = "inline"; }
+          else                            { e.style.display = "none";   }
+      }
+  }
+--> </script>
+  </head>
+  <body onload="stripe('index'); return true;">
+
+<pre><span class="doc">(** A mini version of ImpFS (imperative) *)</span>
+
+<span class="governing">module</span> <span class="module">M</span> <span class="operator">=</span> <span class="module">Tjr_monad</span>
+
+<span class="governing">open </span><span class="module">Write_back_cache</span>
+<span class="governing">type</span> <span class="operator">(</span><span class="type">'k</span><span class="operator">,</span><span class="type">'v</span><span class="operator">)</span><span class="type"> wbc</span>
+
+<span class="governing">type</span> <span class="type">lock</span>
+
+<span class="governing">type</span> <span class="operator">(</span><span class="type">'k</span><span class="operator">,</span><span class="type">'v</span><span class="operator">)</span><span class="type">map</span>
+
+<span class="governing">type</span> <span class="type">blk_id</span>
+<span class="governing">type</span> <span class="type">timestamp</span>
+<span class="comment-delimiter">(* </span><span class="comment">avoid making an explict record for this </span><span class="comment-delimiter">*)</span>
+<span class="governing">type</span> <span class="operator">(</span><span class="type">'k</span><span class="operator">,</span><span class="type">'v</span><span class="operator">)</span><span class="type"> lru</span> <span class="operator">=</span> <span class="operator">(</span><span class="governing">module</span> <span class="module">Lru.F.</span><span class="constructor">S</span> <span class="governing">with type</span> <span class="type">k</span><span class="operator">=</span>'k <span class="governing">and type</span><span class="variable-name"> </span><span class="type">v</span><span class="operator">=</span>'v<span class="operator">)</span>
+
+<span class="governing">type</span> <span class="type">did</span>
+<span class="governing">type</span> <span class="type">id</span>
+<span class="governing">type</span> <span class="type">dep</span>
+
+<span class="governing">type</span> <span class="type">op</span> <span class="comment-delimiter">(* </span><span class="comment">add, del </span><span class="comment-delimiter">*)</span>
+
+<span class="governing">type</span> <span class="type">dinode</span> <span class="operator">=</span> <span class="operator">{</span>
+  ptr_to_btree_root_and_pcache_root<span class="operator">:</span> unit <span class="comment-delimiter">(* </span><span class="comment">FIXME </span><span class="comment-delimiter">*)</span>
+<span class="operator">}</span>
+
+<span class="doc">(** Type for the state of a particular directory; we use the
+   convention that m is the in-memory state, and d is the on-disk
+   state. *)</span>
+<span class="governing">module</span> <span class="module">Dir</span> <span class="operator">=</span> <span class="governing">struct</span>
+  <span class="governing">type</span> <span class="type">entries_m</span> <span class="operator">=</span> <span class="operator">(</span>string<span class="operator">,</span>op<span class="operator">*</span>dep option<span class="operator">)</span> wbc
+
+  <span class="doc">(** The first field records whether the did has been synced to disk
+     in the did_blk_map; once synced, it never changes; this allows us
+     to avoid many potential syncs to the did_blk_map if we already
+     know the entry is synced. *)</span>
+  <span class="governing">type</span> <span class="type">m</span> <span class="operator">=</span> <span class="operator">{</span> 
+    did_m                     <span class="operator">:</span> did<span class="operator">;</span>
+    did_synced_in_did_blk_map <span class="operator">:</span> bool<span class="operator">;</span>
+    <span class="comment-delimiter">(* </span><span class="comment">dinode_blk_id             : blk_id; </span><span class="comment-delimiter">*)</span>
+    <span class="comment-delimiter">(* </span><span class="comment">dinode                    : dinode; </span><span class="comment-delimiter">*)</span>
+    entries_m                 <span class="operator">:</span> entries_m<span class="operator">;</span>
+    dummy<span class="operator">:</span> unit<span class="operator">;</span>
+  <span class="operator">}</span>
+
+  <span class="governing">type</span> <span class="type">entries_d</span> <span class="operator">=</span> <span class="operator">(</span>string<span class="operator">,</span>id<span class="operator">)</span>map
+
+  <span class="governing">type</span> <span class="type">d</span> <span class="operator">=</span> <span class="operator">{</span>
+    did_d           <span class="operator">:</span> did<span class="operator">;</span>
+    entries_d       <span class="operator">:</span> entries_d<span class="operator">;</span>
+    <span class="comment-delimiter">(* </span><span class="comment">dinode_blk_id_d : blk_id; </span><span class="comment-delimiter">*)</span>
+    <span class="comment-delimiter">(* </span><span class="comment">dinode_d        : dinode; </span><span class="comment-delimiter">*)</span>
+    dummy<span class="operator">:</span> unit<span class="operator">;</span>
+  <span class="operator">}</span>
+
+  <span class="governing">let</span> <span class="variable-name">empty_wbc</span><span class="operator">:</span> <span class="operator">(</span><span class="type">string</span><span class="operator">,</span><span class="type">op</span><span class="operator">*</span><span class="type">dep option</span><span class="operator">)</span><span class="type"> wb</span><span class="type">c</span><span class="type"> </span><span class="operator">=</span> <span class="builtin">failwith</span> <span class="string">&quot;FIXME&quot;</span>
+
+  <span class="comment-delimiter">(* </span><span class="comment">type ops = Sync | Sync_1 of string </span><span class="comment-delimiter">*)</span>
+
+  <span class="governing">let</span> <span class="variable-name">merge_entries</span><span class="operator">:</span> <span class="type">entries_m </span><span class="operator">-&gt;</span><span class="type"> entries_d </span><span class="operator">-&gt;</span><span class="type"> entries_d </span><span class="operator">=</span> <span class="builtin">failwith</span> <span class="string">&quot;FIXME&quot;</span>
+
+  <span class="governing">let</span> <span class="function-name">maybe_sync_did</span><span class="variable-name"> _did</span> <span class="operator">:</span> <span class="operator">(</span><span class="type">unit</span><span class="operator">,</span><span class="type">'t</span><span class="operator">)</span><span class="module">M.</span><span class="type">m</span> <span class="operator">=</span> <span class="builtin">failwith</span> <span class="string">&quot;FIXME&quot;</span>
+
+  <span class="governing">let</span> <span class="function-name">sync</span><span class="variable-name"> </span><span class="operator">(</span><span class="variable-name">m</span><span class="operator">,</span><span class="variable-name">d</span><span class="operator">)</span> <span class="operator">=</span>
+    <span class="governing">let</span> <span class="variable-name">_</span> <span class="operator">=</span> maybe_sync_did m.did_m <span class="governing">in</span>
+    <span class="comment-delimiter">(* </span><span class="comment">FIXME here we need to ensure that did_synced_in_did_blk_map is true </span><span class="comment-delimiter">*)</span>
+    <span class="governing">let</span> <span class="variable-name">m'</span> <span class="operator">=</span> <span class="operator">{</span> m <span class="keyword">with</span> did_synced_in_did_blk_map<span class="operator">=</span><span class="constant">true</span><span class="operator">;</span> entries_m<span class="operator">=</span>empty_wbc<span class="operator">}</span> <span class="governing">in</span>
+    <span class="governing">let</span> <span class="variable-name">d'</span> <span class="operator">=</span> <span class="operator">{</span> d <span class="keyword">with</span> entries_d <span class="operator">=</span> merge_entries m.entries_m d.entries_d <span class="operator">}</span> <span class="governing">in</span>
+    <span class="operator">(</span>m'<span class="operator">,</span>d'<span class="operator">)</span>
+
+  <span class="governing">let</span> <span class="function-name">sync_1</span><span class="variable-name"> _name </span><span class="operator">(</span><span class="variable-name">m</span><span class="operator">,</span><span class="variable-name">_d</span><span class="operator">)</span> <span class="operator">=</span> 
+    <span class="governing">let</span> <span class="variable-name">_</span> <span class="operator">=</span> maybe_sync_did m.did_m <span class="governing">in</span>
+    <span class="builtin">failwith</span> <span class="string">&quot;FIXME&quot;</span>
+<span class="governing">end</span>
+
+<span class="governing">let</span> <span class="function-name">did_to_dir</span><span class="variable-name"> _did</span> <span class="operator">:</span> <span class="operator">(</span><span class="module">Dir.</span><span class="type">m</span><span class="operator">,</span><span class="type">'t</span><span class="operator">)</span><span class="type">m</span> <span class="operator">=</span> <span class="builtin">failwith</span> <span class="string">&quot;&quot;</span>
+
+<span class="doc">(** This is to ensure that there is only one Dir.m for each did; we
+   use &quot;with_dir did&quot; to take the relevant dir, and release it after
+   updates *)</span>
+<span class="governing">module</span> <span class="module">Did_dir_map</span> <span class="operator">=</span> <span class="governing">struct</span>
+  <span class="governing">type</span> <span class="type">ops</span> <span class="operator">=</span> <span class="constructor">With_did</span>
+  <span class="governing">type</span> <span class="type">m</span> <span class="operator">=</span> <span class="operator">(</span>did<span class="operator">,</span><span class="module">Dir.</span>m <span class="operator">*</span> lock<span class="operator">)</span> map  <span class="comment-delimiter">(* </span><span class="comment">the bool is the lock </span><span class="comment-delimiter">*)</span>
+<span class="governing">end</span>
+
+<span class="doc">(** A map from did to the blk_id for the corresponding dinode. Once
+   created, entries are never modified; however, we need a sync
+   operation to ensure that the did-&gt;blk_id entry is on disk before we
+   link a new dir into its parent. We use &quot;sync_1(did)&quot; and record the
+   sync status in the dir object (to avoid repeated unnecessary
+   syncs).
+
+   We can also assume that this map has its root recorded in blk 0, so
+   we don't need a root manager.
+
+*)</span>
+<span class="governing">module</span> <span class="module">Did_blk_map</span> <span class="operator">=</span> <span class="governing">struct</span>
+  <span class="governing">type</span> <span class="type">ops</span> <span class="operator">=</span> <span class="constructor">Sync</span> <span class="operator">|</span> <span class="constructor">Sync_1</span> <span class="keyword">of</span> did
+  <span class="governing">type</span> <span class="type">m</span> <span class="operator">=</span> <span class="operator">{</span>
+    entries <span class="operator">:</span> <span class="operator">(</span>did<span class="operator">,</span>blk_id<span class="operator">)</span>wbc<span class="operator">;</span>
+  <span class="operator">}</span>
+  <span class="governing">type</span> <span class="type">d</span> <span class="operator">=</span> <span class="operator">{</span>
+    entries_d <span class="operator">:</span> <span class="operator">(</span>did<span class="operator">,</span>blk_id<span class="operator">)</span>map<span class="operator">;</span>
+  <span class="operator">}</span>
+<span class="governing">end</span>
+
+  
+
+<span class="governing">module</span> <span class="module">Disk_state</span> <span class="operator">=</span> <span class="governing">struct</span>
+  <span class="governing">type</span> <span class="type">t</span> <span class="operator">=</span> <span class="operator">{</span>
+    did_blk_map<span class="operator">:</span> <span class="operator">(</span>did<span class="operator">,</span>blk_id<span class="operator">)</span>map<span class="operator">;</span>
+  <span class="operator">}</span>    
+    
+  
+<span class="governing">end</span>
+</pre>
+
+ </body>
+</html>

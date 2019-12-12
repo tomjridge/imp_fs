@@ -1,0 +1,13 @@
+(env
+  (_ (flags (:standard -open Base.Either -open Tjr_lib -open Tjr_monad -open Tjr_fs_shared -open Tjr_path_resolution -open Tjr_net ))))
+
+
+(library
+  (public_name "tjr_mini_impfs")
+  (preprocess (pps ppx_deriving_yojson ppx_jane))
+  (libraries ppx_jane ppx_deriving_yojson tjr_kv tjr_minifs lru)
+)
+
+(include_subdirs unqualified)
+
+
