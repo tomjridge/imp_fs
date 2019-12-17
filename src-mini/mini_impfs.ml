@@ -19,7 +19,7 @@ type ('k,'v)map
 type blk_id
 
 (* avoid making an explict record for this *)
-type ('k,'v) lru = (module Lru.F.S with type k='k and type v='v)
+(* open Tjr_lru.Lru_ops *)
 
 type did
 type id
@@ -96,21 +96,41 @@ let did_to_dir _did : (Dir.m,'t)m = failwith ""
 
 (** {2 Dep map} *)
 
+(** The dep map is a map of entries: from -> to, corresponding to a
+   rename. When we flush from, we first flush to. If we rename to to
+   to', we need to update the map so that from -> to' *)
+
 module Dep_map = struct
 
   (** We need to be able to add an entry on a rename; we also need to
      be able to alter an entry if we rename the dst/f again. This
      means that we need to index by the dst,id pair. Obviously we also
      need to lock this for concurrent use. FIXME we may need to lock
-     multiple objects simultaneously. *)
+     multiple objects simultaneously. 
 
-  type dep_map = (k,dep) lru
-  and k = { dst:did; id:id }
-  and dep = { src:did; src_name:string; dst_name:string }
+      NOTE that in an entry (from,to) we expect the id to be the same
+  *)
+  type to_  = { dst:did; dst_name:string; id:id }
+  type from = { src:did; src_name:string; id:id }
+           
+  (** An LRU of identifiers; we promote an id whenever we deal with it; overkill? *)
+  module Lru_ = Tjr_lru.Make_lru(struct type t = id let compare: t -> t -> int = Pervasives.compare end)(struct type t = unit end)
+  let lru_ops = Lru_.lru_ops
+
+  (** A map from from<->to *)
+  module B = Bimap.Make_bimap(struct type t = from let compare = Pervasives.compare end)(struct type t = to_ let compare = Pervasives.compare end)
+  let bimap_ops = B.bimap_ops
+
+  (** The dependency map; an LRU which tracks from<->to entries *)
+  type dep_map = {
+    lru: Lru_.t;
+    bimap: B.t
+  }
 
   type t = dep_map
 
   type with_dep_map = (t,monadic_t) M.with_state
+
 
   (** Functionally update a dependency map.
 
@@ -118,10 +138,24 @@ sync_did: if we need to sync a directory to disk, we also need to
      sync_1 any dependencies; this returns the list of dependencies
      for a given directory *)
   type dep_map_ops = {
-    rename     : from:(did*string*id) -> to_:(did*string*id) -> t -> t;
-    maybe_trim : t -> (k*dep)list * t;
-    sync_did   : did -> t -> (k*dep)list * t; 
+    rename     : from:from -> to_:to_ -> t -> t;
+    maybe_trim : t -> (from*to_)list * t;  (* FIXME we should trim a particular id? *)
+    sync_did   : did -> t -> (from*to_)list * t; 
   }
+
+  (* FIXME actually, we are not working with a bimap, since rename x
+     y, rename x' y overwrites the dependence on x y; so we are
+     working with a function where we can go from a y to the
+     corresponding x; an invertible function rather than a relation *)
+(*
+  let rename ~from ~to_ t = 
+    (* lookup to see if there is a dependency for xxx->from already *)
+    bimap_ops.find_y to_ t |> function
+    | None -> (
+        (* just add to t *)
+        bimap_ops.add (from,to_) t )
+    | Some (from',to') -> 
+*)   
 
   
 end
@@ -153,8 +187,11 @@ end
 *)
 module Did_blk_map = struct
   type ops = Sync | Sync_1 of did
+  type entries
+  type ('a,'b,'c) wbc_ops
+  let wbc_ops: (did,blk_id,entries) wbc_ops = failwith ""
   type m = {
-    entries : (did,blk_id)wbc;
+    entries : entries;
   }
   type d = {
     entries_d : (did,blk_id)map;
