@@ -27,6 +27,25 @@ A free list contains the following:
    transient (in-memory) list of free blks that can be persisted with
    a sync operation
 
+
+Normally we allocate from the transient list. If this is geting small,
+   we spawn a thread to free up some more. If we run out of
+   transients, then threads that are trying to allocate have to wait
+   till transients becomes non-empty. Presumably we would like the
+   waiting threads to be unblocked in the order that they were
+   blocked. So just store a list of (blk_id event)s, and reverse and
+   signal them in turn.
+
+We might have the problem that in the time it takes to do this, we
+   have so many waiting threads that we have to go back to the
+   disk. So we need some back-pressure, to reduce the rate of requests
+   to the free list.
+
+For the time being, we parameterize by the number of blkids to free,
+   and assume this is "big enough".
+
+
+
 *)
 
 type blk_id  = int (* a blk_id corresponding to a blk storing data of type 'a *)
@@ -48,16 +67,36 @@ and blks = { blks: blk_id list; prev: blk_id option }
 
 module Free_list = struct
 
+(*
   (** A singly-linked on-disk list of blks; conceptually this is just a list (or set) of blk_ids *)
   type on_disk_blk = {
     blks         : blks;
     backing_blk  : blk_id;
   }
+*)
 
-  type free_list = {
-    free_from    : blk_id option;
-    on_disk_root : blk_id; (* blk_id of the head of the blk2 list *)
-    transient    : blk_id list;  (* not part of the on-disk freelist *)
+  (* another type of on-disk blk *)
+  type root_blk = {
+    blk2_list : blk_id; (* blk_id of the head of the blk2 list *)
+    free_from : blk_id option;
+  }
+
+  type 't free_list = {
+    root_blk           : blk_id;  (* address of root blk *)
+    blk2_list          : blk_id;
+    free_from          : blk_id option;
+    transient          : blk_id list;  (* not part of the on-disk freelist *)
+    disk_thread        : blk_id Event.event option;
+    (* if transient is empty we spawn an async thread to fiddle with
+       the disk and free some blkids *)
+
+    (* waiting threads: threads wait directly on disk_thread; if this
+       contains any blocked threads then we expect the disk_thread to
+       be active; since the whole state is protected by a mutex, we
+       don't have to explicitly lock the wait list; this is presumably
+       the "sheep pen" pattern, where threads accumulate waiting for
+       some particular event to occur *)
+
   }
 
 end
@@ -75,7 +114,7 @@ end
 
 module Example_store = struct
   (* store from blk 0 *)
-  
+
   (* blk0 is the root of the freelist *)
   let blk0 = Blk2 { blks=[10;20]; prev=None; }
   let blk10 = Blk1 { blks=[11;12;13]; prev=None }
@@ -98,23 +137,110 @@ module Example_store = struct
      makeup the freelist itself *)
   let store_to_frees ~store ~root = 
     (* root is a ptr to a blk2 *)
-    let acc : blk_id list = [] in
+    let fl : blk_id list ref = ref [] in
+    let store_find id store = 
+      fl:=id::!fl;
+      Store.find id store
+    in
+    let acc : blk_id list list ref = ref [] in
     let rec f = function
       | Blk1{blks;prev} -> f1 {blks;prev}
       | Blk2{blks;prev} -> f2 {blks;prev}
-    and f1 {blks;prev} = (
-        acc:=blks::!acc;
-        match prev with 
-        | None -> ()
-        | Some blk_id -> Store.find blk_id store |> dest_blk1 |> f1)
-    and f2 {blks;prev} = (
-        (* blks contains ids which point to Blk1s *)
-        blks |> List.iter (fun blk_id -> Store.find blk_id store |> dest_blk1 |> f1);
-        (* and recurse on the prev *)
-        match prev with
-        | None -> ()
-        | Some blk_id -> Store.find blk_id store |> dest_blk2 |> f2
+    and f1 {blks;prev} = 
+      acc:=blks::!acc;
+      match prev with 
+      | None -> ()
+      | Some blk_id -> 
+        store_find blk_id store |> dest_blk1 |> f1
+    and f2 {blks;prev} = 
+      (* blks contains ids which point to Blk1s *)
+      blks |> List.iter (fun blk_id -> 
+          store_find blk_id store |> dest_blk1 |> f1);
+      (* and recurse on the prev *)
+      match prev with
+      | None -> ()
+      | Some blk_id -> (
+          store_find blk_id store |> dest_blk2 |> f2)
+    in
+    Store.find root store |> f;
+    root::!fl,!acc
 
-      
-
+  let _ = store_to_frees ~store ~root:0
+  (* the first component are the blks of the free list itself; the second are the data blocks *)
+  (* - : blk_id list * blk_id list list = ([0; 20; 10], [[21; 23]; [11; 12; 13]]) *)
 end
+
+
+(** Now we need to implement the interfaces *)
+
+(* blk_dev_ops type; these are assumed UNBUFFERED SYNCHRONOUS, ie a
+   write really writes *)
+type nonrec 't blk_dev_ops = (blk_id,block,'t) blk_dev_ops
+
+type 't fl_ops = {
+  alloc_acquire           : unit -> (blk_id,'t)m;
+  free_release            : blk_id -> (unit,'t)m;
+  release_list            : transients:blk_id list -> root:blk_id -> (unit,'t)m;  (* root points to a blk1 list *)
+  sync_root               : unit -> (unit,'t)m;
+  sync_root_and_transient : unit -> (unit,'t)m; 
+}
+
+(* In some sense, this is a custom version of the pcache (which is a
+   in-mem/on-disk split datastructure). Is it simpler just to use the
+   generic version, and log everything? But using this approach we can
+   free up all blks used by a file in a single on-disk ptr
+   operation. 
+
+   Probably it is worth separating out the component that deals with the list of lists.
+*)
+
+
+[@@@warning "-26-27"] (* FIXME *)
+
+
+let alloc_acquire ~monad_ops ~event_ops ~(blk_dev_ops:'t blk_dev_ops) ~with_state = 
+  let open Event in
+  let ( >>= ) = monad_ops.bind in
+  let return = monad_ops.return in
+  let {ev_create;ev_wait;ev_signal} = event_ops in
+  let {read;write;_} = blk_dev_ops in
+  let disk_thread ~ev = 
+    (* do some potentially-lengthy disk ops *)
+    return () >>= fun () -> 
+    (* get a list of transient free blks *)
+    let trans = [] (* FIXME *) in
+    (* get the state, wake the waiters, remove the disk_thread *)
+    with_state.with_state (fun ~state:fl ~set_state -> 
+      (* iterate over fl.wait_list, allocating new trans blkids *)
+      (* then put the remaining in the fl state *)
+      set_state { fl with transient=trans; disk_thread=None } >>= fun () ->
+      (* and terminate *)
+      return ())
+  in
+  with_state.with_state (fun ~state:fl ~set_state ->
+    match fl.transient with 
+    | x::xs -> (
+        set_state {fl with transient=xs} >>= fun () ->
+        return x)
+    | [] -> (
+        (* is the disk_thread already active? *)
+        match fl.disk_thread with 
+        | None -> (
+            (* add ourselves to the wait list, and spawn the disk thread *)
+            ev_create () >>= fun (ev:blk_id event) -> 
+            let async x = x in
+            async(disk_thread ~ev) >>= fun () -> 
+            let fl = { fl with disk_thread=Some ev } in
+            set_state fl >>= fun () -> 
+            print_endline "This line should be followed immediately...";
+            (* FIXME we need to be sure of the conc model here: this
+               should finish executing to allow the state lock to be
+               freed for the disk_thread *)
+            ev_wait ev >>= fun blk_id -> 
+            print_endline "...by another.";
+            return blk_id
+          )  
+        | Some ev -> (
+            (* just wait *)
+            ev_wait ev)
+      ))
