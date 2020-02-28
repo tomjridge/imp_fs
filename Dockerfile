@@ -1,5 +1,5 @@
 
-FROM ocaml/opam2:4.07
+FROM ocaml/opam2:4.09
 
 # some of the following apt packages are likely already installed
 RUN sudo apt-get install -y git make
@@ -15,9 +15,8 @@ RUN opam update
 
 # install some common packages, so they are cached in future docker builds
 RUN opam install dune ocamlfind odoc
-RUN opam install core_kernel 
-RUN opam install core
-RUN opam install re
+RUN opam install core_kernel core
+RUN opam install re psq ppx_deriving_yojson extlib alcotest ke bos fmt fileutils
 
 # drop the RUN prefix from the following lines (and ignore previous lines!)
 # to build using local opam install
