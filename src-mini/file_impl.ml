@@ -40,7 +40,7 @@ TODO:
 *)
 
 open Int_like
-open Buffers
+open Buffers_from_btree
 
 type 'fid file_id = { fid:'fid }
 
@@ -302,7 +302,7 @@ module Iter_block_blit = struct
     let return = monad_ops.return in
     let to_m,of_m = Imperative.(to_m,of_m) in
     let buf_ops = bytes_buf_ops in
-    let blk_ops = Common_blk_ops.String_.make ~blk_sz:(Blk_sz.of_int 2) in 
+    let blk_ops = Blk_factory.Internal.String_.make ~blk_sz:(Blk_sz.of_int 2) in 
     (* FIXME this needs to have blk_sz 2; FIXME perhaps make it
        clearer that Common_blk_ops.string_blk_ops has size 4096 *)
     let blk_sz = blk_ops.blk_sz |> Blk_sz.to_int in
@@ -522,48 +522,72 @@ let _ = make
 
 (* NOTE should test this on top of an in-mem store blk_index *)
 
+(** Test with 
+- imperative monad
+- blk_sz 2
+- blks are strings
+- blk_dev is in-memory, map from blk_id to blk
+- blk_id is blk_id_as_int
+- blk_index map is a ref (to a map from int to blk_id)
+- blk_index_map_root is a dummy blk_id -1
+*)
 let test () = 
   let module A = struct
 
     let monad_ops = Tjr_monad.imperative_monad_ops
 
+    let ( >>= ) = monad_ops.bind
+
     let return = monad_ops.return
 
     let blk_sz = Blk_sz.of_int 2
 
-    let blk_ops = Common_blk_ops.String_.make ~blk_sz
+    let blk_ops = Blk_factory.Internal.String_.make ~blk_sz
 
-    let blk_layer = 
-      Common_blk_layers.blk_layer_string_mem ~blk_sz 
+    (* let blk_layer =  *)
+      (* Common_blk_layers.blk_layer_string_mem ~blk_sz  *)
 
-    (* type blk = string *)
+    type blk = string
 
-    let make_blk_dev_ops = blk_layer.blk_dev_ops ~monad_ops
+    (* let make_blk_dev_ops = blk_layer.blk_dev_ops ~monad_ops *)
                              
-    let _ = make_blk_dev_ops
+    (* let _ = make_blk_dev_ops *)
 
     (* the blk dev is modelled by a map from blk_id to blk *)
     
     type blk_id = Blk_id_as_int.blk_id
 
-    module M = Tjr_map.With_pervasives_compare
+    module M = Tjr_map.With_stdcmp
         
     (* type blk_dev_map = (blk_id,blk)M.map_with_pervasives_compare *)
     
     (* [@@@ocaml.warning "-34"] *)
 
-    let blk_dev_ref = ref (M.empty ())
+    let blk_dev_ref : (blk_id,blk) M.stdmap ref = ref (M.empty ())
 
-    let with_blk_dev = with_imperative_ref ~monad_ops blk_dev_ref
+    (* let with_blk_dev = with_imperative_ref ~monad_ops blk_dev_ref *)
 
-    let blk_dev_ops = make_blk_dev_ops ~with_state:with_blk_dev
+    let blk_dev_ops = Blk_dev_ops.(
+        let write = 
+          fun ~blk_id ~blk -> blk_dev_ref:=M.add blk_id blk !blk_dev_ref; return ()
+        in
+        {
+          blk_sz;
+          write;
+          read=(fun ~blk_id -> M.find blk_id !blk_dev_ref |> return);
+          write_many=(fun xs -> xs |> iter_k (fun ~k xs -> 
+            match xs with 
+            | [] -> return ()
+            | (blk_id,blk)::xs -> write ~blk_id ~blk >>= fun () -> 
+              k xs))
+        })
                         
     let _ = blk_dev_ops
 
 
     (* blk index map *)
 
-    type blk_index = (int,blk_id)M.map_with_pervasives_compare
+    type blk_index = (int,blk_id)M.stdmap
 
     let blk_index_ref = ref ((M.empty ()):blk_index)
 
@@ -584,8 +608,6 @@ let test () =
       incr min_free_blk_id;
       return (Blk_id_as_int.of_int i)
       
-    let _ = make_blk_dev_ops
-
     let blk_index_map = {
       find=(fun ~r:_ ~k -> M.find_opt k !blk_index_ref |> return);
       insert=(fun ~r:_ ~k ~v -> 

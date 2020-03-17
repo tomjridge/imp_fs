@@ -31,7 +31,7 @@ type dinode = {
 }
 
 
-
+(* FIXME from here 
 
 (** {2 Dirs} *)
 
@@ -43,7 +43,7 @@ module Dir = struct
 
   let per_dir_wbc_capacity = 10
 
-  module K = struct type t = string let compare: t -> t -> int = Pervasives.compare end
+  module K = struct type t = string let compare: t -> t -> int = Stdlib.compare end
   module V = struct type t = op end
 
   module Wbc = Wbc_2.Make(K)(V)
@@ -221,4 +221,5 @@ type dep = Sync_after_add of {
 
 (* type timestamp *)
 
+*)
 *)
