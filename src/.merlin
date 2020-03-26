@@ -1,5 +1,0 @@
-PKG tjr_btree tjr_lib Fuse extunix core bin_prot ppx_bin_prot
-
-FLG -short-paths
-
-B .

@@ -1,0 +1,334 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN"
+"http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <title>persistent_list.ml</title>
+<meta name="generator" content="emacs 25.3.1; htmlfontify 0.21" />
+<style type="text/css"><!-- 
+body { font-family: Ubuntu Mono;  font-stretch: normal;  font-weight: 500;  font-style: normal;  color: #000000;  background: #ffffff;  font-size: 10pt;  text-decoration: none; }
+span.default   { font-family: Ubuntu Mono;  font-stretch: normal;  font-weight: 500;  font-style: normal;  color: #000000;  background: #ffffff;  font-size: 10pt;  text-decoration: none; }
+span.default a { font-family: Ubuntu Mono;  font-stretch: normal;  font-weight: 500;  font-style: normal;  color: #000000;  background: #ffffff;  font-size: 10pt;  text-decoration: underline; }
+span.merlin-compilation-warning-face-0004   { color: #ff8c00;  font-weight: 700;  font-family: Ubuntu Mono;  font-stretch: normal;  font-style: normal;  background: #ffffff;  font-size: 10pt;  text-decoration: none; }
+span.merlin-compilation-warning-face-0004 a { color: #ff8c00;  font-weight: 700;  font-family: Ubuntu Mono;  font-stretch: normal;  font-style: normal;  background: #ffffff;  font-size: 10pt;  text-decoration: underline; }
+span.merlin-compilation-warning-face-0003   { color: #ff8c00;  font-weight: 700;  font-family: Ubuntu Mono;  font-stretch: normal;  font-style: normal;  background: #ffffff;  font-size: 10pt;  text-decoration: none; }
+span.merlin-compilation-warning-face-0003 a { color: #ff8c00;  font-weight: 700;  font-family: Ubuntu Mono;  font-stretch: normal;  font-style: normal;  background: #ffffff;  font-size: 10pt;  text-decoration: underline; }
+span.merlin-compilation-warning-face-0002   { color: #ff8c00;  font-weight: 700;  font-family: Ubuntu Mono;  font-stretch: normal;  font-style: normal;  background: #ffffff;  font-size: 10pt;  text-decoration: none; }
+span.merlin-compilation-warning-face-0002 a { color: #ff8c00;  font-weight: 700;  font-family: Ubuntu Mono;  font-stretch: normal;  font-style: normal;  background: #ffffff;  font-size: 10pt;  text-decoration: underline; }
+span.merlin-compilation-warning-face-0001   { color: #ff8c00;  font-weight: 700;  font-family: Ubuntu Mono;  font-stretch: normal;  font-style: normal;  background: #ffffff;  font-size: 10pt;  text-decoration: none; }
+span.merlin-compilation-warning-face-0001 a { color: #ff8c00;  font-weight: 700;  font-family: Ubuntu Mono;  font-stretch: normal;  font-style: normal;  background: #ffffff;  font-size: 10pt;  text-decoration: underline; }
+span.merlin-compilation-warning-face-0000   { color: #ff8c00;  font-weight: 700;  font-family: Ubuntu Mono;  font-stretch: normal;  font-style: normal;  background: #ffffff;  font-size: 10pt;  text-decoration: none; }
+span.merlin-compilation-warning-face-0000 a { color: #ff8c00;  font-weight: 700;  font-family: Ubuntu Mono;  font-stretch: normal;  font-style: normal;  background: #ffffff;  font-size: 10pt;  text-decoration: underline; }
+span.constant   { color: #008b8b;  font-family: Ubuntu Mono;  font-stretch: normal;  font-weight: 500;  font-style: normal;  background: #ffffff;  font-size: 10pt;  text-decoration: none; }
+span.constant a { color: #008b8b;  font-family: Ubuntu Mono;  font-stretch: normal;  font-weight: 500;  font-style: normal;  background: #ffffff;  font-size: 10pt;  text-decoration: underline; }
+span.string   { color: #8b2252;  font-family: Ubuntu Mono;  font-stretch: normal;  font-weight: 500;  font-style: normal;  background: #ffffff;  font-size: 10pt;  text-decoration: none; }
+span.string a { color: #8b2252;  font-family: Ubuntu Mono;  font-stretch: normal;  font-weight: 500;  font-style: normal;  background: #ffffff;  font-size: 10pt;  text-decoration: underline; }
+span.builtin   { color: #483d8b;  font-family: Ubuntu Mono;  font-stretch: normal;  font-weight: 500;  font-style: normal;  background: #ffffff;  font-size: 10pt;  text-decoration: none; }
+span.builtin a { color: #483d8b;  font-family: Ubuntu Mono;  font-stretch: normal;  font-weight: 500;  font-style: normal;  background: #ffffff;  font-size: 10pt;  text-decoration: underline; }
+span.constructor   { font-family: Ubuntu Mono;  font-stretch: normal;  font-weight: 500;  font-style: normal;  color: #000000;  background: #ffffff;  font-size: 10pt;  text-decoration: none; }
+span.constructor a { font-family: Ubuntu Mono;  font-stretch: normal;  font-weight: 500;  font-style: normal;  color: #000000;  background: #ffffff;  font-size: 10pt;  text-decoration: underline; }
+span.keyword   { color: #a020f0;  font-family: Ubuntu Mono;  font-stretch: normal;  font-weight: 500;  font-style: normal;  background: #ffffff;  font-size: 10pt;  text-decoration: none; }
+span.keyword a { color: #a020f0;  font-family: Ubuntu Mono;  font-stretch: normal;  font-weight: 500;  font-style: normal;  background: #ffffff;  font-size: 10pt;  text-decoration: underline; }
+span.variable-name   { color: #a0522d;  font-family: Ubuntu Mono;  font-stretch: normal;  font-weight: 500;  font-style: normal;  background: #ffffff;  font-size: 10pt;  text-decoration: none; }
+span.variable-name a { color: #a0522d;  font-family: Ubuntu Mono;  font-stretch: normal;  font-weight: 500;  font-style: normal;  background: #ffffff;  font-size: 10pt;  text-decoration: underline; }
+span.function-name   { color: #0000ff;  font-family: Ubuntu Mono;  font-stretch: normal;  font-weight: 500;  font-style: normal;  background: #ffffff;  font-size: 10pt;  text-decoration: none; }
+span.function-name a { color: #0000ff;  font-family: Ubuntu Mono;  font-stretch: normal;  font-weight: 500;  font-style: normal;  background: #ffffff;  font-size: 10pt;  text-decoration: underline; }
+span.type   { color: #228b22;  font-family: Ubuntu Mono;  font-stretch: normal;  font-weight: 500;  font-style: normal;  background: #ffffff;  font-size: 10pt;  text-decoration: none; }
+span.type a { color: #228b22;  font-family: Ubuntu Mono;  font-stretch: normal;  font-weight: 500;  font-style: normal;  background: #ffffff;  font-size: 10pt;  text-decoration: underline; }
+span.operator   { color: #a52a2a;  font-family: Ubuntu Mono;  font-stretch: normal;  font-weight: 500;  font-style: normal;  background: #ffffff;  font-size: 10pt;  text-decoration: none; }
+span.operator a { color: #a52a2a;  font-family: Ubuntu Mono;  font-stretch: normal;  font-weight: 500;  font-style: normal;  background: #ffffff;  font-size: 10pt;  text-decoration: underline; }
+span.module   { color: #228b22;  font-family: Ubuntu Mono;  font-stretch: normal;  font-weight: 500;  font-style: normal;  background: #ffffff;  font-size: 10pt;  text-decoration: none; }
+span.module a { color: #228b22;  font-family: Ubuntu Mono;  font-stretch: normal;  font-weight: 500;  font-style: normal;  background: #ffffff;  font-size: 10pt;  text-decoration: underline; }
+span.governing   { color: #000000;  font-weight: 700;  font-family: Ubuntu Mono;  font-stretch: normal;  font-style: normal;  background: #ffffff;  font-size: 10pt;  text-decoration: none; }
+span.governing a { color: #000000;  font-weight: 700;  font-family: Ubuntu Mono;  font-stretch: normal;  font-style: normal;  background: #ffffff;  font-size: 10pt;  text-decoration: underline; }
+span.comment   { color: #b22222;  font-family: Ubuntu Mono;  font-stretch: normal;  font-weight: 500;  font-style: normal;  background: #ffffff;  font-size: 10pt;  text-decoration: none; }
+span.comment a { color: #b22222;  font-family: Ubuntu Mono;  font-stretch: normal;  font-weight: 500;  font-style: normal;  background: #ffffff;  font-size: 10pt;  text-decoration: underline; }
+span.comment-delimiter   { color: #b22222;  font-family: Ubuntu Mono;  font-stretch: normal;  font-weight: 500;  font-style: normal;  background: #ffffff;  font-size: 10pt;  text-decoration: none; }
+span.comment-delimiter a { color: #b22222;  font-family: Ubuntu Mono;  font-stretch: normal;  font-weight: 500;  font-style: normal;  background: #ffffff;  font-size: 10pt;  text-decoration: underline; }
+ --></style>
+
+    <script type="text/javascript"><!--
+  // this function is needed to work around
+  // a bug in IE related to element attributes
+  function hasClass(obj)
+  {
+      var result = false;
+      if (obj.getAttributeNode("class") != null)
+      {
+          result = obj.getAttributeNode("class").value;
+      }
+      return result;
+  }
+
+  function stripe(id)
+  {
+      // the flag we'll use to keep track of
+      // whether the current row is odd or even
+      var even = false;
+
+      // if arguments are provided to specify the colors
+      // of the even & odd rows, then use the them;
+      // otherwise use the following defaults:
+      var evenColor = arguments[1] ? arguments[1] : "#fff";
+      var oddColor  = arguments[2] ? arguments[2] : "#ddd";
+
+      // obtain a reference to the desired table
+      // if no such table exists, abort
+      var table = document.getElementById(id);
+      if (! table) { return; }
+
+      // by definition, tables can have more than one tbody
+      // element, so we'll have to get the list of child
+      // &lt;tbody&gt;s
+      var tbodies = table.getElementsByTagName("tbody");
+
+      // and iterate through them...
+      for (var h = 0; h < tbodies.length; h++)
+      {
+          // find all the &lt;tr&gt; elements...
+          var trs = tbodies[h].getElementsByTagName("tr");
+
+          // ... and iterate through them
+          for (var i = 0; i < trs.length; i++)
+          {
+              // avoid rows that have a class attribute
+              // or backgroundColor style
+              if (! hasClass(trs[i]) &&
+                  ! trs[i].style.backgroundColor)
+              {
+                  // get all the cells in this row...
+                  var tds = trs[i].getElementsByTagName("td");
+
+                  // and iterate through them...
+                  for (var j = 0; j < tds.length; j++)
+                  {
+                      var mytd = tds[j];
+
+                      // avoid cells that have a class attribute
+                      // or backgroundColor style
+                      if (! hasClass(mytd) &&
+                          ! mytd.style.backgroundColor)
+                      {
+                          mytd.style.backgroundColor =
+                            even ? evenColor : oddColor;
+                      }
+                  }
+              }
+              // flip from odd to even, or vice-versa
+              even =  ! even;
+          }
+      }
+  }
+
+  function toggle_invis( name )
+  {
+      var filter =
+        { acceptNode:
+          function( node )
+          { var classname = node.id;
+            if( classname )
+            { var classbase = classname.substr( 0, name.length );
+              if( classbase == name ) { return NodeFilter.FILTER_ACCEPT; } }
+            return NodeFilter.FILTER_SKIP; } };
+      var walker = document.createTreeWalker( document.body           ,
+                                              NodeFilter.SHOW_ELEMENT ,
+                                              filter                  ,
+                                              false                   );
+      while( walker.nextNode() )
+      {
+          var e = walker.currentNode;
+          if( e.style.display == "none" ) { e.style.display = "inline"; }
+          else                            { e.style.display = "none";   }
+      }
+  }
+--> </script>
+  </head>
+  <body onload="stripe('index'); return true;">
+
+<pre><span class="comment-delimiter">(* </span><span class="comment">A persistent list of values, implemented as a persistent
+   singly-linked list. </span><span class="comment-delimiter">*)</span>
+
+<span class="comment-delimiter">(*</span><span class="comment">
+#thread;;
+#require &quot;tjr_btree&quot;;;
+#require &quot;tjr_lib&quot;;;
+</span><span class="comment-delimiter">*)</span>
+
+<span class="governing">open </span><span class="module">Tjr_fs_shared.Monad</span>
+
+
+<span class="comment-delimiter">(* </span><span class="comment">nodes in the list have an optional next pointer, and contents </span><span class="comment-delimiter">*)</span>
+<span class="governing">type</span> <span class="operator">(</span><span class="type">'ptr</span><span class="operator">,</span><span class="type">'a</span><span class="operator">)</span><span class="type"> list_node</span> <span class="operator">=</span> <span class="operator">{</span>
+  next<span class="operator">:</span> 'ptr option<span class="operator">;</span>
+  contents<span class="operator">:</span> 'a<span class="operator">;</span>
+<span class="operator">}</span>
+
+<span class="comment-delimiter">(* </span><span class="comment">the cursor state is in memory; make sure to write the current_node to disk </span><span class="comment-delimiter">*)</span>
+<span class="governing">type</span> <span class="operator">(</span><span class="type">'ptr</span><span class="operator">,</span><span class="type">'a</span><span class="operator">)</span><span class="type"> plist_state</span> <span class="comment-delimiter">(* </span><span class="comment">cursor_state </span><span class="comment-delimiter">*)</span> <span class="operator">=</span> <span class="operator">{</span>
+  current_ptr<span class="operator">:</span> 'ptr<span class="operator">;</span>  <span class="comment-delimiter">(* </span><span class="comment">block we are currently updating </span><span class="comment-delimiter">*)</span>
+  current_node<span class="operator">:</span> <span class="operator">(</span>'ptr<span class="operator">,</span>'a<span class="operator">)</span> list_node<span class="operator">;</span>  <span class="comment-delimiter">(* </span><span class="comment">stored in mem FIXME? </span><span class="comment-delimiter">*)</span>
+<span class="operator">}</span>
+
+<span class="governing">type</span> <span class="operator">(</span><span class="type">'a</span><span class="operator">,</span><span class="type">'t</span><span class="operator">)</span><span class="type"> list_ops</span> <span class="operator">=</span> <span class="operator">{</span>
+  replace_last<span class="operator">:</span> 'a <span class="operator">-&gt;</span> <span class="operator">(</span>unit<span class="operator">,</span>'t<span class="operator">)</span> m<span class="operator">;</span>
+  new_node<span class="operator">:</span> 'a <span class="operator">-&gt;</span> <span class="operator">(</span>unit<span class="operator">,</span>'t<span class="operator">)</span> m<span class="operator">;</span>
+<span class="operator">}</span>
+
+
+
+<span class="governing">let</span> <span class="function-name">make_persistent_list</span><span class="variable-name"> 
+    </span><span class="operator">~(</span><span class="variable-name">write_node </span><span class="operator">:</span><span class="variable-name"> </span><span class="type">'ptr </span><span class="operator">-&gt;</span><span class="type"> </span><span class="operator">(</span><span class="type">'ptr</span><span class="operator">,</span><span class="type">'a</span><span class="operator">)</span><span class="type"> list_node </span><span class="operator">-&gt;</span><span class="type"> </span><span class="operator">(</span><span class="type">unit</span><span class="operator">,</span><span class="type">'t</span><span class="operator">)</span><span class="type"> m</span><span class="operator">)</span><span class="variable-name"> 
+</span>    <span class="operator">~(</span>plist_state_ref <span class="operator">:</span> <span class="operator">((</span>'ptr<span class="operator">,</span>'a<span class="operator">)</span> plist_state<span class="operator">,</span>'t<span class="operator">)</span> mref<span class="operator">)</span>
+    <span class="operator">~(</span>alloc <span class="operator">:</span> <span class="type">unit </span><span class="operator">-&gt;</span><span class="type"> </span><span class="operator">(</span><span class="type">'ptr</span><span class="operator">,</span><span class="type">'t</span><span class="operator">)</span><span class="type"> m</span><span class="operator">)</span>
+  <span class="operator">=</span>
+<span class="comment-delimiter">(*</span><span class="comment">
+  let create ~ptr ~contents = 
+    let node = {
+      next=None;
+      contents
+    }
+    in
+    write_node ptr node
+  in
+</span><span class="comment-delimiter">*)</span>
+  <span class="governing">let</span> <span class="variable-name">read_state</span><span class="operator">,</span><span class="variable-name">write_state</span> <span class="operator">=</span> plist_state_ref.get<span class="operator">,</span> plist_state_ref.set <span class="governing">in</span>
+  <span class="governing">let</span> <span class="function-name">replace_last</span><span class="variable-name"> contents</span> <span class="operator">=</span> 
+    read_state <span class="operator">()</span> <span class="operator">|&gt;</span> bind <span class="operator">@@</span> <span class="keyword">fun</span> <span class="variable-name">s</span> <span class="operator">-&gt;</span>
+    <span class="governing">let</span> <span class="variable-name">current_node</span> <span class="operator">=</span> <span class="operator">{</span> s.current_node <span class="keyword">with</span> contents <span class="operator">}</span> <span class="governing">in</span>
+    write_node s.current_ptr current_node <span class="operator">|&gt;</span> bind <span class="operator">@@</span> <span class="keyword">fun</span> <span class="operator">()</span> <span class="operator">-&gt;</span>
+    write_state <span class="operator">{</span> s <span class="keyword">with</span> current_node <span class="operator">}</span> <span class="operator">|&gt;</span> bind <span class="operator">@@</span> <span class="keyword">fun</span> <span class="operator">()</span> <span class="operator">-&gt;</span> 
+    return <span class="operator">()</span>
+  <span class="governing">in</span>
+  <span class="governing">let</span> <span class="function-name">new_node</span><span class="variable-name"> contents</span> <span class="operator">=</span> 
+    alloc <span class="operator">()</span> <span class="operator">|&gt;</span> bind <span class="operator">@@</span> <span class="keyword">fun</span> <span class="variable-name">new_ptr</span> <span class="operator">-&gt;</span>
+    read_state <span class="operator">()</span> <span class="operator">|&gt;</span> bind <span class="operator">@@</span> <span class="keyword">fun</span> <span class="operator">{</span> current_ptr<span class="operator">;</span> current_node <span class="operator">}</span> <span class="operator">-&gt;</span>
+    <span class="comment-delimiter">(* </span><span class="comment">write the current block with a valid next ptr </span><span class="comment-delimiter">*)</span>
+    <span class="governing">let</span> <span class="variable-name">next</span> <span class="operator">=</span> <span class="constructor">Some</span> new_ptr <span class="governing">in</span>
+    <span class="operator">{</span>current_node <span class="keyword">with</span> next <span class="operator">}</span> <span class="operator">|&gt;</span> write_node current_ptr <span class="operator">|&gt;</span> bind <span class="operator">@@</span> <span class="keyword">fun</span> <span class="operator">()</span> <span class="operator">-&gt;</span>
+    <span class="comment-delimiter">(* </span><span class="comment">construct new node </span><span class="comment-delimiter">*)</span>
+    <span class="operator">{</span> next<span class="operator">=</span><span class="constructor">None</span><span class="operator">;</span> contents <span class="operator">}</span> <span class="operator">|&gt;</span> <span class="keyword">fun</span> <span class="variable-name">new_node</span> <span class="operator">-&gt;</span>
+    write_node new_ptr new_node <span class="operator">|&gt;</span> bind <span class="operator">@@</span> <span class="keyword">fun</span> <span class="operator">()</span> <span class="operator">-&gt;</span>
+    <span class="operator">{</span> current_ptr<span class="operator">=</span>new_ptr<span class="operator">;</span> current_node<span class="operator">=</span>new_node <span class="operator">}</span> <span class="operator">|&gt;</span> <span class="keyword">fun</span> <span class="variable-name">s</span> <span class="operator">-&gt;</span>
+    write_state s
+  <span class="governing">in</span>
+  <span class="operator">{</span> replace_last<span class="operator">;</span> new_node <span class="operator">}</span>
+
+
+<span class="governing">let</span> <span class="variable-name">_</span> <span class="operator">=</span> make_persistent_list
+
+
+<span class="governing">let</span> <span class="governing">rec</span> <span class="function-name">plist_to_list</span><span class="variable-name"> </span><span class="operator">~</span><span class="variable-name">read_node </span><span class="operator">~</span><span class="variable-name">ptr</span> <span class="operator">=</span>
+  <span class="governing">let</span> <span class="variable-name">acc</span> <span class="operator">=</span> <span class="builtin">ref</span> <span class="operator">[]</span> <span class="governing">in</span>
+  <span class="governing">let</span> <span class="governing">rec</span> <span class="function-name">loop</span><span class="variable-name"> ptr</span> <span class="operator">=</span> 
+    read_node ptr <span class="operator">|&gt;</span> bind <span class="operator">@@</span> <span class="keyword">fun</span> <span class="operator">{</span> next<span class="operator">;</span> contents <span class="operator">}</span> <span class="operator">-&gt;</span>
+    acc<span class="operator">:=</span>contents<span class="operator">::!</span>acc<span class="operator">;</span>
+    <span class="keyword">match</span> next <span class="keyword">with</span>
+    <span class="operator">|</span> <span class="constructor">None</span> <span class="operator">-&gt;</span> return <span class="operator">(</span><span class="module">List.</span>rev <span class="operator">!</span>acc<span class="operator">)</span>
+    <span class="operator">|</span> <span class="constructor">Some</span> ptr <span class="operator">-&gt;</span> loop ptr
+  <span class="governing">in</span>
+  loop ptr
+
+
+
+<span class="governing">let</span> <span class="variable-name">_</span> <span class="operator">=</span> plist_to_list
+
+
+
+<span class="comment-delimiter">(* </span><span class="comment">testing ---------------------------------------------------------- </span><span class="comment-delimiter">*)</span>
+
+<span class="governing">module</span> <span class="module">Test</span> <span class="operator">=</span> <span class="governing">struct</span> 
+
+  <span class="comment-delimiter">(* </span><span class="comment">the state of the whole system </span><span class="comment-delimiter">*)</span>
+  <span class="governing">type</span> <span class="operator">(</span><span class="type">'ptr</span><span class="operator">,</span><span class="type">'a</span><span class="operator">)</span><span class="type"> state</span> <span class="operator">=</span> <span class="operator">{</span>
+    map<span class="operator">:</span> <span class="operator">(</span>'ptr<span class="operator">*(</span>'ptr<span class="operator">,</span>'a<span class="operator">)</span>list_node<span class="operator">)</span> list<span class="operator">;</span>  <span class="comment-delimiter">(* </span><span class="comment">association list </span><span class="comment-delimiter">*)</span>
+    cursor_state<span class="operator">:</span> <span class="operator">(</span>'ptr<span class="operator">,</span>'a<span class="operator">)</span> plist_state<span class="operator">;</span>
+    free<span class="operator">:</span> int<span class="operator">;</span>  <span class="comment-delimiter">(* </span><span class="comment">iso to ptr </span><span class="comment-delimiter">*)</span>
+  <span class="operator">}</span>
+
+  <span class="governing">let</span> <span class="function-name">write_node</span><span class="variable-name"> ptr n</span> <span class="operator">=</span> <span class="keyword">fun</span> <span class="variable-name">s</span> <span class="operator">-&gt;</span> 
+    <span class="operator">{</span> s <span class="keyword">with</span> map<span class="operator">=(</span>ptr<span class="operator">,</span>n<span class="operator">)::</span>s.map <span class="operator">}</span> <span class="operator">|&gt;</span> <span class="keyword">fun</span> <span class="variable-name">s</span> <span class="operator">-&gt;</span>
+    <span class="operator">(</span>s<span class="operator">,</span><span class="constructor">Ok</span> <span class="operator">())</span>
+
+  <span class="governing">let</span> <span class="variable-name">_</span> <span class="operator">=</span> write_node
+
+  <span class="comment-delimiter">(* </span><span class="comment">let tap = ref [] </span><span class="comment-delimiter">*)</span>
+
+  <span class="governing">let</span> <span class="function-name">read_node</span><span class="variable-name"> ptr</span> <span class="operator">=</span> <span class="keyword">fun</span> <span class="variable-name">s</span> <span class="operator">-&gt;</span>
+    <span class="comment-delimiter">(* </span><span class="comment">Printf.printf &quot;ptr is: %d\n&quot; ptr; </span><span class="comment-delimiter">*)</span>
+    <span class="comment-delimiter">(* </span><span class="comment">tap:=s.map; </span><span class="comment-delimiter">*)</span>
+    <span class="operator">(</span>s<span class="operator">,</span> <span class="constructor">Ok</span> <span class="operator">(</span><span class="module">List.</span>assoc ptr s.map<span class="operator">))</span>  <span class="comment-delimiter">(* </span><span class="comment">ASSUMES ptr in map </span><span class="comment-delimiter">*)</span>
+
+  <span class="governing">let</span> <span class="variable-name">_</span> <span class="operator">=</span> read_node
+
+
+  <span class="governing">let</span> <span class="function-name">read_state</span><span class="variable-name"> </span><span class="operator">()</span> <span class="operator">=</span> <span class="keyword">fun</span> <span class="variable-name">s</span> <span class="operator">-&gt;</span> 
+    <span class="operator">(</span>s<span class="operator">,</span><span class="constructor">Ok</span> s.cursor_state<span class="operator">)</span>
+
+  <span class="governing">let</span> <span class="variable-name">_</span> <span class="operator">=</span> read_state
+
+  <span class="governing">let</span> <span class="function-name">write_state</span><span class="variable-name"> cursor_state</span> <span class="operator">=</span> <span class="keyword">fun</span> <span class="variable-name">s</span> <span class="operator">-&gt;</span>
+    <span class="operator">{</span> s <span class="keyword">with</span> cursor_state <span class="operator">}</span> <span class="operator">|&gt;</span> <span class="keyword">fun</span> <span class="variable-name">s</span> <span class="operator">-&gt;</span>
+    <span class="operator">(</span>s<span class="operator">,</span> <span class="constructor">Ok</span> <span class="operator">())</span>
+
+  <span class="governing">let</span> <span class="variable-name">_</span> <span class="operator">=</span> write_state
+
+
+  <span class="governing">let</span> <span class="variable-name">plist_state_ref</span> <span class="operator">=</span> <span class="operator">{</span>
+    get<span class="operator">=</span>read_state<span class="operator">;</span>
+    set<span class="operator">=</span>write_state<span class="operator">;</span>
+  <span class="operator">}</span>
+
+
+  <span class="governing">let</span> <span class="function-name">alloc</span><span class="variable-name"> </span><span class="operator">~</span><span class="variable-name">int_to_ptr</span> <span class="operator">=</span> <span class="keyword">fun</span> <span class="operator">()</span> <span class="operator">-&gt;</span> <span class="keyword">fun</span> <span class="variable-name">s</span> <span class="operator">-&gt;</span> 
+    <span class="operator">({</span>s <span class="keyword">with</span> free<span class="operator">=</span>s.free<span class="operator">+</span>1<span class="operator">},</span><span class="constructor">Ok</span> <span class="operator">(</span>s.free <span class="operator">|&gt;</span> int_to_ptr<span class="operator">))</span>
+
+
+  <span class="governing">let</span> <span class="variable-name">_</span> <span class="operator">=</span> alloc
+
+
+  <span class="governing">let</span> <span class="function-name">int_to_ptr</span><span class="variable-name"> x</span> <span class="operator">=</span> x 
+
+  <span class="comment-delimiter">(* </span><span class="comment">NOTE eta expansion </span><span class="comment-delimiter">*)</span>
+  <span class="governing">let</span> <span class="function-name">alloc</span><span class="variable-name"> </span><span class="operator">()</span> <span class="operator">=</span> alloc <span class="operator">~</span>int_to_ptr <span class="operator">()</span>
+
+  <span class="governing">let</span> <span class="variable-name">_</span> <span class="operator">=</span> alloc
+
+
+  <span class="comment-delimiter">(* </span><span class="comment">FIXME note eta expansion; can we avoid? </span><span class="comment-delimiter">*)</span>
+  <span class="governing">let</span> <span class="function-name">ops</span><span class="variable-name"> </span><span class="operator">()</span> <span class="operator">=</span> make_persistent_list <span class="operator">~</span>write_node <span class="operator">~</span>plist_state_ref <span class="operator">~</span>alloc
+
+  <span class="governing">let</span> <span class="variable-name">_</span> <span class="operator">=</span> ops
+
+  <span class="governing">let</span> <span class="variable-name">init</span> <span class="operator">=</span> 
+    <span class="governing">let</span> <span class="variable-name">root</span> <span class="operator">=</span> 0 <span class="governing">in</span>
+    <span class="governing">let</span> <span class="variable-name">current_node</span><span class="operator">={</span> next<span class="operator">=</span><span class="constructor">None</span><span class="operator">;</span> contents<span class="operator">=</span><span class="string">&quot;Start&quot;</span> <span class="operator">}</span> <span class="governing">in</span>
+    <span class="operator">{</span>    
+      map<span class="operator">=[(</span>root<span class="operator">,</span>current_node<span class="operator">)];</span> 
+      cursor_state<span class="operator">={</span> current_ptr<span class="operator">=</span>root<span class="operator">;</span> current_node <span class="operator">};</span>
+      free<span class="operator">=</span>root<span class="operator">+</span>1
+    <span class="operator">}</span>
+
+  
+
+
+  <span class="comment-delimiter">(* </span><span class="comment">Write some new nodes, update some, and finally print out the list </span><span class="comment-delimiter">*)</span>
+  <span class="governing">let</span> <span class="function-name">main</span><span class="variable-name"> </span><span class="operator">()</span> <span class="operator">=</span> 
+    <span class="governing">let</span> <span class="variable-name">ops</span> <span class="operator">=</span> ops <span class="operator">()</span> <span class="governing">in</span>
+    <span class="governing">let</span> <span class="variable-name">cmds</span> <span class="operator">=</span> 
+      ops.replace_last <span class="string">&quot;New start&quot;</span> <span class="operator">|&gt;</span> bind <span class="operator">@@</span> <span class="keyword">fun</span> <span class="operator">()</span> <span class="operator">-&gt;</span>
+      ops.new_node <span class="string">&quot;second node&quot;</span> <span class="operator">|&gt;</span> bind <span class="operator">@@</span> <span class="keyword">fun</span> <span class="operator">()</span> <span class="operator">-&gt;</span>
+      ops.new_node <span class="string">&quot;third node&quot;</span> <span class="operator">|&gt;</span> bind <span class="operator">@@</span> <span class="keyword">fun</span> <span class="operator">()</span> <span class="operator">-&gt;</span>
+      ops.replace_last <span class="string">&quot;alternative third node&quot;</span> <span class="operator">|&gt;</span> bind <span class="operator">@@</span> <span class="keyword">fun</span> <span class="operator">()</span> <span class="operator">-&gt;</span>
+      plist_to_list <span class="operator">~</span>read_node <span class="constant">~ptr</span><span class="operator">:</span>0
+    <span class="governing">in</span>
+    cmds init <span class="operator">|&gt;</span> <span class="merlin-compilation-warning-face-0000">fun</span><span class="merlin-compilation-warning-face-0001"> </span><span class="merlin-compilation-warning-face-0002">(</span><span class="merlin-compilation-warning-face-0003">s</span><span class="merlin-compilation-warning-face-0002">,</span><span class="merlin-compilation-warning-face-0004">Ok</span><span class="merlin-compilation-warning-face-0003"> xs</span><span class="merlin-compilation-warning-face-0002">)</span><span class="merlin-compilation-warning-face-0001"> </span><span class="merlin-compilation-warning-face-0002">-&gt;</span>
+    <span class="keyword">assert</span><span class="operator">(</span>xs <span class="operator">=</span> <span class="operator">[</span><span class="string">&quot;New start&quot;</span><span class="operator">;</span><span class="string">&quot;second node&quot;</span><span class="operator">;</span><span class="string">&quot;alternative third node&quot;</span><span class="operator">]);</span>
+    xs <span class="operator">|&gt;</span> <span class="module">Tjr_string.</span>concat_strings <span class="constant">~sep</span><span class="operator">:</span><span class="string">&quot;;&quot;</span> <span class="operator">|&gt;</span> <span class="keyword">fun</span> <span class="variable-name">str</span> <span class="operator">-&gt;</span>
+    print_endline str<span class="operator">;</span>
+    s  <span class="comment-delimiter">(* </span><span class="comment">actually return the state </span><span class="comment-delimiter">*)</span>
+
+<span class="governing">end</span>
+</pre>
+
+ </body>
+</html>

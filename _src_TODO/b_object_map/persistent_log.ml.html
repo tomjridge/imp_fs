@@ -1,0 +1,381 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN"
+"http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <title>persistent_log.ml</title>
+<meta name="generator" content="emacs 25.3.1; htmlfontify 0.21" />
+<style type="text/css"><!-- 
+body { font-family: Ubuntu Mono;  font-stretch: normal;  font-weight: 500;  font-style: normal;  color: #000000;  background: #ffffff;  font-size: 10pt;  text-decoration: none; }
+span.default   { font-family: Ubuntu Mono;  font-stretch: normal;  font-weight: 500;  font-style: normal;  color: #000000;  background: #ffffff;  font-size: 10pt;  text-decoration: none; }
+span.default a { font-family: Ubuntu Mono;  font-stretch: normal;  font-weight: 500;  font-style: normal;  color: #000000;  background: #ffffff;  font-size: 10pt;  text-decoration: underline; }
+span.string   { color: #8b2252;  font-family: Ubuntu Mono;  font-stretch: normal;  font-weight: 500;  font-style: normal;  background: #ffffff;  font-size: 10pt;  text-decoration: none; }
+span.string a { color: #8b2252;  font-family: Ubuntu Mono;  font-stretch: normal;  font-weight: 500;  font-style: normal;  background: #ffffff;  font-size: 10pt;  text-decoration: underline; }
+span.builtin   { color: #483d8b;  font-family: Ubuntu Mono;  font-stretch: normal;  font-weight: 500;  font-style: normal;  background: #ffffff;  font-size: 10pt;  text-decoration: none; }
+span.builtin a { color: #483d8b;  font-family: Ubuntu Mono;  font-stretch: normal;  font-weight: 500;  font-style: normal;  background: #ffffff;  font-size: 10pt;  text-decoration: underline; }
+span.constant   { color: #008b8b;  font-family: Ubuntu Mono;  font-stretch: normal;  font-weight: 500;  font-style: normal;  background: #ffffff;  font-size: 10pt;  text-decoration: none; }
+span.constant a { color: #008b8b;  font-family: Ubuntu Mono;  font-stretch: normal;  font-weight: 500;  font-style: normal;  background: #ffffff;  font-size: 10pt;  text-decoration: underline; }
+span.variable-name   { color: #a0522d;  font-family: Ubuntu Mono;  font-stretch: normal;  font-weight: 500;  font-style: normal;  background: #ffffff;  font-size: 10pt;  text-decoration: none; }
+span.variable-name a { color: #a0522d;  font-family: Ubuntu Mono;  font-stretch: normal;  font-weight: 500;  font-style: normal;  background: #ffffff;  font-size: 10pt;  text-decoration: underline; }
+span.function-name   { color: #0000ff;  font-family: Ubuntu Mono;  font-stretch: normal;  font-weight: 500;  font-style: normal;  background: #ffffff;  font-size: 10pt;  text-decoration: none; }
+span.function-name a { color: #0000ff;  font-family: Ubuntu Mono;  font-stretch: normal;  font-weight: 500;  font-style: normal;  background: #ffffff;  font-size: 10pt;  text-decoration: underline; }
+span.keyword   { color: #a020f0;  font-family: Ubuntu Mono;  font-stretch: normal;  font-weight: 500;  font-style: normal;  background: #ffffff;  font-size: 10pt;  text-decoration: none; }
+span.keyword a { color: #a020f0;  font-family: Ubuntu Mono;  font-stretch: normal;  font-weight: 500;  font-style: normal;  background: #ffffff;  font-size: 10pt;  text-decoration: underline; }
+span.constructor   { font-family: Ubuntu Mono;  font-stretch: normal;  font-weight: 500;  font-style: normal;  color: #000000;  background: #ffffff;  font-size: 10pt;  text-decoration: none; }
+span.constructor a { font-family: Ubuntu Mono;  font-stretch: normal;  font-weight: 500;  font-style: normal;  color: #000000;  background: #ffffff;  font-size: 10pt;  text-decoration: underline; }
+span.type   { color: #228b22;  font-family: Ubuntu Mono;  font-stretch: normal;  font-weight: 500;  font-style: normal;  background: #ffffff;  font-size: 10pt;  text-decoration: none; }
+span.type a { color: #228b22;  font-family: Ubuntu Mono;  font-stretch: normal;  font-weight: 500;  font-style: normal;  background: #ffffff;  font-size: 10pt;  text-decoration: underline; }
+span.operator   { color: #a52a2a;  font-family: Ubuntu Mono;  font-stretch: normal;  font-weight: 500;  font-style: normal;  background: #ffffff;  font-size: 10pt;  text-decoration: none; }
+span.operator a { color: #a52a2a;  font-family: Ubuntu Mono;  font-stretch: normal;  font-weight: 500;  font-style: normal;  background: #ffffff;  font-size: 10pt;  text-decoration: underline; }
+span.module   { color: #228b22;  font-family: Ubuntu Mono;  font-stretch: normal;  font-weight: 500;  font-style: normal;  background: #ffffff;  font-size: 10pt;  text-decoration: none; }
+span.module a { color: #228b22;  font-family: Ubuntu Mono;  font-stretch: normal;  font-weight: 500;  font-style: normal;  background: #ffffff;  font-size: 10pt;  text-decoration: underline; }
+span.governing   { color: #000000;  font-weight: 700;  font-family: Ubuntu Mono;  font-stretch: normal;  font-style: normal;  background: #ffffff;  font-size: 10pt;  text-decoration: none; }
+span.governing a { color: #000000;  font-weight: 700;  font-family: Ubuntu Mono;  font-stretch: normal;  font-style: normal;  background: #ffffff;  font-size: 10pt;  text-decoration: underline; }
+span.comment   { color: #b22222;  font-family: Ubuntu Mono;  font-stretch: normal;  font-weight: 500;  font-style: normal;  background: #ffffff;  font-size: 10pt;  text-decoration: none; }
+span.comment a { color: #b22222;  font-family: Ubuntu Mono;  font-stretch: normal;  font-weight: 500;  font-style: normal;  background: #ffffff;  font-size: 10pt;  text-decoration: underline; }
+span.comment-delimiter   { color: #b22222;  font-family: Ubuntu Mono;  font-stretch: normal;  font-weight: 500;  font-style: normal;  background: #ffffff;  font-size: 10pt;  text-decoration: none; }
+span.comment-delimiter a { color: #b22222;  font-family: Ubuntu Mono;  font-stretch: normal;  font-weight: 500;  font-style: normal;  background: #ffffff;  font-size: 10pt;  text-decoration: underline; }
+span.doc   { color: #8b2252;  font-family: Ubuntu Mono;  font-stretch: normal;  font-weight: 500;  font-style: normal;  background: #ffffff;  font-size: 10pt;  text-decoration: none; }
+span.doc a { color: #8b2252;  font-family: Ubuntu Mono;  font-stretch: normal;  font-weight: 500;  font-style: normal;  background: #ffffff;  font-size: 10pt;  text-decoration: underline; }
+ --></style>
+
+    <script type="text/javascript"><!--
+  // this function is needed to work around
+  // a bug in IE related to element attributes
+  function hasClass(obj)
+  {
+      var result = false;
+      if (obj.getAttributeNode("class") != null)
+      {
+          result = obj.getAttributeNode("class").value;
+      }
+      return result;
+  }
+
+  function stripe(id)
+  {
+      // the flag we'll use to keep track of
+      // whether the current row is odd or even
+      var even = false;
+
+      // if arguments are provided to specify the colors
+      // of the even & odd rows, then use the them;
+      // otherwise use the following defaults:
+      var evenColor = arguments[1] ? arguments[1] : "#fff";
+      var oddColor  = arguments[2] ? arguments[2] : "#ddd";
+
+      // obtain a reference to the desired table
+      // if no such table exists, abort
+      var table = document.getElementById(id);
+      if (! table) { return; }
+
+      // by definition, tables can have more than one tbody
+      // element, so we'll have to get the list of child
+      // &lt;tbody&gt;s
+      var tbodies = table.getElementsByTagName("tbody");
+
+      // and iterate through them...
+      for (var h = 0; h < tbodies.length; h++)
+      {
+          // find all the &lt;tr&gt; elements...
+          var trs = tbodies[h].getElementsByTagName("tr");
+
+          // ... and iterate through them
+          for (var i = 0; i < trs.length; i++)
+          {
+              // avoid rows that have a class attribute
+              // or backgroundColor style
+              if (! hasClass(trs[i]) &&
+                  ! trs[i].style.backgroundColor)
+              {
+                  // get all the cells in this row...
+                  var tds = trs[i].getElementsByTagName("td");
+
+                  // and iterate through them...
+                  for (var j = 0; j < tds.length; j++)
+                  {
+                      var mytd = tds[j];
+
+                      // avoid cells that have a class attribute
+                      // or backgroundColor style
+                      if (! hasClass(mytd) &&
+                          ! mytd.style.backgroundColor)
+                      {
+                          mytd.style.backgroundColor =
+                            even ? evenColor : oddColor;
+                      }
+                  }
+              }
+              // flip from odd to even, or vice-versa
+              even =  ! even;
+          }
+      }
+  }
+
+  function toggle_invis( name )
+  {
+      var filter =
+        { acceptNode:
+          function( node )
+          { var classname = node.id;
+            if( classname )
+            { var classbase = classname.substr( 0, name.length );
+              if( classbase == name ) { return NodeFilter.FILTER_ACCEPT; } }
+            return NodeFilter.FILTER_SKIP; } };
+      var walker = document.createTreeWalker( document.body           ,
+                                              NodeFilter.SHOW_ELEMENT ,
+                                              filter                  ,
+                                              false                   );
+      while( walker.nextNode() )
+      {
+          var e = walker.currentNode;
+          if( e.style.display == "none" ) { e.style.display = "inline"; }
+          else                            { e.style.display = "none";   }
+      }
+  }
+--> </script>
+  </head>
+  <body onload="stripe('index'); return true;">
+
+<pre><span class="doc">(** A persistent log, used to reduce traffic via the B-tree. NOTE
+    append-only logs are quickest when data must be stored persistently *)</span>
+
+<span class="comment-delimiter">(*</span><span class="comment">
+
+TODO:
+
+- need an in-memory map of current and past operations
+
+- need API functions to query the union of the current and past maps,
+  and to get the past map as a list
+
+
+
+</span><span class="comment-delimiter">*)</span>
+
+<span class="governing">open </span><span class="module">Tjr_map</span>
+
+<span class="governing">open </span><span class="module">Tjr_fs_shared.Monad</span>
+<span class="governing">open </span><span class="module">Imp_pervasives</span>
+<span class="governing">open </span><span class="module">X.Block</span>
+
+
+<span class="comment-delimiter">(* </span><span class="comment">we construct on top of a persistent_chunked_list </span><span class="comment-delimiter">*)</span>
+
+<span class="governing">module</span> <span class="module">Pl</span> <span class="operator">=</span> <span class="module">Persistent_list</span>
+<span class="governing">module</span> <span class="module">Pcl</span> <span class="operator">=</span> <span class="module">Persistent_chunked_list</span>
+<span class="governing">open </span><span class="module">Pcl</span>
+
+
+
+<span class="comment-delimiter">(* </span><span class="comment">actions ---------------------------------------------------------- </span><span class="comment-delimiter">*)</span>
+
+<span class="comment-delimiter">(* </span><span class="comment">we need a concrete representation of actions; these are the
+   elements that get written to disk </span><span class="comment-delimiter">*)</span>
+
+
+<span class="comment-delimiter">(* </span><span class="comment">FIXME perhaps to avoid marshalling issues and type vars we should
+   work with bytes? </span><span class="comment-delimiter">*)</span>
+
+<span class="comment-delimiter">(* </span><span class="comment">FIXME need insert_many </span><span class="comment-delimiter">*)</span>
+<span class="governing">type</span> <span class="operator">(</span><span class="type">'k</span><span class="operator">,</span><span class="type">'v</span><span class="operator">)</span><span class="type"> op</span> <span class="operator">=</span> <span class="operator">(</span>'k<span class="operator">,</span>'v<span class="operator">)</span> <span class="module">Pcl.Test.</span>op <span class="operator">=</span> <span class="constructor">Insert</span> <span class="keyword">of</span> 'k <span class="operator">*</span> 'v <span class="operator">|</span> <span class="constructor">Delete</span> <span class="keyword">of</span> 'k
+
+<span class="governing">let</span> <span class="function-name">op2k</span> <span class="operator">=</span> <span class="keyword">function</span>
+  <span class="operator">|</span> <span class="constructor">Insert</span> <span class="operator">(</span>k<span class="operator">,</span>v<span class="operator">)</span> <span class="operator">-&gt;</span> k
+  <span class="operator">|</span> <span class="constructor">Delete</span> k <span class="operator">-&gt;</span> k
+
+
+<span class="comment-delimiter">(* </span><span class="comment">we have to decide what information we need to keep for the &quot;current
+   chunk&quot; </span><span class="comment-delimiter">*)</span>
+
+<span class="comment-delimiter">(* </span><span class="comment">FIXME this doesn't work; why?
+type ('k,'v,'repr) chunk_state = (('k,'v)op,'repr) pcl_state = {
+  elts: (('k,'v) op) list;
+  elts_repr: 'repr
+}
+
+</span><span class="comment-delimiter">*)</span>
+
+
+<span class="comment-delimiter">(* </span><span class="comment">FIXME needed? type ('k,'v,'repr) chunk_state = (('k,'v)op,'repr) pcl_state </span><span class="comment-delimiter">*)</span>
+
+
+<span class="comment-delimiter">(* </span><span class="comment">in-mem map; NOTE 'v is ('k,'v)op  </span><span class="comment-delimiter">*)</span>
+<span class="governing">type</span> <span class="operator">(</span><span class="type">'k</span><span class="operator">,</span><span class="type">'v</span><span class="operator">,</span><span class="type">'map</span><span class="operator">)</span><span class="type"> map_ops</span> <span class="operator">=</span> <span class="operator">(</span>'k<span class="operator">,(</span>'k<span class="operator">,</span>'v<span class="operator">)</span>op<span class="operator">,</span>'map<span class="operator">)</span> <span class="module">Tjr_map.</span>map_ops
+
+
+<span class="governing">type</span> <span class="operator">(</span><span class="type">'k</span><span class="operator">,</span><span class="type">'v</span><span class="operator">,</span><span class="type">'map</span><span class="operator">,</span><span class="type">'ptr</span><span class="operator">,</span><span class="type">'t</span><span class="operator">)</span><span class="type"> plog_ops</span> <span class="operator">=</span> <span class="operator">{</span>
+  find<span class="operator">:</span> 'k <span class="operator">-&gt;</span> <span class="operator">((</span>'k<span class="operator">,</span>'v<span class="operator">)</span> op option<span class="operator">,</span>'t<span class="operator">)</span> m<span class="operator">;</span>  
+  <span class="comment-delimiter">(* </span><span class="comment">should execute in mem but to control concurrency we put in the
+     monad FIXME? something better can be done? </span><span class="comment-delimiter">*)</span>
+
+  add<span class="operator">:</span> <span class="operator">(</span>'k<span class="operator">,</span>'v<span class="operator">)</span>op <span class="operator">-&gt;</span> <span class="operator">(</span>unit<span class="operator">,</span>'t<span class="operator">)</span> m<span class="operator">;</span>  <span class="comment-delimiter">(* </span><span class="comment">add rather than insert, to avoid confusion </span><span class="comment-delimiter">*)</span>
+  
+  detach<span class="operator">:</span> unit <span class="operator">-&gt;</span> <span class="operator">(</span>'ptr <span class="operator">*</span> 'map <span class="operator">*</span> 'ptr<span class="operator">,</span>'t<span class="operator">)</span> m
+  <span class="comment-delimiter">(* </span><span class="comment">'ptr to first block in list; map upto current node; 'ptr to current node </span><span class="comment-delimiter">*)</span>
+<span class="operator">}</span>
+
+
+<span class="governing">type</span> <span class="operator">(</span><span class="type">'map</span><span class="operator">,</span><span class="type">'ptr</span><span class="operator">)</span><span class="type"> plog_state</span> <span class="operator">=</span> <span class="operator">{</span>
+  start_block<span class="operator">:</span> 'ptr<span class="operator">;</span>
+  current_block<span class="operator">:</span> 'ptr<span class="operator">;</span>
+  map_past<span class="operator">:</span> 'map<span class="operator">;</span>  <span class="comment-delimiter">(* </span><span class="comment">in reverse order </span><span class="comment-delimiter">*)</span>
+  map_current<span class="operator">:</span> 'map<span class="operator">;</span>
+<span class="operator">}</span>
+
+
+<span class="comment-delimiter">(* </span><span class="comment">a map built from two other maps; prefer m2 </span><span class="comment-delimiter">*)</span>
+<span class="governing">let</span> <span class="function-name">map_find_union</span><span class="variable-name"> </span><span class="operator">~</span><span class="variable-name">map_ops </span><span class="operator">~</span><span class="variable-name">m1 </span><span class="operator">~</span><span class="variable-name">m2 k</span> <span class="operator">=</span> 
+  <span class="governing">let</span> <span class="governing">open </span><span class="module">Tjr_map</span> <span class="governing">in</span>
+  map_ops.map_find k m2 <span class="operator">|&gt;</span> <span class="keyword">function</span>
+  <span class="operator">|</span> <span class="constructor">Some</span> _ <span class="keyword">as</span> x <span class="operator">-&gt;</span> x
+  <span class="operator">|</span> <span class="constructor">None</span> <span class="operator">-&gt;</span> 
+    map_ops.map_find k m1
+
+<span class="comment-delimiter">(* </span><span class="comment">moved to tjr_map       
+let map_union ~map_ops ~m1 ~m2 = 
+  let { map_add; map_bindings } = map_ops in
+  Tjr_list.with_each_elt
+    ~step:(fun ~state:m1' (k,op) -&gt; map_add k op m1')
+    ~init_state:m1
+    (map_bindings m2)
+</span><span class="comment-delimiter">*)</span>
+
+<span class="comment-delimiter">(* </span><span class="comment">FIXME what about initialization? </span><span class="comment-delimiter">*)</span>
+
+<span class="governing">let</span> <span class="function-name">make_plog</span><span class="variable-name">
+    </span><span class="operator">~</span><span class="variable-name">map_ops</span>
+    <span class="operator">~</span>insert
+    <span class="constant">~plog_state_ref</span>
+  <span class="operator">:</span> <span class="operator">(</span>'k<span class="operator">,</span>'v<span class="operator">,</span>'map<span class="operator">,</span>'ptr<span class="operator">,</span>'t<span class="operator">)</span> plog_ops 
+  <span class="operator">=</span>
+  <span class="governing">let</span> <span class="operator">{</span> map_find<span class="operator">;</span> map_add<span class="operator">;</span> map_empty <span class="operator">}</span> <span class="operator">=</span> map_ops <span class="governing">in</span>
+  <span class="governing">let</span> <span class="function-name">map_union</span><span class="variable-name"> m1 m2</span> <span class="operator">=</span> <span class="module">Tjr_map.</span>map_union <span class="operator">~</span>map_ops <span class="operator">~</span>m1 <span class="operator">~</span>m2 <span class="governing">in</span>
+  <span class="governing">let</span> <span class="operator">{</span>get<span class="operator">;</span>set<span class="operator">}</span> <span class="operator">=</span> plog_state_ref <span class="governing">in</span>
+  <span class="comment-delimiter">(* </span><span class="comment">ASSUME start_block is initialized and consistent with pcl_state </span><span class="comment-delimiter">*)</span>
+  <span class="governing">let</span> <span class="function-name">find</span><span class="variable-name"> k</span> <span class="operator">:</span> <span class="operator">((</span><span class="type">'k</span><span class="operator">,</span><span class="type">'v</span><span class="operator">)</span><span class="type"> op option</span><span class="operator">,</span><span class="type">'t</span><span class="operator">)</span><span class="type"> m</span> <span class="operator">=</span>
+    get <span class="operator">()</span> <span class="operator">|&gt;</span> bind <span class="operator">@@</span> <span class="keyword">fun</span> <span class="variable-name">s</span> <span class="operator">-&gt;</span>
+    <span class="governing">let</span> <span class="variable-name">map_find</span> <span class="operator">=</span> map_find_union <span class="operator">~</span>map_ops <span class="constant">~m1</span><span class="operator">:</span>s.map_past <span class="constant">~m2</span><span class="operator">:</span>s.map_current <span class="governing">in</span>    
+    <span class="governing">let</span> <span class="variable-name">r</span> <span class="operator">=</span> map_find k <span class="governing">in</span>
+    return r
+  <span class="governing">in</span>    
+  <span class="governing">let</span> <span class="function-name">add</span><span class="variable-name"> op</span> <span class="operator">=</span>
+    insert op <span class="operator">|&gt;</span> bind <span class="operator">@@</span> <span class="keyword">function</span>
+    <span class="operator">|</span> <span class="constructor">Inserted_in_current_node</span> <span class="operator">-&gt;</span>
+      get <span class="operator">()</span> <span class="operator">|&gt;</span> bind <span class="operator">@@</span> <span class="keyword">fun</span> <span class="variable-name">s</span> <span class="operator">-&gt;</span>
+      set <span class="operator">{</span> s <span class="keyword">with</span> map_current<span class="operator">=</span>map_ops.map_add <span class="operator">(</span>op2k op<span class="operator">)</span> op s.map_current <span class="operator">}</span> 
+    <span class="operator">|</span> <span class="constructor">Inserted_in_new_node</span> ptr <span class="operator">-&gt;</span>
+      get <span class="operator">()</span> <span class="operator">|&gt;</span> bind <span class="operator">@@</span> <span class="keyword">fun</span> <span class="variable-name">s</span> <span class="operator">-&gt;</span>
+      set <span class="operator">{</span> s <span class="keyword">with</span> 
+            map_past<span class="operator">=</span>map_union s.map_past s.map_current<span class="operator">;</span>
+            map_current<span class="operator">=</span>map_empty <span class="operator">}</span>      
+  <span class="governing">in</span>
+  <span class="comment-delimiter">(* </span><span class="comment">FIXME be clear about concurrency here: detach happens in memory,
+     almost instantly, but other operations cannot interleave with it
+     even if it is in the monad FIXME perhaps we prefer a &quot;single
+     step&quot; detach without the use of bind, which introduces
+     non-atomicity </span><span class="comment-delimiter">*)</span>
+  <span class="governing">let</span> <span class="function-name">detach</span><span class="variable-name"> </span><span class="operator">()</span> <span class="operator">=</span>  
+    get <span class="operator">()</span> <span class="operator">|&gt;</span> bind <span class="operator">@@</span> <span class="keyword">fun</span> <span class="variable-name">s</span> <span class="operator">-&gt;</span>
+    <span class="governing">let</span> <span class="variable-name">r</span> <span class="operator">=</span> <span class="operator">(</span>s.start_block<span class="operator">,</span>s.map_past<span class="operator">,</span>s.current_block<span class="operator">)</span> <span class="governing">in</span>
+    set <span class="operator">{</span> s <span class="keyword">with</span> start_block<span class="operator">=</span>s.current_block<span class="operator">;</span> map_past<span class="operator">=</span>map_empty <span class="operator">}</span> <span class="operator">|&gt;</span> bind <span class="operator">@@</span> <span class="keyword">fun</span> <span class="operator">()</span> <span class="operator">-&gt;</span>
+    return r
+  <span class="governing">in</span>
+  <span class="operator">{</span> find<span class="operator">;</span> add<span class="operator">;</span> detach <span class="operator">}</span>  
+
+
+<span class="governing">let</span> <span class="variable-name">_</span> <span class="operator">=</span> make_plog
+
+
+<span class="comment-delimiter">(* </span><span class="comment">test  ---------------------------------------------------------- </span><span class="comment-delimiter">*)</span>
+
+
+<span class="governing">module</span> <span class="module">Test</span> <span class="operator">=</span> <span class="governing">struct</span>
+
+  <span class="governing">include</span> <span class="governing">struct</span>
+    <span class="governing">type</span> <span class="type">ptr</span> <span class="operator">=</span> int
+    <span class="governing">open </span><span class="module">Pl</span>
+    <span class="governing">open </span><span class="module">Pcl.Test.Repr</span>
+
+    <span class="governing">type</span> <span class="operator">(</span><span class="type">'k</span><span class="operator">,</span><span class="type">'v</span><span class="operator">)</span><span class="type"> list_node</span> <span class="operator">=</span> <span class="operator">(</span>ptr<span class="operator">,(</span>'k<span class="operator">,</span>'v<span class="operator">)</span>repr<span class="operator">)</span> <span class="module">Pl.</span>list_node
+
+    <span class="governing">type</span> <span class="operator">(</span><span class="type">'k</span><span class="operator">,</span><span class="type">'v</span><span class="operator">,</span><span class="type">'map</span><span class="operator">)</span><span class="type"> state</span> <span class="operator">=</span> <span class="operator">{</span>
+      map<span class="operator">:</span> <span class="operator">(</span>ptr <span class="operator">*</span> <span class="operator">(</span>'k<span class="operator">,</span>'v<span class="operator">)</span>list_node<span class="operator">)</span> list<span class="operator">;</span>  <span class="comment-delimiter">(* </span><span class="comment">association list </span><span class="comment-delimiter">*)</span>
+      free<span class="operator">:</span> ptr<span class="operator">;</span>  <span class="comment-delimiter">(* </span><span class="comment">iso to ptr </span><span class="comment-delimiter">*)</span>
+
+      plist_state<span class="operator">:</span> <span class="operator">(</span>int<span class="operator">,(</span>'k<span class="operator">,</span>'v<span class="operator">)</span>repr<span class="operator">)</span> plist_state<span class="operator">;</span>
+      pclist_state<span class="operator">:</span> <span class="operator">((</span>'k<span class="operator">,</span>'v<span class="operator">)</span>op<span class="operator">,(</span>'k<span class="operator">,</span>'v<span class="operator">)</span>repr<span class="operator">)</span> pcl_state<span class="operator">;</span>
+      plog_state<span class="operator">:</span> <span class="operator">(</span>'map<span class="operator">,</span>ptr<span class="operator">)</span> plog_state<span class="operator">;</span>
+    <span class="operator">}</span>
+  <span class="governing">end</span>
+
+  <span class="comment-delimiter">(* </span><span class="comment">NOTE FIXME copied from pcl </span><span class="comment-delimiter">*)</span>
+  <span class="governing">let</span> <span class="function-name">list_ops</span><span class="variable-name"> </span><span class="operator">()</span> <span class="operator">=</span> <span class="module">Pl.</span>make_persistent_list
+      <span class="constant">~write_node</span><span class="operator">:(</span><span class="keyword">fun</span> <span class="variable-name">ptr node</span> <span class="operator">-&gt;</span> <span class="keyword">fun</span> <span class="variable-name">s</span> <span class="operator">-&gt;</span> <span class="operator">({</span> s <span class="keyword">with</span> map<span class="operator">=(</span>ptr<span class="operator">,</span>node<span class="operator">)::</span>s.map <span class="operator">},</span><span class="constructor">Ok</span> <span class="operator">()))</span>
+      <span class="constant">~plist_state_ref</span><span class="operator">:{</span>
+        get<span class="operator">=(</span><span class="keyword">fun</span> <span class="operator">()</span> <span class="operator">-&gt;</span> <span class="keyword">fun</span> <span class="variable-name">s</span> <span class="operator">-&gt;</span> <span class="operator">(</span>s<span class="operator">,</span><span class="constructor">Ok</span> s.plist_state<span class="operator">));</span>
+        set<span class="operator">=(</span><span class="keyword">fun</span> <span class="variable-name">plist_state</span> <span class="operator">-&gt;</span> <span class="keyword">fun</span> <span class="variable-name">s</span> <span class="operator">-&gt;</span> <span class="builtin">failwith</span> <span class="string">&quot;&quot;</span> <span class="comment-delimiter">(* </span><span class="comment">({s with plist_state},Ok ()) </span><span class="comment-delimiter">*)</span><span class="operator">)</span>
+      <span class="operator">}</span>
+      <span class="constant">~alloc</span><span class="operator">:(</span><span class="keyword">fun</span> <span class="operator">()</span> <span class="operator">-&gt;</span> <span class="keyword">fun</span> <span class="variable-name">s</span> <span class="operator">-&gt;</span> <span class="operator">({</span> s <span class="keyword">with</span> free<span class="operator">=</span>s.free<span class="operator">+</span>1 <span class="operator">},</span><span class="constructor">Ok</span> s.free<span class="operator">))</span>
+
+  <span class="governing">let</span> <span class="variable-name">_</span> <span class="operator">=</span> list_ops
+
+  <span class="governing">let</span> <span class="variable-name">repr_ops</span> <span class="operator">=</span> <span class="module">Pcl.Test.Repr.</span>repr_ops
+
+  <span class="governing">let</span> <span class="function-name">chunked_list</span><span class="variable-name"> </span><span class="operator">()</span> <span class="operator">=</span>
+    make_persistent_chunked_list
+      <span class="constant">~list_ops</span><span class="operator">:(</span>list_ops <span class="operator">())</span>
+      <span class="operator">~</span>repr_ops
+      <span class="constant">~pcl_state_ref</span><span class="operator">:{</span>
+        get<span class="operator">=(</span><span class="keyword">fun</span> <span class="operator">()</span> <span class="operator">-&gt;</span> <span class="keyword">fun</span> <span class="variable-name">s</span> <span class="operator">-&gt;</span> <span class="operator">(</span>s<span class="operator">,</span><span class="constructor">Ok</span> s.pclist_state<span class="operator">));</span>
+        set<span class="operator">=(</span><span class="keyword">fun</span> <span class="variable-name">pclist_state</span> <span class="operator">-&gt;</span> <span class="keyword">fun</span> <span class="variable-name">s</span> <span class="operator">-&gt;</span> <span class="operator">({</span>s <span class="keyword">with</span> pclist_state<span class="operator">},</span><span class="constructor">Ok</span> <span class="operator">()));</span>
+      <span class="operator">}</span>
+
+  <span class="governing">let</span> <span class="variable-name">_</span> <span class="operator">=</span> chunked_list
+  
+  <span class="governing">let</span> <span class="function-name">plog</span><span class="variable-name"> </span><span class="operator">~</span><span class="variable-name">map_ops</span> <span class="operator">=</span> 
+    chunked_list <span class="operator">()</span> <span class="operator">@@</span> <span class="keyword">fun</span> <span class="operator">~</span><span class="variable-name">insert</span> <span class="operator">-&gt;</span> 
+    make_plog
+      <span class="operator">~</span>map_ops
+      <span class="operator">~</span>insert
+      <span class="constant">~plog_state_ref</span><span class="operator">:{</span>
+        get<span class="operator">=(</span><span class="keyword">fun</span> <span class="operator">()</span> <span class="operator">-&gt;</span> <span class="keyword">fun</span> <span class="variable-name">s</span> <span class="operator">-&gt;</span> <span class="operator">(</span>s<span class="operator">,</span><span class="constructor">Ok</span> s.plog_state<span class="operator">));</span>
+        set<span class="operator">=(</span><span class="keyword">fun</span> <span class="variable-name">plog_state</span> <span class="operator">-&gt;</span> <span class="keyword">fun</span> <span class="variable-name">s</span> <span class="operator">-&gt;</span> <span class="operator">({</span>s <span class="keyword">with</span> plog_state<span class="operator">},</span> <span class="constructor">Ok</span> <span class="operator">()))</span>
+      <span class="operator">}</span>
+
+  <span class="governing">let</span> <span class="function-name">_</span> <span class="operator">:</span> 
+    <span class="constant">map_ops</span><span class="operator">:(</span>'k<span class="operator">,</span> <span class="operator">(</span>'k<span class="operator">,</span> 'v<span class="operator">)</span> op<span class="operator">,</span> 'map<span class="operator">)</span> <span class="module">Tjr_map.</span>map_ops <span class="operator">-&gt;</span> 
+    <span class="operator">(</span>'k<span class="operator">,</span> 'v<span class="operator">,</span> 'map<span class="operator">,</span> ptr<span class="operator">,</span> <span class="operator">(</span>'k<span class="operator">,</span> 'v<span class="operator">,</span> 'map<span class="operator">)</span> state<span class="operator">)</span> plog_ops 
+    <span class="operator">=</span> plog
+
+
+  <span class="comment-delimiter">(* </span><span class="comment">fix types of 'k 'v and 'map </span><span class="comment-delimiter">*)</span>
+  <span class="comment-delimiter">(* </span><span class="comment">test with an int -&gt; int map </span><span class="comment-delimiter">*)</span>
+
+  <span class="governing">open </span><span class="module">Tjr_map</span>
+
+  <span class="governing">module</span> <span class="module">Map_</span> <span class="operator">=</span> <span class="module">Tjr_map.Make</span><span class="operator">(</span><span class="module">Int_ord</span><span class="operator">)</span>
+
+  <span class="governing">let</span> <span class="variable-name">map_ops</span> <span class="operator">=</span> <span class="module">Map_.</span>map_ops
+
+  <span class="governing">let</span> <span class="function-name">plog</span><span class="variable-name"> </span><span class="operator">()</span> <span class="operator">=</span> plog <span class="operator">~</span>map_ops
+
+  <span class="governing">let</span> <span class="function-name">_</span> <span class="operator">:</span> unit <span class="operator">-&gt;</span>
+    <span class="operator">(</span>ptr<span class="operator">,</span> 'a<span class="operator">,</span> <span class="operator">(</span>ptr<span class="operator">,</span> 'a<span class="operator">)</span> op <span class="module">Map_int.</span>t<span class="operator">,</span> ptr<span class="operator">,</span>
+     <span class="operator">(</span>ptr<span class="operator">,</span> 'a<span class="operator">,</span> <span class="operator">(</span>ptr<span class="operator">,</span> 'a<span class="operator">)</span> op <span class="module">Map_int.</span>t<span class="operator">)</span> state<span class="operator">)</span>
+      plog_ops
+    <span class="operator">=</span> plog
+  
+
+  <span class="comment-delimiter">(* </span><span class="comment">FIXME exhaustive testing? </span><span class="comment-delimiter">*)</span>
+  <span class="governing">let</span> <span class="function-name">main</span><span class="variable-name"> </span><span class="operator">()</span> <span class="operator">=</span> <span class="operator">()</span>
+    
+
+<span class="governing">end</span>
+
+
+
+</pre>
+
+ </body>
+</html>

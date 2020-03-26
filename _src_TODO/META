@@ -1,0 +1,6 @@
+name="imp_fs"
+description="ImpFS, a modern filesystem with some interesting features."
+version="Fri Jun 15 11:30:09 BST 2018 3ba92675c7427e9709157b267c8d963aa892b2b9"
+requires="tjr_btree,tjr_lib,ppx_poly_record,Fuse,extunix,core,bin_prot,ppx_bin_prot"
+archive(byte)="imp_fs.cma"
+archive(native)="imp_fs.cmxa"
