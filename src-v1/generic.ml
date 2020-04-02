@@ -129,8 +129,11 @@ end
 
 module Make(S0:S0) = struct
   open S0
-  open S1(S0)
-  open S2(S0)
+  module S1 = S1(S0)
+  open S1
+  module S2 = S2(S0)
+  open S2
+  
   module Make_2(X:T2) = struct
     open X
     let ( >>= ) = monad_ops.bind

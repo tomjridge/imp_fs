@@ -1,0 +1,67 @@
+
+
+module F_meta = struct
+  (* FIXME don't we want to store file size in the meta as well?
+     what's the point of storing just this stuff? we are trying to
+     make stat, ls etc very fast *)
+
+  (** NOTE we store the file data in a file "n", where n is the id of the file. *)
+  open Tjr_minifs.Minifs_intf.Stat_record
+  type f_meta = stat_record [@@deriving bin_io]
+
+  let time = Unix.time (* 1s resolution *)
+
+  let make ~sz : f_meta = 
+    time () |> fun t ->
+    ({ sz; meta={ atim=t;ctim=();mtim=t }; kind=`File } : f_meta)
+
+end
+open F_meta
+
+
+
+  (** NOTE this checks that the entries are consistent, and drops the option type *)
+  let gom_find : id -> (dir_entry,t) m = fun i -> 
+    gom_find i >>= function 
+    | None -> failwith (Printf.sprintf "%s: attempt to deref unknown identifier" __FILE__)
+    | Some e -> 
+      assert(consistent_entry i e);
+      return e
+        
+
+
+
+
+  let lookup_file: int -> (f_meta,t)m = fun i ->
+    gom_find (Fid i) >>= function
+    | F r -> 
+      blk_dev_ops.read ~blk_id:r >>= fun blk ->
+      F_meta.bin_read_f_meta blk ~pos_ref:(ref 0) |> fun f_meta ->
+      return f_meta
+    | _ -> failwith "impossible"
+
+  let lookup_dir: int -> ( (Dir.k,Dir.v,t)uncached_btree,t )m = fun i ->
+    gom_find (Did i) >>= function
+    | D r0 ->
+      (* r0 is a blk that contains the blk_id which is the root of the B-tree *)
+      blk_dev_ops.read ~blk_id:r0 >>= fun blk ->
+      blk |> blk_to_buf |> fun buf -> 
+      bin_read_r buf ~pos_ref:(ref 0) |> fun r ->
+      let r = ref r in
+      (* if we update the btree, we also have to update r0 *)
+      let root_ops = 
+        let with_state = fun f -> 
+          f ~state:(!r)
+            ~set_state:(fun r' -> 
+                r:=r'; 
+                let buf = buf_ops.create (Blk_sz.to_int blk_sz) in
+                bin_write_r buf ~pos:0 r' |> fun _ ->
+                let blk = buf_to_blk buf in
+                blk_dev_ops.write ~blk_id:r0 ~blk >>= fun () ->
+                return ())
+        in
+        {with_state}
+      in
+      let dir_ops = Dir.dir_ops ~root_ops in
+      return dir_ops      
+    | _ -> failwith "impossible"
