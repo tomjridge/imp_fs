@@ -58,9 +58,11 @@ module S1(S0:S0) = struct
 
   (* NOTE lookup failures for did and fid are dealt with in the monad *)
   type dirs_ops = {
-    find        : did -> (dir_ops,t)m;    
-    delete      : did -> (unit,t)m;    
+    find   : did -> (dir_ops,t)m;    
+    delete : did -> (unit,t)m;    
+    (* create : did -> (unit,t)m; we can't create a dir without rb, which requires the parent *)
   }
+  (** NOTE create just inits a rb and adds did to the gom *)
 
   type fd = fid
 
@@ -83,9 +85,11 @@ module S1(S0:S0) = struct
 
   type files_ops = {
     find: fid -> (file_ops,t)m;
-    create: fid -> (unit,t)m;
-    delete: fid -> (unit,t)m;
+    create: fid -> stat_times -> (unit,t)m;
+    (* delete: fid -> (unit,t)m; *)
   }
+  (** NOTE create just creates a new file in the gom; it doesn't link
+     it into a parent etc *)
 
   (* open Tjr_path_resolution *)
 
