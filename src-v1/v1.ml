@@ -11,7 +11,7 @@ open Tjr_monad.With_lwt
 open Std_types
 open Bin_prot.Std
 module G = Generic
-open G
+(* open G *)
 
 type ('k,'v,'t) uncached_btree = ('k,'v,'t)Tjr_btree.Make_3.uncached_btree
 
@@ -54,7 +54,7 @@ let root_did = {did=0}
 
 let mk_stat_times () = 
   Unix.time () |> fun t -> (* 1s resolution? FIXME *)
-  return { st_atim=t; st_mtim=t }
+  return Times.{ atim=t; mtim=t }
 
 
 
@@ -203,12 +203,14 @@ module Gom = struct
 end
 (* open Gom *)
 
-let gom_btree : (Gom.k,Gom.v,t) uncached_btree Lazy.t = lazy (
+let gom_empty_leaf_as_blk, (gom_btree : (Gom.k,Gom.v,t) uncached_btree Lazy.t) = 
   Tjr_btree.Make_4.make
-    ~args:Gom.gom_args
-    ~blk_dev_ops:(Lazy.force blk_dev_ops)
-    ~blk_alloc:(Lazy.force blk_alloc)
-    ~root_ops:(Lazy.force root_ops))
+    ~args:Gom.gom_args |> fun obj ->
+  obj#empty_leaf_as_blk, 
+  lazy (obj#rest 
+          ~blk_dev_ops:(Lazy.force blk_dev_ops)
+          ~blk_alloc:(Lazy.force blk_alloc)
+          ~root_ops:(Lazy.force root_ops))
 
 let _ = gom_btree
 
@@ -259,7 +261,7 @@ module With_gom() = struct
     open Tjr_btree.Make_3
     open Str_256
 
-    module Rb = struct type rb = { map_root:blk_id; parent:did; times:stat_times }[@@deriving bin_io] end    
+    module Rb = struct type rb = { map_root:blk_id; parent:did; times:Times.times }[@@deriving bin_io] end    
     include Make_root_blk_ops(Rb)
 
     type k = str_256
@@ -274,9 +276,9 @@ module With_gom() = struct
       method v_mshlr = v_mshlr
     end
 
-    let dir_map_ops ~root_ops = 
-      Tjr_btree.Make_4.make 
-        ~args:dir_args
+    let dir_empty_leaf_as_blk,dir_map_ops = 
+      Tjr_btree.Make_4.make ~args:dir_args |> fun obj ->
+      obj#empty_leaf_as_blk, fun ~root_ops -> obj#rest 
         ~blk_dev_ops
         ~blk_alloc
         ~root_ops
@@ -380,7 +382,7 @@ module With_gom() = struct
     (* FIXME of course, there should be a pool, and fds should be
        closed when files expunged from pool *)
     module Rb = struct
-      type rb = { times: stat_times }[@@deriving bin_io]
+      type rb = { times: Times.times }[@@deriving bin_io]
     end
     include Make_root_blk_ops(Rb)
 

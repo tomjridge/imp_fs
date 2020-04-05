@@ -2,7 +2,8 @@
 
 type exn_ = Tjr_minifs.Minifs_intf.exn_
 
-
+type stat_times = Minifs_intf.times
+(*
 include struct
   open Bin_prot.Std
   type stat_times = {
@@ -10,12 +11,15 @@ include struct
     st_mtim: float;
   }[@@deriving bin_io]
 end
-
-type stat_record = {
+*)
+type stat_record = Minifs_intf.stat_record
+(*
+{
   sz:int;
   kind:[`F | `D | `S];
   times: stat_times
 }
+*)
 
 (** Very basic types *)
 module type S0 = sig
@@ -339,25 +343,26 @@ module Make(S0:S0) = struct
 
 
     (* FIXME add times to symlinks? *)
-    let dummy_times = { st_atim=0.0; st_mtim=0.0 }
+    let dummy_times = Times.{ atim=0.0; mtim=0.0 }
 
     (* FIXME here and elsewhere atim is not really dealt with *)
     let stat path = 
       resolve_path ~follow_last_symlink:`If_trailing_slash path >>=| fun rpath ->
       let { parent_id=_pid; comp=_name; result; trailing_slash=_ } = rpath in
+      let open Stat_record in
       match result with
       | Missing -> err `Error_no_entry
       | File fid ->
         files.find fid >>= fun file ->
         file.get_sz () >>= fun sz ->
         file.get_times () >>= fun times ->
-        ok { sz;kind=`F; times }
+        ok { sz;kind=`File; times }
       | Dir did -> 
         dirs.find did >>= fun dir ->
         dir.get_times() >>= fun times ->
-        ok { sz=1; kind=`D; times }   (* sz for dir? FIXME size of dir *)
+        ok { sz=1; kind=`Dir; times }   (* sz for dir? FIXME size of dir *)
       | Sym s -> 
-        ok {sz=String.length s; times=dummy_times; kind=`S}
+        ok {sz=String.length s; times=dummy_times; kind=`Symlink}
 
     let symlink contents path =
       resolve_path ~follow_last_symlink:`If_trailing_slash path >>=| fun rpath ->
@@ -380,7 +385,7 @@ module Make(S0:S0) = struct
       | Sym s -> ok s
       | _ -> err `Error_not_symlink
 
-    let reset () = ok () (* FIXME? *)
+    let reset () = return () (* FIXME? *)
 
   end
 end
