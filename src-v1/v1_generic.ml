@@ -66,7 +66,7 @@ module S1(S0:S0) = struct
     delete : did -> (unit,t)m;    
     (* create : did -> (unit,t)m; we can't create a dir without rb, which requires the parent *)
   }
-  (** NOTE create just inits a rb and adds did to the gom *)
+  (** NOTE for create, use create_dir; this needs to add the did to the gom *)
 
   type fd = fid
 

@@ -10,7 +10,7 @@ NOTE much of this is based on {!Tjr_minifs.In_mem}, but with on-disk
 open Tjr_monad.With_lwt
 open Std_types
 open Bin_prot.Std
-module G = Generic
+module G = V1_generic
 (* open G *)
 
 type ('k,'v,'t) uncached_btree = ('k,'v,'t)Tjr_btree.Make_3.uncached_btree
@@ -19,6 +19,17 @@ type ('k,'v,'t) uncached_btree = ('k,'v,'t)Tjr_btree.Make_3.uncached_btree
 let buf_create () = buf_ops.create (Blk_sz.to_int blk_sz)
 
 let s256_to_string (s:str_256) = (s :> string)
+
+(** Free blocks *)
+let min_free_blk = ref 0
+let get_min_free_blk () = 
+  let r = !min_free_blk in
+  incr min_free_blk;
+  r
+
+let b0_system_root_blk = get_min_free_blk()
+let b1_gom_map_root = get_min_free_blk()
+
 
 (** {2 Setup the generic instance} *)
 
@@ -148,8 +159,9 @@ let root_ops : (_,_)with_state Lazy.t = lazy (
   | Some x -> x)
 
 
-(** We use mutually exclusive subsets of int for identifiers *)
-let min_free_id_ref = ref 0
+(** We use mutually exclusive subsets of int for identifiers; NOTE 0
+   is reserved for the root directory *)
+let min_free_id_ref = ref 1
 let new_id () = 
   let r = !min_free_id_ref in
   incr min_free_id_ref;
@@ -160,6 +172,11 @@ let new_did () = new_id () >>= fun did -> return {did}
 let new_fid () = new_id () >>= fun fid -> return {fid}
 
 let new_sid () = new_id () >>= fun sid -> return {sid}
+
+let id_to_int = function
+  | Did did -> did.did
+  | Fid fid -> fid.fid
+  | Sid sid -> sid.sid
 
 
 (** {2 The global object map (GOM) } *)
@@ -228,7 +245,9 @@ module With_gom() = struct
 
   let gom_find k = gom_find_opt k >>= function
     | Some r -> return r
-    | None -> failwith "gom: id did not map to an entry"
+    | None -> 
+      Printf.printf "Error: gom key %d not found\n%!" (id_to_int k);
+      failwith "gom: id did not map to an entry"
     
   let gom_insert = gom_btree#insert
 
@@ -327,7 +346,7 @@ module With_gom() = struct
       = resolve
 
     let write_empty_leaf ~blk_id =
-      blk_dev_ops.write ~blk_id ~blk:(failwith "FIXME") 
+      blk_dev_ops.write ~blk_id ~blk:(dir_empty_leaf_as_blk ())
 
   end
   let resolve_path = Dir.resolve
@@ -478,18 +497,32 @@ module With_gom() = struct
     dirs.find parent >>= fun dir ->
     dir.insert name (Fid fid)
       
-  let create_dir ~parent ~name ~times = 
-    new_did () >>= fun did ->
+  let create_dir_ ~(is_root:bool) ~parent ~name ~times = 
+    (* the name argument is ignored if we are creating the root dir *)
+    assert( if is_root then name=(Str_256.make "") else true);
+    (match is_root with
+     | false -> new_did ()
+     | true -> return root_did) >>= fun did ->
     blk_alloc.blk_alloc () >>= fun blk_id ->
     blk_alloc.blk_alloc () >>= fun map_root ->
     (* initialize the empty leaf blk *)
     Dir.write_empty_leaf ~blk_id:map_root >>= fun () ->
     (* write the root block itself *)
     Dir.(write_rb ~blk_id { map_root; parent; times }) >>= fun () ->
-    (* add new dir to parent *)
-    dirs.find parent >>= fun dir ->
-    dir.insert name (Did did) >>= fun () ->
+    (* if we are creating the root, we don't insert it into itself *)
+    (match is_root with
+       | true -> return ()
+       | false -> 
+         (* add new dir to parent *)
+         dirs.find parent >>= fun dir ->
+         dir.insert name (Did did)) >>= fun () ->
+    (* make sure to insert into gom *)
+    Printf.printf "%s: adding Did %d to gom\n%!" __FILE__ (id_to_int (Did did));
+    gom_insert (Did did) blk_id >>= fun () ->
     return ()
+
+  let create_dir ~parent ~name ~times = 
+    create_dir_ ~is_root:false ~parent ~name ~times
 
   module Symlink = struct
     module Rb = struct open Str_256 type rb={contents:str_256}[@@deriving bin_io] end
