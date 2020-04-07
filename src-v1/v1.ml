@@ -314,8 +314,11 @@ module With_gom() = struct
       fun did comp ->
       assert(String.length comp <= 256);
       let comp = Str_256.make comp in
-      gom_find (Did did) >>= fun (r:blk_id) -> 
-      let r = ref r in
+      gom_find (Did did) >>= fun (blk_id:blk_id) ->   
+      read_rb ~blk_id >>= fun rb ->
+      let r = ref rb.map_root in
+      (* FIXME this shares code with dirs below; here, we don't expect
+         set_state to be called on root_ops *)
       let root_ops = with_ref r in
       let dir_map_ops = dir_map_ops ~root_ops in
       dir_map_ops#find comp >>= fun vopt ->
@@ -405,11 +408,11 @@ module With_gom() = struct
     end
     include Make_root_blk_ops(Rb)
 
-    let fn fid = Printf.sprintf "/tmp/%d" fid.fid
+    let fn fid = Printf.sprintf "./tmp/v1_files/%d" fid.fid
 
     let get_fd : fid:fid -> foff:int -> (Lwt_unix.file_descr,t)m = fun ~fid ~foff ->
       let default_file_perm = Tjr_file.default_create_perm in
-      (from_lwt Lwt_unix.(openfile (fn fid) [O_RDONLY] default_file_perm)) >>= fun fd ->
+      (from_lwt Lwt_unix.(openfile (fn fid) [O_RDWR] default_file_perm)) >>= fun fd ->
       (from_lwt Lwt_unix.(lseek fd foff SEEK_SET)) >>= fun (_:int) ->
       return fd
 
@@ -424,12 +427,17 @@ module With_gom() = struct
       return (Ok n)
 
     let pwrite ~fid ~foff ~len ~buf ~boff = 
+      Printf.printf "pwrite 1: fid=%d foff=%d len=%d boff=%d \n%!" fid.fid foff len boff;
       get_fd ~fid ~foff >>= fun fd ->
+      Printf.printf "pwrite 2\n%!";
       let bs = Bigstring.to_bytes buf in  (* FIXME don't need whole buf *)
+      Printf.printf "pwrite 3\n%!";
       (from_lwt Lwt_unix.(write fd bs boff len)) >>= fun n ->
+      Printf.printf "pwrite 4\n%!";
       assert(n=len); (* FIXME *)
       Bigstring.blit_of_bytes bs boff buf boff n;
       close fd >>= fun () ->
+      Printf.printf "pwrite 5\n%!";
       return (Ok n)
 
     let truncate ~fid len = 
@@ -501,8 +509,8 @@ module With_gom() = struct
     (* the name argument is ignored if we are creating the root dir *)
     assert( if is_root then name=(Str_256.make "") else true);
     (match is_root with
-     | false -> new_did ()
-     | true -> return root_did) >>= fun did ->
+     | true -> return root_did
+     | false -> new_did ()) >>= fun did ->
     blk_alloc.blk_alloc () >>= fun blk_id ->
     blk_alloc.blk_alloc () >>= fun map_root ->
     (* initialize the empty leaf blk *)
@@ -524,6 +532,9 @@ module With_gom() = struct
   let create_dir ~parent ~name ~times = 
     create_dir_ ~is_root:false ~parent ~name ~times
 
+  let create_root_dir ~times = 
+    create_dir_ ~is_root:true ~parent:root_did ~name:(Str_256.make "") ~times
+
   module Symlink = struct
     module Rb = struct open Str_256 type rb={contents:str_256}[@@deriving bin_io] end
     include Make_root_blk_ops(Rb)
@@ -536,6 +547,7 @@ module With_gom() = struct
     (* add new symlink to parent *)
     dirs.find parent >>= fun dir ->
     dir.insert name (Sid sid) >>= fun () ->
+    gom_insert (Sid sid) blk_id >>= fun () ->
     return ()
   (* FIXME we also need readlink to be implemented properly - see path res *)
       

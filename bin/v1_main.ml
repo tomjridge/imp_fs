@@ -5,7 +5,7 @@ open Std_types
 open Tjr_impfs_v1
 open V1
 
-let fn = "/tmp/v1.store"
+let fn = "./tmp/v1.store"
 
 (* set lwt running *)
 
@@ -33,6 +33,7 @@ let ops : (_,_,_) Minifs_intf.ops =
       Blk_dev_factory.make_9 fn >>= fun bd ->
       let blk_dev_ops = bd#blk_dev_ops in
       blk_dev_ref := Some(blk_dev_ops);
+      Printf.printf "%s: min_free_blk is %d\n%!" __FILE__ (!V1.min_free_blk);
       let min_free_blk = ref (B.of_int !V1.min_free_blk) in 
       blk_alloc_ref := Some(make_blk_allocator min_free_blk);
       let gom_map_root = B.of_int V1.b1_gom_map_root in
@@ -41,12 +42,12 @@ let ops : (_,_,_) Minifs_intf.ops =
         ~blk:(gom_empty_leaf_as_blk ()) >>= fun () ->
       let root_ref = ref gom_map_root in
       root_ops_ref := Some(with_ref root_ref);
+      (* FIXME we also need to sync the root to disk *)
       let module With_gom = With_gom () in
       let module The_filesystem = With_gom.The_filesystem in
-      (* let open The_filesystem in *)
       V1.mk_stat_times () >>= fun times -> 
       Printf.printf "%s: about to create root dir\n%!" __FILE__;
-      With_gom.create_dir_ ~is_root:true ~parent:root_did ~name:(Str_256.make "") ~times >>= fun () ->
+      With_gom.create_root_dir ~times >>= fun () ->
       let ops : (_,_,_) Minifs_intf.ops = The_filesystem.{
           root;
           unlink;
