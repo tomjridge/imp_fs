@@ -28,10 +28,5 @@ useful if you want to store metadata and directories on a fast store
 purpose here is to implement a "minimal" example filesystem (or, at
 least, a partial filesystem).
 
-To run, type `make run_v1`, which executes the following:
-
-~~~
-./v1_main.exe -s -f -o auto_unmount -o sync_read -o debug fuse_mount/ 2>&1
-~~~
-
-See the MiniFS documentation for more details on the FUSE flags.
+To run, type `make run_v1`. See the MiniFS documentation for more
+details on the FUSE flags.
