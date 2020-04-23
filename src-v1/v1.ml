@@ -15,11 +15,6 @@ module G = V1_generic
 
 type ('k,'v,'t) uncached_btree = ('k,'v,'t)Tjr_btree.Make_3.uncached_btree
 
-(* FIXME move to std_types *)
-let buf_create () = buf_ops.create (Blk_sz.to_int blk_sz)
-
-let s256_to_string (s:str_256) = (s :> string)
-
 (** Free blocks *)
 let min_free_blk = ref 0
 let get_min_free_blk () = 
