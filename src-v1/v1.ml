@@ -8,7 +8,7 @@ NOTE much of this is based on {!Tjr_minifs.In_mem}, but with on-disk
    maps, rather than in-memory. *)
 
 open Tjr_monad.With_lwt
-open Std_types
+open Sh_std_ctxt
 open Bin_prot.Std
 module G = V1_generic
 (* open G *)
