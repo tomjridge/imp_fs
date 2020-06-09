@@ -1,17 +1,11 @@
-(** An abstract generic development; this layer deals with path resolution, times and a few others things; assumes create_dir and create_file. *)
+(** An abstract generic development; this layer deals with path
+    resolution, times and a few others things; assumes create_dir and
+    create_file. *)
 
 type exn_ = Tjr_minifs.Minifs_intf.exn_
 
 type stat_times = Minifs_intf.times
-(*
-include struct
-  open Bin_prot.Std
-  type stat_times = {
-    st_atim: float;
-    st_mtim: float;
-  }[@@deriving bin_io]
-end
-*)
+
 type stat_record = Minifs_intf.stat_record
 (*
 {
@@ -36,12 +30,12 @@ end
 module S1(S0:S0) = struct
   open S0
 
-  (** we expect an implentation which maps an id to a root block *)
+  (** We expect an implentation which maps an id to a root block *)
 
   type dir_entry = Fid of fid | Did of did | Sid of sid[@@deriving bin_io]                  
 
   type dir_k = str_256
-    
+
   type dir_v = dir_entry
 
   type dh = (dir_k,dir_v,t)Tjr_btree.Btree_intf.ls (** dir handle *)
@@ -96,9 +90,7 @@ module S1(S0:S0) = struct
     (* delete: fid -> (unit,t)m; *)
   }
   (** NOTE create just creates a new file in the gom; it doesn't link
-     it into a parent etc *)
-
-  (* open Tjr_path_resolution *)
+      it into a parent etc *)
 
   type resolved_path_or_err = (fid,did)Tjr_path_resolution.resolved_path_or_err
 
@@ -110,7 +102,7 @@ module S1(S0:S0) = struct
   }
 end
 
-(** the values we expect to be present *)
+(** The values we expect to be present *)
 module S2(S0:S0) = struct
   open S0 
   open S1(S0)
@@ -144,7 +136,8 @@ module Make(S0:S0) = struct
   open S1
   module S2 = S2(S0)
   open S2
-  
+
+  (** Make step 2, assuming values (from T2) *)
   module Make_2(X:T2) = struct
     open X
     let ( >>= ) = monad_ops.bind
@@ -208,7 +201,7 @@ module Make(S0:S0) = struct
       match result with 
       | Missing -> 
         mk_stat_times () >>= fun times -> 
-        (* FIXME perhaps adjust resolve so that it returns a str_256 name *)
+        (* perhaps adjust resolve so that it returns a str_256 name? no *)
         let name = Str_256.make name in
         create_dir ~parent ~name ~times >>= fun () ->
         ok ()
@@ -230,7 +223,7 @@ module Make(S0:S0) = struct
       ok (kvs,Tjr_minifs.Minifs_intf.{finished}) (* FIXME move to fs_shared *)
 
     let closedir _ = ok ()
-    (* FIXME should we record which rd are valid? ie not closed *)
+    (* FIXME should we record which dh are valid? ie not closed *)
 
     let create path = 
       resolve_path ~follow_last_symlink:`If_trailing_slash path >>=| fun rpath ->
@@ -373,10 +366,8 @@ module Make(S0:S0) = struct
       match result with
       | Missing -> 
         mk_stat_times () >>= fun times -> 
-        let contents = Str_256.make contents in (* FIXME add a generic
-                                                   conversion from
-                                                   string, which raises
-                                                   an error in monad *)
+        (* FIXME add a generic conversion from string, which raises an error in monad?  *)
+        let contents = Str_256.make contents in 
         create_symlink ~parent ~name:(Str_256.make name) ~times ~contents >>= fun () ->
         ok ()
       | _ -> err `Error_exists
