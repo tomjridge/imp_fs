@@ -8,12 +8,12 @@ NOTE much of this is based on {!Tjr_minifs.In_mem}, but with on-disk
    maps, rather than in-memory. *)
 
 open Tjr_monad.With_lwt
-open Sh_std_ctxt
+open Shared_ctxt
 open Bin_prot.Std
 module G = V1_generic
 (* open G *)
 
-type ('k,'v,'t) uncached_btree = ('k,'v,'t)Tjr_btree.Make_3.uncached_btree
+(* type ('k,'v,'t) uncached_btree = ('k,'v,'t)Tjr_btree.Make_3.uncached_btree *)
 
 (** Free blocks *)
 let min_free_blk = ref 0
@@ -68,67 +68,20 @@ let mk_stat_times () =
 
 type obj_root = blk_id  [@@deriving bin_io]
 
-(*
-module Dir_entry = struct
-  (* open Str_256 *)
-  (** NOTE again, could just use a plain blk_id/int and drop the constructors *)
-  type dir_entry = 
-    | F of obj_root
-    | D of obj_root
-    | S of obj_root
-  [@@deriving bin_io]
-end
-open Dir_entry
-*)
-
 type dir_entry = S1.dir_entry
 ;;
 
 
 (** {2 Various marshallers} *)
 
-module Ms = struct
-  open Tjr_btree.Make_3
+let shared_mshlrs = Tjr_fs_shared.bp_mshlrs
 
-(*
-  let id_mshlr : id bin_mshlr = 
-    (module 
-      (struct 
-        type t = id[@@deriving bin_io] 
-        let max_sz = 10 (* FIXME check 9+1 *)
-      end))
-*)
-
-  let int_mshlr : int bin_mshlr = 
-    (module 
-      (struct 
-        type t = int[@@deriving bin_io] 
-        let max_sz = 10 (* FIXME check 9+1 *)
-      end))
-
-  let blk_id_mshlr : blk_id bin_mshlr = 
-    (module 
-      (struct 
-        type t = blk_id[@@deriving bin_io] 
-        let max_sz = 10 (* FIXME check 9+1 *)
-      end))
-
-  let dir_entry_mshlr : dir_entry bin_mshlr = 
-    (module 
-      (struct 
-        type t = dir_entry[@@deriving bin_io] 
-        let max_sz = 10 (* FIXME check 9+1 *)
-      end))
-
-  open Str_256
-  let s256_mshlr : str_256 bin_mshlr =
-    (module 
-      (struct 
-        type t = str_256[@@deriving bin_io] 
-        let max_sz = 259 (* FIXME check 256+3 *)
-      end))
-end
-
+let dir_entry_mshlr : dir_entry bp_mshlr = 
+  (module 
+    (struct 
+      type t = dir_entry[@@deriving bin_io] 
+      let max_sz = 10 (* FIXME check 9+1 *)
+    end))
 
 
 (** {2 Various runtime components that get filled in later} *)
@@ -178,19 +131,19 @@ let id_to_int = function
 
 
 module Gom = struct
-  open Tjr_btree.Make_3
-  open Ms
 
   (** Could just use disjoint subsets of int and drop the constructors *)
 
   type id = dir_entry
   [@@deriving bin_io]
 
-  let id_mshlr : id bin_mshlr = 
+  let v_size = 10 (* FIXME check 9+1 *)
+
+  let id_mshlr : id bp_mshlr = 
     (module 
       (struct 
         type t = id[@@deriving bin_io] 
-        let max_sz = 10 (* FIXME check 9+1 *)
+        let max_sz = v_size
       end))
   
   let consistent_entry id e = 
@@ -200,32 +153,48 @@ module Gom = struct
 
   type k = id[@@deriving bin_io]
 
-  let k_mshlr : k bin_mshlr = id_mshlr
+  let k_mshlr : k bp_mshlr = id_mshlr
 
   (** The gom maps an id to a root blk *)
   type v = blk_id
 
-  let v_mshlr : v bin_mshlr = blk_id_mshlr
+  let v_mshlr : v bp_mshlr = bp_mshlrs#r_mshlr
 
+  let k_cmp: id -> id -> int = Stdlib.compare
+
+  (*
   let gom_args = object
     method k_cmp: id -> id -> int = Stdlib.compare
     method k_mshlr = k_mshlr
     method v_mshlr = v_mshlr
   end  
+*)
+  type r = Shared_ctxt.r
+  let r_cmp = Shared_ctxt.r_cmp
+  let r_mshlr = bp_mshlrs#r_mshlr  (* FIXME put in Shared_ctxt *)
+
+  let cs = Shared_ctxt.(Tjr_btree.Bin_prot_marshalling.make_constants ~blk_sz ~k_size:r_size ~v_size)
+
+  type t = Shared_ctxt.t
+  let monad_ops = Shared_ctxt.monad_ops
+
 end
 (* open Gom *)
 
-let gom_empty_leaf_as_blk, (gom_btree : (Gom.k,Gom.v,t) uncached_btree Lazy.t) = 
-  Tjr_btree.Make_4.make
-    ~args:Gom.gom_args |> fun obj ->
-  obj#empty_leaf_as_blk, 
-  lazy (obj#rest 
-          ~blk_dev_ops:(Lazy.force blk_dev_ops)
-          ~blk_alloc:(Lazy.force blk_alloc)
-          ~root_ops:(Lazy.force root_ops))
+module Gom_btree = Tjr_btree.Make_5.Make(Gom)
+
+let gom_factory = lazy (
+  Gom_btree.btree_factory 
+    ~blk_dev_ops:(Lazy.force blk_dev_ops)
+    ~blk_allocator_ops:(Lazy.force blk_alloc)
+    ~blk_sz:Shared_ctxt.blk_sz)
+
+(* FIXME move bt_1 etc to a top-level module *)
+let (* gom_empty_leaf_as_blk,*) (gom_btree : (Gom.k,Gom.v,_,_,t) Tjr_btree.Make_5.Btree_factory.bt_1 Lazy.t) = 
+  lazy(
+    (Lazy.force gom_factory)#make_uncached (Lazy.force root_ops))
 
 let _ = gom_btree
-
 
 
 (** {2 Definitions after the GOM has been initialized} *)
@@ -234,19 +203,19 @@ let _ = gom_btree
 module With_gom() = struct
   let blk_dev_ops = Lazy.force blk_dev_ops 
   let blk_alloc = Lazy.force blk_alloc
-  let gom_btree = Lazy.force gom_btree 
+  let gom_btree = (Lazy.force gom_btree)#map_ops_with_ls
 
-  let gom_find_opt = gom_btree#find
+  let gom_find_opt = gom_btree.find
 
-  let gom_find k = gom_find_opt k >>= function
+  let gom_find k = gom_find_opt ~k >>= function
     | Some r -> return r
     | None -> 
       Printf.printf "Error: gom key %d not found\n%!" (id_to_int k);
       failwith "gom: id did not map to an entry"
     
-  let gom_insert = gom_btree#insert
+  let gom_insert = gom_btree.insert
 
-  let gom_delete = gom_btree#delete
+  let gom_delete = gom_btree.delete
 
 
   (** In order to incorporate path resolution, we need to be able to
@@ -271,38 +240,51 @@ module With_gom() = struct
      the root block *)
 
   module Dir = struct
-    open Ms
-    open Tjr_btree.Make_3
     open Str_256
 
-    module Rb = struct type rb = { map_root:blk_id; parent:did; times:Times.times }[@@deriving bin_io] end    
-    include Make_root_blk_ops(Rb)
+    module S = struct
+      module Rb = struct type rb = { map_root:blk_id; parent:did; times:Times.times }[@@deriving bin_io] end    
+      include Make_root_blk_ops(Rb)
 
-    type k = str_256
-    type v = Gom.id
+      type k = str_256
 
-    let k_mshlr = s256_mshlr
-    let v_mshlr = Gom.id_mshlr
+      let k_mshlr = bp_mshlrs#s256_mshlr
 
-    let dir_args = object
-      method k_cmp: str_256 -> str_256 -> int = Stdlib.compare
-      method k_mshlr = k_mshlr
-      method v_mshlr = v_mshlr
+      let k_cmp : str_256 -> str_256 -> int = Stdlib.compare
+
+      let k_size=257 (* FIXME check; put in Shared_ctxt? *)
+
+      type v = Gom.id
+      let v_mshlr = Gom.id_mshlr
+      let v_size = Gom.v_size
+
+
+
+      type r = Shared_ctxt.r
+      let r_cmp = Shared_ctxt.r_cmp
+      let r_mshlr = bp_mshlrs#r_mshlr 
+
+      let cs = Shared_ctxt.(Tjr_btree.Bin_prot_marshalling.make_constants ~blk_sz ~k_size:r_size ~v_size)
+
+      type t = Shared_ctxt.t
+      let monad_ops = Shared_ctxt.monad_ops
     end
+    include S
 
-    let dir_empty_leaf_as_blk,dir_map_ops = 
-      Tjr_btree.Make_4.make ~args:dir_args |> fun obj ->
-      obj#empty_leaf_as_blk, fun ~root_ops -> obj#rest 
+    module Dir_btree = Tjr_btree.Make_5.Make(S)
+
+    let dir_factory = 
+      Dir_btree.btree_factory
         ~blk_dev_ops
-        ~blk_alloc
-        ~root_ops
+        ~blk_allocator_ops:blk_alloc
+        ~blk_sz:Shared_ctxt.blk_sz
 
-    let _ : root_ops:_ -> (k,v,t) uncached_btree = dir_map_ops
+    let dir_map_ops ~root_ops = (dir_factory#make_uncached root_ops)#map_ops_with_ls
 
     let _ = gom_find
 
     let read_symlink: (sid -> (str_256,t)m) ref = ref (fun _sid -> 
-      failwith "impossible: this is patched later")
+        failwith "impossible: this is patched later")
 
     open Tjr_path_resolution.Intf
     let resolve_comp: did -> comp_ -> ((fid,did)resolved_comp,t)m = 
@@ -316,7 +298,7 @@ module With_gom() = struct
          set_state to be called on root_ops *)
       let root_ops = with_ref r in
       let dir_map_ops = dir_map_ops ~root_ops in
-      dir_map_ops#find comp >>= fun vopt ->
+      dir_map_ops.find ~k:comp >>= fun vopt ->
       match vopt with
       | None -> return RC_missing
       | Some x -> 
@@ -326,8 +308,8 @@ module With_gom() = struct
         | Sid sid -> 
           (!read_symlink) sid >>= fun s ->
           RC_sym (s256_to_string s) |> return
-          (* FIXME perhaps we also need to identify a symlink by id
-             during path res? *)
+    (* FIXME perhaps we also need to identify a symlink by id
+       during path res? *)
 
     let fs_ops = {
       root=root_did;
@@ -344,13 +326,13 @@ module With_gom() = struct
       = resolve
 
     let write_empty_leaf ~blk_id =
-      blk_dev_ops.write ~blk_id ~blk:(dir_empty_leaf_as_blk ())
+      blk_dev_ops.write ~blk_id ~blk:(dir_factory#empty_leaf_as_blk)
 
   end
   let resolve_path = Dir.resolve
 
   (** The dirs ops, find and delete FIXME these need to be maintained
-     in a pool, and only one instance per id *)
+      in a pool, and only one instance per id *)
   let dirs : dirs_ops = {
     find = (fun did -> 
         gom_find (Did did) >>= fun blk_id ->
@@ -377,10 +359,14 @@ module With_gom() = struct
         in
         let get_times () = (!rb).times |> return in          
         let dir_ops = {
-          find=dir_map_ops#find;
-          insert=dir_map_ops#insert;
-          delete=dir_map_ops#delete;
-          ls_create=dir_map_ops#ls_create;
+          find=(fun k -> dir_map_ops.find ~k);
+          insert=(fun k v -> dir_map_ops.insert ~k ~v);
+          delete=(fun k -> dir_map_ops.delete ~k);
+          ls_create=
+            Tjr_btree.Btree_intf.ls2object 
+              ~monad_ops 
+              ~leaf_stream_ops:dir_map_ops.leaf_stream_ops
+              ~get_r:(fun () -> return !rb.map_root);
           set_parent;
           get_parent;
           set_times;
@@ -388,7 +374,7 @@ module With_gom() = struct
         }
         in
         return dir_ops);                           
-    delete = (fun did -> gom_delete (Did did))
+    delete = (fun did -> gom_delete ~k:(Did did))
   }
 
 
@@ -476,7 +462,7 @@ module With_gom() = struct
           blk_alloc.blk_alloc () >>= fun blk_id ->
           write_rb ~blk_id { times } >>= fun () ->
           (* and insert into gom *)
-          gom_insert (Fid fid) blk_id
+          gom_insert ~k:(Fid fid) ~v:blk_id
         );
       (* delete=(fun fid -> gom_delete (Fid fid)) (\** NOTE no gc *\) *)
     }
@@ -521,7 +507,7 @@ module With_gom() = struct
          dir.insert name (Did did)) >>= fun () ->
     (* make sure to insert into gom *)
     Printf.printf "%s: adding Did %d to gom\n%!" __FILE__ (id_to_int (Did did));
-    gom_insert (Did did) blk_id >>= fun () ->
+    gom_insert ~k:(Did did) ~v:blk_id >>= fun () ->
     return ()
 
   let create_dir ~parent ~name ~times = 
@@ -542,7 +528,7 @@ module With_gom() = struct
     (* add new symlink to parent *)
     dirs.find parent >>= fun dir ->
     dir.insert name (Sid sid) >>= fun () ->
-    gom_insert (Sid sid) blk_id >>= fun () ->
+    gom_insert ~k:(Sid sid) ~v:blk_id >>= fun () ->
     return ()
   (* FIXME we also need readlink to be implemented properly - see path res *)
       

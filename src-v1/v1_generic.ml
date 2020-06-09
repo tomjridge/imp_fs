@@ -29,6 +29,7 @@ module type S0 = sig
   type fid  [@@deriving bin_io]
   type did  [@@deriving bin_io]
   type sid  [@@deriving bin_io] (** symlink id *)
+
 end
 
 (** Types created from basic types *)
@@ -43,7 +44,9 @@ module S1(S0:S0) = struct
     
   type dir_v = dir_entry
 
-  type dh = (dir_k,dir_v,t)Tjr_btree.Make_3.ls (** dir handle *)
+  type dh = (dir_k,dir_v,t)Tjr_btree.Btree_intf.ls (** dir handle *)
+  (* NOTE since dh is supposed to not change whilst we traverse the directory, we can't just identify dh with ls *)
+
 
   type dir_ops = {
     find      : str_256 -> (dir_entry option,t)m;
@@ -223,7 +226,7 @@ module Make(S0:S0) = struct
       (* FIXME add str_256 conversion to_string to str_256 intf; this is ugly *)
       (* FIXME move finished to fs_shared *)
       let kvs = List.map (fun ( (k:str_256),_v) -> (k :> string) ) kvs in 
-      dh#ls_step () >>= fun Tjr_btree.Make_3.{finished} ->
+      dh#ls_step () >>= fun {finished} ->
       ok (kvs,Tjr_minifs.Minifs_intf.{finished}) (* FIXME move to fs_shared *)
 
     let closedir _ = ok ()

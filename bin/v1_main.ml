@@ -1,7 +1,7 @@
 (** Run the v1 example *)
 
 open Tjr_monad.With_lwt
-open Sh_std_ctxt
+open Shared_ctxt
 open Tjr_impfs_v1
 open V1
 
@@ -39,7 +39,7 @@ let ops : (_,_,_) Minifs_intf.ops =
       let gom_map_root = B.of_int V1.b1_gom_map_root in
       blk_dev_ops.write 
         ~blk_id:gom_map_root
-        ~blk:(gom_empty_leaf_as_blk ()) >>= fun () ->
+        ~blk:((Lazy.force V1.gom_factory)#empty_leaf_as_blk) >>= fun () ->
       let root_ref = ref gom_map_root in
       root_ops_ref := Some(with_ref root_ref);
       (* FIXME we also need to sync the root to disk *)
