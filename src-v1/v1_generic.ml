@@ -1,5 +1,5 @@
 (** An abstract generic development; this layer deals with path
-    resolution, times and a few others things; assumes create_dir and
+    resolution, times and a few other things; assumes create_dir and
     create_file. *)
 
 type exn_ = Tjr_minifs.Minifs_intf.exn_
@@ -15,6 +15,7 @@ type stat_record = Minifs_intf.stat_record
 }
 *)
 
+(* $(PIPE2SH("""sed -n '/Very[ ]basic types/,/end/p' >GEN.S0.ml_""")) *)
 (** Very basic types *)
 module type S0 = sig
   type t
@@ -26,6 +27,7 @@ module type S0 = sig
 
 end
 
+(* $(PIPE2SH("""sed -n '/Types[ ]created/,/^end/p' >GEN.S1.ml_""")) *)
 (** Types created from basic types *)
 module S1(S0:S0) = struct
   open S0
@@ -102,6 +104,7 @@ module S1(S0:S0) = struct
   }
 end
 
+(* $(PIPE2SH("""sed -n '/The[ ]values/,/^end/p' >GEN.S2.ml_""")) *)
 (** The values we expect to be present *)
 module S2(S0:S0) = struct
   open S0 
@@ -128,6 +131,17 @@ module S2(S0:S0) = struct
 
     val create_symlink: parent:did -> name:str_256 -> times:stat_times -> contents:str_256 -> (unit,t)m
   end
+end
+
+
+(* $(PIPE2SH("""sed -n '/The[ ]resulting/,/^end/p' >GEN.T.ml_""")) *)
+(** The resulting filesystem (fd is a file identifier, dh is a
+   directory handle supporting leaf_stream operations) *)
+module type T = sig
+  type t
+  type fd
+  type dh
+  val ops: (fd,dh,t) Minifs_intf.ops
 end
 
 module Make(S0:S0) = struct
@@ -381,7 +395,41 @@ module Make(S0:S0) = struct
 
     let reset () = return () (* FIXME? *)
 
+    (** Export the filesystem operations as a single value *)
+    let ops : (_,_,_) Minifs_intf.ops = {
+      root;
+      unlink;
+      mkdir;
+      opendir;
+      readdir;
+      closedir;
+      create;
+      open_;
+      pread;
+      pwrite;
+      close;
+      rename;
+      truncate;
+      stat;
+      symlink;
+      readlink;
+      reset
+    }
+
+    let _ : (fd,
+ < ls_kvs : unit -> (dir_k * dir_entry) list;
+   ls_step : unit -> (Tjr_btree.Btree_intf.finished, S0.t) Tjr_monad.m >,
+ S0.t)
+Tjr_minifs.Minifs_intf.Ops_type.ops = ops
+
+    (* include these types to allow Make_3 below *)
+    type nonrec t = t
+    type nonrec dh = dh
+    type nonrec fd = fd
   end
+
+  (** Make_2, but with a restriction on result sig *)
+  module Make_3(X:T2): T = Make_2(X:T2)
 end
 
 module X = Make
