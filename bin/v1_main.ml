@@ -27,6 +27,8 @@ let () =
 
 (* main thread deals with fuse *)
 
+let line s = Printf.printf "Reached %s\n%!" s
+
 let ops : (_,_,_) Minifs_intf.ops = 
   Printf.printf "%s: initializing ops\n%!" __FILE__;
   Lwt_preemptive.run_in_main (fun () -> to_lwt (
@@ -37,11 +39,14 @@ let ops : (_,_,_) Minifs_intf.ops =
       let min_free_blk = ref (B.of_int !V1.min_free_blk) in 
       blk_alloc_ref := Some(make_blk_allocator min_free_blk);
       let gom_map_root = B.of_int V1.b1_gom_map_root in
+      line __LOC__;
       blk_dev_ops.write 
         ~blk_id:gom_map_root
         ~blk:((Lazy.force V1.gom_factory)#empty_leaf_as_blk) >>= fun () ->
+      line __LOC__;
       let root_ref = ref gom_map_root in
       root_ops_ref := Some(with_ref root_ref);
+      line __LOC__;
       (* FIXME we also need to sync the root to disk *)
       let module With_gom = With_gom () in
       let module The_filesystem = With_gom.The_filesystem in
