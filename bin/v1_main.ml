@@ -3,7 +3,6 @@
 
 open Tjr_monad.With_lwt
 open Shared_ctxt
-open Tjr_impfs_v1
 open V1
 
 (* FIXME move to config *)

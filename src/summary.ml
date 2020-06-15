@@ -1,7 +1,65 @@
 (** Summary of main interfaces *)
 
+(** {2 File interface} 
 
-(** 
+{[
+(** Standard file operations, pwrite, pread, size and truncate.
+
+NOTE we expect buf to be string for the functional version; for
+   mutable buffers we may want to pass the buffer in as a parameter?
+
+NOTE for pwrite, we always return src_len since all bytes are written
+   (unless there is an error of course). 
+
+For pread, we always return a buffer of length len.  *)
+type ('buf,'t) file_ops = {
+  size     : unit -> (size,'t)m;
+  pwrite   : src:'buf -> src_off:offset -> src_len:len -> 
+    dst_off:offset -> ((size,pwrite_error)result,'t)m;
+  pread    : off:offset -> len:len -> (('buf,pread_error)result,'t)m;
+  truncate : size:size -> (unit,'t)m
+}
+
+  (** An inode records the file size and the on-disk root of the backing map *)
+  type ('fid,'blk_id) inode = { 
+    file_size : size; (* in bytes *)
+    blk_index_map_root : 'blk_id (*  btree_root *)
+  }
+
+let make (type fid blk blk_id t) 
+      ~monad_ops
+      ~(blk_ops       : blk blk_ops)
+      ~(blk_dev_ops   : (blk_id,blk,t) blk_dev_ops)
+      ~(blk_index_map : (int,blk_id,blk_id,t)pre_map_ops)
+      ~(with_inode    : ((fid,blk_id)inode,t)with_state)
+      ~(alloc         : unit -> (blk_id,t)m)
+  =
+
+(** [Pre_map_ops]: because the file root is stored in the inode, we need to access
+   the B-tree using explicit root passing (and then separately update
+   the inode); this is to ensure that the inode update is atomic (via
+   with_inode). We could store the root in a separate block but this
+   is a bit too inefficient. *)
+module Pre_map_ops = struct
+  (* we don't expose leaf and frame here *)
+  type ('k,'v,'r,'t) pre_map_ops = {
+    find         : r:'r -> k:'k -> ('v option,'t) m;
+    insert       : r:'r -> k:'k -> v:'v -> ('r option,'t) m;
+    delete       : r:'r -> k:'k -> ('r,'t) m;
+    delete_after : r:'r -> k:'k -> ('r,'t) m; 
+    (** delete all entries for keys > r; used for truncate *)
+  }
+end
+
+]}
+
+*)
+
+
+
+
+(** {2 V1 interfaces}
+
 
 {[
 (** Very basic types *)

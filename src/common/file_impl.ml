@@ -1,5 +1,4 @@
-(** A simple file implementation. Primarily this is here so that we
-   can use it to marshall the free list 
+(** A simple file implementation. 
 
 Terminology: (file) block-index map: the map from blk index to blk_id
 
@@ -20,7 +19,7 @@ this is not currently implemented for file.truncate).
 
 {%html: 
 <pre>
-let make (type fid blk blk_id t) 
+ let make (type fid blk blk_id t) 
       ~monad_ops
       ~(blk_ops       : blk blk_ops)
       ~(blk_dev_ops   : (blk_id,blk,t) blk_dev_ops)
@@ -30,6 +29,10 @@ let make (type fid blk blk_id t)
   =
 </pre>
 %}
+
+
+Concurrency: The backing B-tree is itself a persistent object.
+
 
 TODO:
 - b-tree to implement delete_after (or some alternative approach)
@@ -48,6 +51,8 @@ module Inode = struct
   type 'blk_id btree_root = { btree_root: 'blk_id }
 
 
+  (* $(PIPE2SH("""sed -n '/An[ ]inode records/,/}/p' >GEN.inode.ml_""")) *)
+  (** An inode records the file size and the on-disk root of the backing map *)
   type ('fid,'blk_id) inode = { 
     file_size : size; (* in bytes *)
     blk_index_map_root : 'blk_id (*  btree_root *)
@@ -56,6 +61,7 @@ end
 open Inode
 
 
+(* $(PIPE2SH("""sed -n '/because[ ]the file root/,/^end/p' >GEN.pre_map_ops.ml_""")) *)
 (** [Pre_map_ops]: because the file root is stored in the inode, we need to access
    the B-tree using explicit root passing (and then separately update
    the inode); this is to ensure that the inode update is atomic (via
@@ -67,7 +73,8 @@ module Pre_map_ops = struct
     find         : r:'r -> k:'k -> ('v option,'t) m;
     insert       : r:'r -> k:'k -> v:'v -> ('r option,'t) m;
     delete       : r:'r -> k:'k -> ('r,'t) m;
-    delete_after : r:'r -> k:'k -> ('r,'t) m; (* delete all entries for keys > r; used for truncate *)
+    delete_after : r:'r -> k:'k -> ('r,'t) m; 
+    (** delete all entries for keys > r; used for truncate *)
   }
 end
 open Pre_map_ops
@@ -86,15 +93,18 @@ type pread_error = Pread_error of string
 
 type pwrite_error = Pwrite_error of string
 
+(* $(FIXME("for pwrite, perhaps return unit")) *)
+
+(* $(PIPE2SH("""sed -n '/Standard[ ]file operations/,/^}/p' >GEN.file_ops.ml_""")) *)
 (** Standard file operations, pwrite, pread, size and truncate.
 
 NOTE we expect buf to be string for the functional version; for
-   mutable buffers we may want to pass the buffer in as a parameter? 
+   mutable buffers we may want to pass the buffer in as a parameter?
 
-FIXME for pwrite, we always return src_len since all bytes are written (unless there is an error of course). So perhaps return unit.
+NOTE for pwrite, we always return src_len since all bytes are written
+   (unless there is an error of course). 
 
-For pread, we always return a buffer of length len.
-*)
+For pread, we always return a buffer of length len.  *)
 type ('buf,'t) file_ops = {
   size     : unit -> (size,'t)m;
   pwrite   : src:'buf -> src_off:offset -> src_len:len -> 
@@ -102,6 +112,30 @@ type ('buf,'t) file_ops = {
   pread    : off:offset -> len:len -> (('buf,pread_error)result,'t)m;
   truncate : size:size -> (unit,'t)m
 }
+
+
+type ('buf,'blk,'blk_id,'t) file_factory = <
+  (* NOTE monad, blk_ops assumed *)  
+  with_: 
+    blk_dev_ops : ('blk_id,'blk,'t) blk_dev_ops -> 
+    with_inode  : ((fid,'blk_id)inode,'t) with_state -> 
+    alloc       : (unit -> ('blk_id,'t)m) -> 
+    <    
+      with_blk_index_map: 
+        (int,'blk_id,'blk_id,'t)pre_map_ops -> 
+        ('buf,'t) file_ops;
+
+      (* Implement the blk_index_map with an on-disk B-tree *)
+      with_btree:
+        (* NOTE k_cmp is Int.compare; blk_sz is already fixed by
+           blk_ops; cs computed based on blk_id size and k_size (=
+           int_size) *)
+        blk_id_mshlr: 'blk_id bp_mshlr -> 
+        ('buf,'t) file_ops;
+    >
+>
+  
+
 
 
 type ('a,'b) iso = {
@@ -377,20 +411,8 @@ end
    when an inode is locked for more than a certain length of time. *)
 
 (** NOTE The pread,pwrite functions that result will lock the inode
-    whilst executing, in order to udpate the B-tree root 
-{%html: 
-<pre>
-let make (type fid blk blk_id t) 
-      ~monad_ops
-      ~(blk_ops       : blk blk_ops)
-      ~(blk_dev_ops   : (blk_id,blk,t) blk_dev_ops)
-      ~(blk_index_map : (int,blk_id,blk_id,t)pre_map_ops)
-      ~(with_inode    : ((fid,blk_id)inode,t)with_state)
-      ~(alloc         : unit -> (blk_id,t)m)
-  =
-</pre>
-%}
-*)
+    whilst executing, in order to udpate the B-tree root *)
+(* $(PIPE2SH("""sed -n '/^let[ ]make /,/=/p' >GEN.make_args.ml_""")) *)
 let make (type fid blk blk_id t) 
       ~monad_ops
       ~(blk_ops       : blk blk_ops)

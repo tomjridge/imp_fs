@@ -3,9 +3,9 @@
 
 
 (library
-  (public_name "tjr_impfs_v1")
+  (public_name "tjr_impfs")
   (preprocess (pps ppx_deriving_yojson ppx_jane -allow-unannotated-ignores))
-  (libraries ppx_jane ppx_deriving_yojson tjr_kv tjr_minifs)
+  (libraries ppx_jane ppx_deriving_yojson tjr_kv tjr_minifs lru)
 )
 
 (include_subdirs unqualified)

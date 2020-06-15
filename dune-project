@@ -1,5 +1,5 @@
 (lang dune 2.0)
-(name tjr_imp_fs)
+(name tjr_impfs)
 
 ;; for opam
 (authors              "Tom Ridge <tom.j.ridge@googlemail.com>")
@@ -11,24 +11,24 @@
 
 
 (package 
- (name tjr_imp_fs)
+ (name tjr_impfs)
  (synopsis "ImpFS, a new filesystem")
  (depends 
    tjr_kv
    tjr_minifs))
 
-(package 
- (name tjr_mini_impfs)
- (synopsis "ImpFS, a new filesystem (mini version)")
- (depends 
-   tjr_kv
-   tjr_minifs))
+;; (package 
+;;  (name tjr_mini_impfs)
+;;  (synopsis "ImpFS, a new filesystem (mini version)")
+;;  (depends 
+;;    tjr_kv
+;;    tjr_minifs))
 
 
-(package 
- (name tjr_impfs_v1)
- (synopsis "ImpFS, a new filesystem (v1 version)")
- (depends 
-   tjr_kv
-   tjr_minifs))
+;;(package 
+;; (name tjr_impfs_v1)
+;; (synopsis "ImpFS, a new filesystem (v1 version)")
+;; (depends 
+;;   tjr_kv
+;;   tjr_minifs))
 
