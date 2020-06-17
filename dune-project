@@ -17,18 +17,3 @@
    tjr_kv
    tjr_minifs))
 
-;; (package 
-;;  (name tjr_mini_impfs)
-;;  (synopsis "ImpFS, a new filesystem (mini version)")
-;;  (depends 
-;;    tjr_kv
-;;    tjr_minifs))
-
-
-;;(package 
-;; (name tjr_impfs_v1)
-;; (synopsis "ImpFS, a new filesystem (v1 version)")
-;; (depends 
-;;   tjr_kv
-;;   tjr_minifs))
-

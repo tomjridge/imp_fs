@@ -114,11 +114,11 @@ type ('buf,'t) file_ops = {
 }
 
 
-type ('buf,'blk,'blk_id,'t) file_factory = <
+type ('buf,'blk,'blk_id,'fid,'t) file_factory = <
   (* NOTE monad, blk_ops assumed *)  
   with_: 
     blk_dev_ops : ('blk_id,'blk,'t) blk_dev_ops -> 
-    with_inode  : ((fid,'blk_id)inode,'t) with_state -> 
+    with_inode  : (('fid,'blk_id)inode,'t) with_state -> 
     alloc       : (unit -> ('blk_id,'t)m) -> 
     <    
       with_blk_index_map: 
