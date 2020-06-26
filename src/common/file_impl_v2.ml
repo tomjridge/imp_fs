@@ -269,6 +269,8 @@ module type T = sig
   val file_factory : (buf,blk,blk_id,t) file_factory
 end
 
+[@@@warning "-32"]
+
 module Make(S:S) : T with module S = S = struct
   module S = S
   open S
