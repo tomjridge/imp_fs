@@ -1,4 +1,4 @@
-(** A simple file implementation. 
+(** A simple file implementation; NOTE deprecated, do not use. 
 
 Terminology: (file) block-index map: the map from blk index to blk_id
 
@@ -57,6 +57,8 @@ module Inode = struct
     file_size : size; (* in bytes *)
     blk_index_map_root : 'blk_id (*  btree_root *)
   }
+
+  (* FIXME don't need 'fid typaram *)
 end
 open Inode
 
