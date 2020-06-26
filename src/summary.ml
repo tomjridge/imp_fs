@@ -3,6 +3,15 @@
 (** {2 File interface} 
 
 {[
+let make (type fid blk blk_id t) 
+      ~monad_ops
+      ~(blk_ops       : blk blk_ops)
+      ~(blk_dev_ops   : (blk_id,blk,t) blk_dev_ops)
+      ~(blk_index_map : (int,blk_id,blk_id,t)pre_map_ops)
+      ~(with_inode    : ((fid,blk_id)inode,t)with_state)
+      ~(alloc         : unit -> (blk_id,t)m)
+  =
+
 (** Standard file operations, pwrite, pread, size and truncate.
 
 NOTE we expect buf to be string for the functional version; for
@@ -26,15 +35,6 @@ type ('buf,'t) file_ops = {
     blk_index_map_root : 'blk_id (*  btree_root *)
   }
 
-let make (type fid blk blk_id t) 
-      ~monad_ops
-      ~(blk_ops       : blk blk_ops)
-      ~(blk_dev_ops   : (blk_id,blk,t) blk_dev_ops)
-      ~(blk_index_map : (int,blk_id,blk_id,t)pre_map_ops)
-      ~(with_inode    : ((fid,blk_id)inode,t)with_state)
-      ~(alloc         : unit -> (blk_id,t)m)
-  =
-
 (** [Pre_map_ops]: because the file root is stored in the inode, we need to access
    the B-tree using explicit root passing (and then separately update
    the inode); this is to ensure that the inode update is atomic (via
@@ -54,8 +54,6 @@ end
 ]}
 
 *)
-
-
 
 
 (** {2 V1 interfaces}

@@ -412,7 +412,7 @@ end
 
 (** NOTE The pread,pwrite functions that result will lock the inode
     whilst executing, in order to udpate the B-tree root *)
-(* $(PIPE2SH("""sed -n '/^let[ ]make /,/=/p' >GEN.make_args.ml_""")) *)
+(* $(PIPE2SH("""sed -n '/^let[ ]make /,/=/p' >GEN.file_impl_make_args.ml_""")) *)
 let make (type fid blk blk_id t) 
       ~monad_ops
       ~(blk_ops       : blk blk_ops)

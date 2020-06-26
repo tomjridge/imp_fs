@@ -11,6 +11,8 @@ This is essentially the same as a freelist, with the exception that we
 
 
 *)
+
+(*
 open Tjr_plist_freelist
 open Tjr_plist_freelist.Freelist_intf
 
@@ -66,3 +68,4 @@ let make (type blk_id blk(*buf*) t)
   in
   {alloc;alloc_n;delete}
 
+*)
