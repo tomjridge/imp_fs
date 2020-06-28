@@ -38,7 +38,7 @@ let ops : (_,_,_) Minifs_intf.ops =
   Lwt_preemptive.run_in_main (fun () -> to_lwt (
 
       (* Block device *)
-      Blk_dev_factory.make_9 fn >>= fun bd ->
+      blk_devs#with_ba_buf#from_filename ~fn ~create:true ~init:true >>= fun bd ->
       let blk_dev_ops = bd#blk_dev_ops in
       blk_dev_ref := Some(blk_dev_ops);
 
