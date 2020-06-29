@@ -39,7 +39,7 @@ let pwrite_check = File_impl_v1.pwrite_check
 
 
 module Iter_block_blit = Fv2_iter_block_blit
-
+type idx = Iter_block_blit.idx
 
 module type S = sig
   type blk = ba_buf
@@ -100,10 +100,10 @@ module Make(S:S) : T with module S = S = struct
     fo.usedlist_origin
 
   module With_(S2:sig
-      val blk_dev_ops  : ('blk_id,'blk,'t) blk_dev_ops
-      val barrier      : (unit -> (unit,'t)m)
-      val sync         : (unit -> (unit,'t)m)
-      val freelist_ops : ('blk_id,'t) Freelist.ops
+      val blk_dev_ops  : (blk_id,blk,t) blk_dev_ops
+      val barrier      : (unit -> (unit,t)m)
+      val sync         : (unit -> (unit,t)m)
+      val freelist_ops : (blk_id,t) Freelist.ops
     end) = struct
     open S2
 
@@ -122,18 +122,18 @@ module Make(S:S) : T with module S = S = struct
         return blk_id
       in
       object method alloc_via_usedlist=alloc end
-
-    let blk_index_map_ops _r : (int,_,_,_)Btree_ops.t = 
+      
+    let blk_index_map_ops _r : (idx,_,_,_)Btree_ops.t = 
       failwith "" (* just instantiate a B-tree with an in-mem ref say,
                      and alloc via usedlist *)
 
     [@@@warning "-27"]
 
     let file_ops
-        (usedlist_ops       : ('blk_id,'t) Usedlist.ops)
-        (alloc_via_usedlist : (unit -> ('blk_id,'t)m))
-        (blk_index_map_ops  : (int,'blk_id,'blk_id,'t)Btree_ops.t)
-        (with_fim           : ('blk_id File_im.t,'t) with_state)
+        (usedlist_ops       : (blk_id,t) Usedlist.ops)
+        (alloc_via_usedlist : (unit -> (blk_id,t)m))
+        (blk_index_map_ops  : (idx,blk_id,blk_id,t)Btree_ops.t)
+        (with_fim           : (blk_id File_im.t,t) with_state)
         : (_,_)file_ops 
         =
       failwith "" (* base on file_impl_v1 *)
