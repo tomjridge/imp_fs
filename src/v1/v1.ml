@@ -181,7 +181,7 @@ module Gom = struct
 end
 (* open Gom *)
 
-module Gom_btree = Tjr_btree.Make_5.Make(Gom)
+module Gom_btree = Tjr_btree.Pvt.Make_5.Make(Gom)
 
 let gom_factory = lazy (
   Gom_btree.btree_factory 
@@ -190,7 +190,7 @@ let gom_factory = lazy (
     ~blk_sz:Shared_ctxt.blk_sz)
 
 (* FIXME move bt_1 etc to a top-level module *)
-let (* gom_empty_leaf_as_blk,*) (gom_btree : (Gom.k,Gom.v,_,_,t) Tjr_btree.Make_5.Btree_factory.bt_1 Lazy.t) = 
+let (* gom_empty_leaf_as_blk,*) (gom_btree : (Gom.k,Gom.v,_,_,t) Tjr_btree.Pvt.Make_5.Btree_factory.bt_1 Lazy.t) = 
   lazy(
     (Lazy.force gom_factory)#make_uncached (Lazy.force root_ops))
 
@@ -271,7 +271,7 @@ module With_gom() = struct
     end
     include S
 
-    module Dir_btree = Tjr_btree.Make_5.Make(S)
+    module Dir_btree = Tjr_btree.Pvt.Make_5.Make(S)
 
     let dir_factory = 
       Dir_btree.btree_factory
