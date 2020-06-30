@@ -49,7 +49,16 @@ type ('buf,'t) ops = {
 }
 
 (** indexes, unboxed *)
-type idx = { idx:int } [@@unboxed]
+module Idx = struct
+  open Bin_prot.Std
+  type t = { idx:int } [@@unboxed] [@@deriving bin_io]
+  let max_sz = 9
+end
+open Idx
+
+let idx_mshlr : _ bp_mshlr = (module Idx)
+
+type idx = Idx.t
 
 module type S = sig
   type buf

@@ -40,11 +40,13 @@ let pwrite_check = File_impl_v1.pwrite_check
 
 module Iter_block_blit = Fv2_iter_block_blit
 type idx = Iter_block_blit.idx
+let idx_mshlr = Iter_block_blit.idx_mshlr 
 
 module type S = sig
   type blk = ba_buf
   type buf = ba_buf
   type blk_id = Shared_ctxt.r
+  type r = Shared_ctxt.r
   type t
   val monad_ops   : t monad_ops
   val buf_ops     : buf buf_ops  (* FIXME create_zeroed? *)
@@ -55,6 +57,20 @@ module type S = sig
   (** For the freelist *)
   type a = blk_id
   val plist_factory : (a,blk_id,blk,buf,t) Plist_intf.plist_factory
+
+
+  (* we don't use leaf-streams for idx maps *)
+  type _ls
+
+  (** NOTE this is the type for btree_factory#uncached *)
+  val uncached : 
+    blk_dev_ops     : (r, blk, t) blk_dev_ops -> 
+    blk_alloc       : (r, t) blk_allocator_ops -> 
+    init_btree_root : r -> 
+    <
+      get_btree_root: unit -> (r,t) m;
+      map_ops_with_ls : (idx,r,r,_ls,t) Tjr_btree.Btree_intf.map_ops_with_ls
+    >
 
   val file_origin_mshlr: blk_id File_origin_block.t ba_mshlr
 end
@@ -122,24 +138,67 @@ module Make(S:S) : T with module S = S = struct
         return blk_id
       in
       object method alloc_via_usedlist=alloc end
+
+    module Blk_idx = struct
+      (* FIXME may be better to just reuse int r map *)
+      let blk_sz = Shared_ctxt.blk_sz
+      module S = struct
+        type k = idx
+        type v = Shared_ctxt.r
+        type r = Shared_ctxt.r
+        type t = Shared_ctxt.t
+        let k_cmp: k -> k -> int = Stdlib.compare
+        let monad_ops = Shared_ctxt.monad_ops
+        let k_mshlr = idx_mshlr
+        let v_mshlr = bp_mshlrs#r_mshlr
+        let r_mshlr = bp_mshlrs#r_mshlr
+
+        let k_size = let module X = (val k_mshlr) in X.max_sz
+        let v_size = let module X = (val v_mshlr) in X.max_sz
+        let cs = Tjr_btree.Bin_prot_marshalling.make_constants ~blk_sz ~k_size ~v_size
+        let r_cmp = Shared_ctxt.r_cmp
+      end
       
-    let blk_index_map_ops _r : (idx,_,_,_)Btree_ops.t = 
-      failwith "" (* just instantiate a B-tree with an in-mem ref say,
-                     and alloc via usedlist *)
+      module M = Tjr_btree.Make_6.Make_v2(S)
+      let btree_factory = M.btree_factory
+    end (* Blk_idx *)
+
+
+    let blk_alloc = failwith "FIXME"
+
+    let blk_index_map_ops r : (idx,_,_,_)Btree_ops.t = 
+      let uncached = S.uncached
+          ~blk_dev_ops
+          ~blk_alloc
+          ~init_btree_root:r
+      in
+      let ops (* map_ops_with_ls *) = uncached#map_ops_with_ls in
+      let get_root = uncached#get_btree_root in
+      let find = ops.find in
+      let insert = ops.insert in
+      let delete = ops.delete in
+      Btree_ops.{
+        find         =(fun k -> find ~k);
+        insert       =(fun k v -> insert ~k ~v);
+        delete       =(fun k -> delete ~k);
+        delete_after =(fun _k -> failwith "FIXME");
+        flush        =(fun () -> return ()); (* NOTE we are using uncached B-tree currently *)
+        get_root
+      }
 
     [@@@warning "-27"]
 
     let file_ops
         (usedlist_ops       : (blk_id,t) Usedlist.ops)
         (alloc_via_usedlist : (unit -> (blk_id,t)m))
-        (blk_index_map_ops  : (idx,blk_id,blk_id,t)Btree_ops.t)
+        (blk_index_map_ops  : (r -> (idx,blk_id,blk_id,t)Btree_ops.t))
         (with_fim           : (blk_id File_im.t,t) with_state)
         : (_,_)file_ops 
         =
       failwith "" (* base on file_impl_v1 *)
 
   end    
-
+  
   let file_factory = failwith ""
 end
 
