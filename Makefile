@@ -15,7 +15,8 @@ FUSE_MNT_PT:=./fuse_mount/
 -include Makefile.local # put your modifications here eg no debug flag
 
 update_generated_doc::
-	cd src/common && (ocamldoc_pyexpander file_impl_v1.ml)
+	cd src/common && (ocamldoc_pyexpander fv2_types.ml)
+	cd src/common && (ocamldoc_pyexpander file_impl_v2.ml)
 	cd src/v1 && (ocamldoc_pyexpander v1_generic.ml)
 	cd src && (ocamldoc_pyexpander summary.t.ml > summary.ml)
 

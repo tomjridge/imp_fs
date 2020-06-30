@@ -8,9 +8,9 @@ $(ABBREV("im = in memory"))
 
 $(ABBREV("fim = file in memory"))
 
-$(ASSUME("All operations for an object go via a single blkdev; thus, a
+$(ASSUME("""All operations for an object go via a single blkdev; thus, a
    sync on an object can be accomplished by a flush (or barrier)
-   followed by a sync on the underlying blkdev"))
+   followed by a sync on the underlying blkdev"""))
 
 $(CONVENTION("""We try to use the term "flush" for objects and
    "barrier" for blk_devs, although we believe these are the same sort
@@ -33,17 +33,21 @@ module Usedlist = struct
 
   type 'blk_id origin = 'blk_id Plist_intf.Pl_origin.pl_origin[@@deriving bin_io]
 
-  (** The raw operations provided by the plist; in addition we need to
-     integrate the freelist with the usedlist: alloc_via_usedlist *)
-  type ('blk_id,'t) ops = {
+  (* $(PIPE2SH("""sed -n '/usedlist_ops:[ ]/,/}/p' >GEN.usedlist_ops.ml_""")) *)
+  (** usedlist_ops: The operations provided by the usedlist; in addition we need to
+     integrate the freelist with the usedlist: alloc_via_usedlist 
+
+      NOTE a sync is just a flush followed by a sync of the underlying
+     blkdev, since we assume all object operations are routed to the
+     same blkdev
+  *)      
+  type ('blk_id,'t) usedlist_ops = {
     add        : 'blk_id -> (unit,'t)m;    
     get_origin : unit -> 'blk_id origin;
     flush      : unit -> (unit,'t)m;
   }
-  (** NOTE a sync is just a flush followed by a sync of the underlying
-     blkdev, since we assume all object operations are routed to the
-     same blkdev *)
 
+  type ('blk_id,'t) ops = ('blk_id,'t) usedlist_ops
 end
 
 
@@ -83,12 +87,14 @@ module File_origin_block = struct
   (* NOTE Tjr_fs_shared has size but no deriving bin_io; FIXME perhaps it should? *)
   type size = {size:int} [@@deriving bin_io]
 
-  type 'blk_id t = {
+  (* $(PIPE2SH("""sed -n '/type[ ].*file_origin_block =/,/}/p' >GEN.file_origin_block.ml_""")) *)
+  type 'blk_id file_origin_block = {
     file_size          : size; (* in bytes of course *)
     blk_index_map_root : 'blk_id;
     usedlist_origin    : 'blk_id Usedlist.origin;
   }[@@deriving bin_io]
 
+  type 'blk_id t = 'blk_id file_origin_block
   
 
 end
@@ -140,43 +146,3 @@ type ('buf,'t) file_ops = {
 }
 
 
-type ('buf,'blk,'blk_id,'t) file_factory = <
-
-  read_origin: 
-    blk_dev_ops : ('blk_id,'blk,'t) blk_dev_ops -> 
-    blk_id : 'blk_id -> 
-    ('blk_id File_origin_block.t,'t)m;
-
-  write_origin:
-    blk_dev_ops : ('blk_id,'blk,'t) blk_dev_ops -> 
-    blk_id : 'blk_id -> 
-    origin: 'blk_id File_origin_block.t -> 
-    (unit,'t)m;
-
-  origin_to_fim: 'blk_id File_origin_block.t -> 'blk_id File_im.t;
-
-  usedlist_origin : 'blk_id File_origin_block.t -> 'blk_id Usedlist.origin;
-
-  with_: 
-    blk_dev_ops  : ('blk_id,'blk,'t) blk_dev_ops -> 
-    barrier      : (unit -> (unit,'t)m) -> 
-    sync         : (unit -> (unit,'t)m) -> 
-    freelist_ops : ('blk_id,'t) Freelist.ops -> 
-    <    
-      usedlist_ops : 'blk_id Usedlist.origin -> (('blk_id,'t) Usedlist.ops,'t)m;
-
-      alloc_via_usedlist : 
-        ('blk_id,'t) Usedlist.ops ->         
-        < alloc_via_usedlist: unit -> ('blk_id,'t)m>;
-      (** Allocate and record in usedlist *)
-
-      blk_index_map_ops : 'blk_id -> (int,'blk_id,'blk_id,'t)Btree_ops.t;
-      
-      file_ops: 
-        usedlist_ops       : ('blk_id,'t) Usedlist.ops -> 
-        alloc_via_usedlist : (unit -> ('blk_id,'t)m) ->         
-        blk_index_map_ops  : (int,'blk_id,'blk_id,'t)Btree_ops.t -> 
-        with_fim           : ('blk_id File_im.t,'t) with_state -> 
-        ('buf,'t)file_ops;
-    >
->

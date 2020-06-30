@@ -3,14 +3,67 @@
 (** {2 File interface} 
 
 {[
-let make (type fid blk blk_id t) 
-      ~monad_ops
-      ~(blk_ops       : blk blk_ops)
-      ~(blk_dev_ops   : (blk_id,blk,t) blk_dev_ops)
-      ~(blk_index_map : (int,blk_id,blk_id,t)pre_map_ops)
-      ~(with_inode    : ((fid,blk_id)inode,t)with_state)
-      ~(alloc         : unit -> (blk_id,t)m)
-  =
+(** Construct file operations.
+
+Sequence of steps:
+
+- (1) Read the file origin block; this contains: file size; the
+  blk-idx map root; the usedlist roots
+- (2) Construct the usedlist
+- (2.1) Get the usedlist origin information
+- (2.2) And this provides the usedlist operations
+- (2.3) And allocation should indirect via the usedlist (to record
+  which blk_ids have been allocated)
+- (3) Construct the blk-idx map
+- (3.1) Construct the ops from the blk-idx root
+- (4) Finally construct the file operations
+
+*)
+type ('buf,'blk,'blk_id,'t) file_factory = <
+
+  (* (1) *)
+  read_origin: 
+    blk_dev_ops : ('blk_id,'blk,'t) blk_dev_ops -> 
+    blk_id : 'blk_id -> 
+    ('blk_id File_origin_block.t,'t)m;
+
+  write_origin:
+    blk_dev_ops : ('blk_id,'blk,'t) blk_dev_ops -> 
+    blk_id : 'blk_id -> 
+    origin: 'blk_id File_origin_block.t -> 
+    (unit,'t)m;
+
+  origin_to_fim: 'blk_id File_origin_block.t -> 'blk_id File_im.t;
+
+  usedlist_origin : 'blk_id File_origin_block.t -> 'blk_id Usedlist.origin;
+  (** (2.1) *)
+
+  with_: 
+    blk_dev_ops  : ('blk_id,'blk,'t) blk_dev_ops -> 
+    barrier      : (unit -> (unit,'t)m) -> 
+    sync         : (unit -> (unit,'t)m) -> 
+    freelist_ops : ('blk_id,'t) Freelist.ops -> 
+    <    
+      usedlist_ops : 'blk_id Usedlist.origin -> (('blk_id,'t) Usedlist.ops,'t)m;
+      (** (2.2) *)
+
+      alloc_via_usedlist : 
+        ('blk_id,'t) Usedlist.ops ->         
+        < alloc_via_usedlist: unit -> ('blk_id,'t)m>;
+      (** (2.3) Allocate and record in usedlist *)
+
+      blk_index_map_ops : 'blk_id -> (idx,'blk_id,'blk_id,'t)Btree_ops.t;
+      (** (3.1) Argument is the B-tree on-disk root *)
+      
+      file_ops: 
+        usedlist_ops       : ('blk_id,'t) Usedlist.ops -> 
+        alloc_via_usedlist : (unit -> ('blk_id,'t)m) ->         
+        blk_index_map_ops  : (int,'blk_id,'blk_id,'t)Btree_ops.t -> 
+        with_fim           : ('blk_id File_im.t,'t) with_state -> 
+        ('buf,'t)file_ops;
+      (** (4) *)
+    >
+>
 
 (** Standard file operations, pwrite, pread, size and truncate.
 
@@ -26,30 +79,29 @@ type ('buf,'t) file_ops = {
   pwrite   : src:'buf -> src_off:offset -> src_len:len -> 
     dst_off:offset -> ((size,pwrite_error)result,'t)m;
   pread    : off:offset -> len:len -> (('buf,pread_error)result,'t)m;
-  truncate : size:size -> (unit,'t)m
+  truncate : size:size -> (unit,'t)m;
+  flush    : unit -> (unit,'t)m;
+  sync     : unit -> (unit,'t)m;
 }
 
-  (** An inode records the file size and the on-disk root of the backing map *)
-  type ('fid,'blk_id) inode = { 
-    file_size : size; (* in bytes *)
-    blk_index_map_root : 'blk_id (*  btree_root *)
-  }
+  type 'blk_id file_origin_block = {
+    file_size          : size; (* in bytes of course *)
+    blk_index_map_root : 'blk_id;
+    usedlist_origin    : 'blk_id Usedlist.origin;
+  }[@@deriving bin_io]
 
-(** [Pre_map_ops]: because the file root is stored in the inode, we need to access
-   the B-tree using explicit root passing (and then separately update
-   the inode); this is to ensure that the inode update is atomic (via
-   with_inode). We could store the root in a separate block but this
-   is a bit too inefficient. *)
-module Pre_map_ops = struct
-  (* we don't expose leaf and frame here *)
-  type ('k,'v,'r,'t) pre_map_ops = {
-    find         : r:'r -> k:'k -> ('v option,'t) m;
-    insert       : r:'r -> k:'k -> v:'v -> ('r option,'t) m;
-    delete       : r:'r -> k:'k -> ('r,'t) m;
-    delete_after : r:'r -> k:'k -> ('r,'t) m; 
-    (** delete all entries for keys > r; used for truncate *)
+  (** usedlist_ops: The operations provided by the usedlist; in addition we need to
+     integrate the freelist with the usedlist: alloc_via_usedlist 
+
+      NOTE a sync is just a flush followed by a sync of the underlying
+     blkdev, since we assume all object operations are routed to the
+     same blkdev
+  *)      
+  type ('blk_id,'t) usedlist_ops = {
+    add        : 'blk_id -> (unit,'t)m;    
+    get_origin : unit -> 'blk_id origin;
+    flush      : unit -> (unit,'t)m;
   }
-end
 
 ]}
 
