@@ -77,18 +77,21 @@ type ('buf,'blk,'blk_id,'t) file_factory = <
     blk_dev_ops  : ('blk_id,'blk,'t) blk_dev_ops -> 
     barrier      : (unit -> (unit,'t)m) -> 
     sync         : (unit -> (unit,'t)m) -> 
-    freelist_ops : ('blk_id,'t) Freelist.ops -> 
+    freelist_ops : ('blk_id,'t) blk_allocator_ops -> 
     <    
       usedlist_ops : 'blk_id Usedlist.origin -> (('blk_id,'t) Usedlist.ops,'t)m;
       (** (2.2) *)
 
       alloc_via_usedlist : 
         ('blk_id,'t) Usedlist.ops ->         
-        < alloc_via_usedlist: unit -> ('blk_id,'t)m>;
+        ('blk_id,'t)blk_allocator_ops;
       (** (2.3) Allocate and record in usedlist *)
       
-      mk_blk_idx_map  : 'blk_id -> (int,'blk_id,'blk_id,'t)Btree_ops.t;
-      (** (3.1) Argument is the B-tree on-disk root *)
+      mk_blk_idx_map  : 
+        usedlist: ('blk_id,'t) Usedlist.ops ->        
+        btree_root:'blk_id -> 
+        (int,'blk_id,'blk_id,'t)Btree_ops.t;
+      (** (3.1) *)
       
       file_ops: 
         usedlist           : ('blk_id,'t) Usedlist.ops -> 
@@ -123,10 +126,6 @@ module type S = sig
   type t
   val monad_ops   : t monad_ops
   val buf_ops     : buf buf_ops  (* FIXME create_zeroed? *)
-
-
-  (** Freelist *)
-  val blk_alloc : (r,t) blk_allocator_ops 
 
 
   (** For the usedlist *)
@@ -210,7 +209,7 @@ module Make_v1(S:S) (* : T with module S = S*) = struct
       val blk_dev_ops  : (blk_id,blk,t) blk_dev_ops
       val barrier      : (unit -> (unit,t)m)
       val sync         : (unit -> (unit,t)m)
-      val freelist_ops : (blk_id,t) Freelist.ops
+      val freelist_ops : (blk_id,t) blk_allocator_ops
     end) 
   = 
   struct
@@ -230,11 +229,11 @@ module Make_v1(S:S) (* : T with module S = S*) = struct
       x#with_ref pl |> fun y -> 
       x#with_state y#with_plist  |> fun (plist_ops:(_,_,_,_)Plist_intf.plist_ops) -> 
       let add r = 
-        blk_alloc.blk_alloc () >>= fun nxt -> 
+        freelist_ops.blk_alloc () >>= fun nxt -> 
         plist_ops.add ~nxt ~elt:r >>= fun ropt ->
         match ropt with
         | None -> return ()
-        | Some nxt -> blk_alloc.blk_free nxt
+        | Some nxt -> freelist_ops.blk_free nxt
       in      
       let get_origin () = plist_ops.get_origin () in
       let flush () = return () in
@@ -246,20 +245,32 @@ module Make_v1(S:S) (* : T with module S = S*) = struct
         }
       
     let alloc_via_usedlist (ul_ops: _ Usedlist.ops) =
-      let alloc () = 
-        freelist_ops.alloc () >>= fun blk_id -> 
+      let blk_alloc () = 
+        freelist_ops.blk_alloc () >>= fun blk_id -> 
         ul_ops.add blk_id >>= fun () -> 
         barrier() >>= fun () ->
         return blk_id
       in
-      object method alloc_via_usedlist=alloc end
+      let blk_free _r = 
+        Printf.printf "Free called on usedlist; currently this is a \
+                       no-op; at some point we should reclaim blks \
+                       from live objects (at the moment, we reclaim \
+                       only when an object such as a file is \
+                       completely deleted)";
+        return ()
+      in
+      { blk_alloc; blk_free }
 
-
-    let mk_blk_idx_map r : (int,r,r,t)Btree_ops.t = 
+    let mk_blk_idx_map 
+        ~(usedlist:_ Usedlist.ops) 
+        ~(btree_root: r)
+      : (int,r,r,t)Btree_ops.t = 
+      (* NOTE we need to alloc via the used list *)
+      let blk_alloc = alloc_via_usedlist usedlist in
       let uncached = S.uncached
           ~blk_dev_ops
           ~blk_alloc
-          ~init_btree_root:r
+          ~init_btree_root:btree_root
       in
       let ops (* map_ops_with_ls *) = uncached#map_ops_with_ls in
       let get_root = uncached#get_btree_root in

@@ -52,8 +52,10 @@ end
 
 
 module Freelist = struct
+  (* FIXME this type is almost the same as blk_allocator *)
   type ('blk_id,'t) ops = {
     alloc: unit -> ('blk_id,'t)m;
+    free: 'blk_id -> (unit,'t)m;
   }
 end
 
