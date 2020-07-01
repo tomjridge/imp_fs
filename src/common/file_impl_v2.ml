@@ -2,7 +2,7 @@
 
 Terminology: (file) block-index map: the map from blk index to blk_id
 
-We implement a file as a map from blk_index to blk. The map is
+We implement a file as a map from blk index to blk. The map is
 typically implemented by a B-tree or similar.
 
 New blocks are allocated as needed (by default the map is empty, and a
@@ -14,7 +14,9 @@ because it appears in a lot of other places.
 
 Concurrency: The backing B-tree is itself a persistent object.
 
-GOM interaction: We treat a file as a separate object; the GOM maps file id to origin block. 
+GOM interaction: We treat a file as a separate object; the GOM maps
+file id to origin block. For a file impl that uses in-place mutation,
+we don't need to modify the GOM if the file changes.
 
 
 TODO:
@@ -22,7 +24,7 @@ TODO:
 - validate against "normal" file semantics
 - ensure the tests are run by some top-level test executable
 - implement freeing of blocks after truncate
-- maybe worth distinguishing the blk_id used by the map from the blk_id used to store data
+
 *)
 
 
@@ -65,10 +67,11 @@ type ('buf,'blk,'blk_id,'t) file_factory = <
     origin: 'blk_id File_origin_block.t -> 
     (unit,'t)m;
 
-  origin_to_fim: 'blk_id File_origin_block.t -> 'blk_id File_im.t;
+  (* origin_to_fim: 'blk_id File_origin_block.t -> 'blk_id File_im.t; *)
 
   usedlist_origin : 'blk_id File_origin_block.t -> 'blk_id Usedlist.origin;
   (** (2.1) *)
+
 
   with_: 
     blk_dev_ops  : ('blk_id,'blk,'t) blk_dev_ops -> 
@@ -83,17 +86,23 @@ type ('buf,'blk,'blk_id,'t) file_factory = <
         ('blk_id,'t) Usedlist.ops ->         
         < alloc_via_usedlist: unit -> ('blk_id,'t)m>;
       (** (2.3) Allocate and record in usedlist *)
-
-      blk_index_map_ops : 'blk_id -> (idx,'blk_id,'blk_id,'t)Btree_ops.t;
+      
+      mk_blk_idx_map  : 'blk_id -> (int,'blk_id,'blk_id,'t)Btree_ops.t;
       (** (3.1) Argument is the B-tree on-disk root *)
       
       file_ops: 
-        usedlist_ops       : ('blk_id,'t) Usedlist.ops -> 
+        usedlist           : ('blk_id,'t) Usedlist.ops -> 
         alloc_via_usedlist : (unit -> ('blk_id,'t)m) ->         
-        blk_index_map_ops  : (int,'blk_id,'blk_id,'t)Btree_ops.t -> 
-        with_fim           : ('blk_id File_im.t,'t) with_state -> 
+        blk_idx_map        : (int,'blk_id,'blk_id,'t)Btree_ops.t -> 
+        file_size          : int -> 
         ('buf,'t)file_ops;
       (** (4) *)
+
+      (* Convenience *)
+
+      file_from_origin : 'blk_id File_origin_block.t -> (('buf,'t)file_ops,'t)m;
+      
+      file_from_origin_blk : 'blk_id -> (('buf,'t)file_ops,'t)m;
     >
 >
 
@@ -115,7 +124,12 @@ module type S = sig
   val monad_ops   : t monad_ops
   val buf_ops     : buf buf_ops  (* FIXME create_zeroed? *)
 
-  (** For the freelist *)
+
+  (** Freelist *)
+  val blk_alloc : (r,t) blk_allocator_ops 
+
+
+  (** For the usedlist *)
   type a = blk_id
   val plist_factory : (a,blk_id,blk,buf,t) Plist_intf.plist_factory
 
@@ -129,8 +143,8 @@ module type S = sig
     blk_alloc       : (r, t) blk_allocator_ops -> 
     init_btree_root : r -> 
     <
-      get_btree_root: unit -> (r,t) m;
-      map_ops_with_ls : (idx,r,r,_ls,t) Tjr_btree.Btree_intf.map_ops_with_ls
+      get_btree_root  : unit -> (r,t) m;
+      map_ops_with_ls : (int,r,r,_ls,t) Tjr_btree.Btree_intf.map_ops_with_ls
     >
 
   val file_origin_mshlr: blk_id File_origin_block.t ba_mshlr
@@ -164,14 +178,32 @@ module Make_v1(S:S) (* : T with module S = S*) = struct
     origin |> File_origin_mshlr.marshal |> fun buf -> 
     assert( (buf_ops.buf_size buf).size = (blk_dev_ops.blk_sz|>Blk_sz.to_int)); 
     blk_dev_ops.write ~blk_id ~blk:buf
-
-  let origin_to_fim (fo: _ File_origin_block.t) : (_ File_im.t) = 
-    File_im.{
-      origin_info=fo;
-      origin_dirty=false;
-    }
     
   let usedlist_origin (fo: _ Fo.t) = fo.usedlist_origin
+
+  module Blk_idx = struct
+    (* FIXME may be better to just reuse int r map *)
+    let blk_sz = Shared_ctxt.blk_sz
+    module S = struct
+      type k = idx
+      type v = Shared_ctxt.r
+      type r = Shared_ctxt.r
+      type t = Shared_ctxt.t
+      let k_cmp: k -> k -> int = Stdlib.compare
+      let monad_ops = Shared_ctxt.monad_ops
+      let k_mshlr = idx_mshlr
+      let v_mshlr = bp_mshlrs#r_mshlr
+      let r_mshlr = bp_mshlrs#r_mshlr
+
+      let k_size = let module X = (val k_mshlr) in X.max_sz
+      let v_size = let module X = (val v_mshlr) in X.max_sz
+      let cs = Tjr_btree.Bin_prot_marshalling.make_constants ~blk_sz ~k_size ~v_size
+      let r_cmp = Shared_ctxt.r_cmp
+    end
+
+    module M = Tjr_btree.Make_6.Make_v2(S)
+    let btree_factory = M.btree_factory
+  end (* Blk_idx *)
 
 
   module With_(S2:sig
@@ -187,12 +219,31 @@ module Make_v1(S:S) (* : T with module S = S*) = struct
     (* NOTE unlike a buffer, a blk typically has a fixed size eg 4096 bytes *)        
     let blk_sz = blk_dev_ops.blk_sz |> Blk_sz.to_int
 
-    let usedlist_ops (uo:_ Usedlist.origin) =
+
+    (** Implement the usedlist, using the plist and the global
+       freelist. NOTE For the usedlist, we may hold a free block
+       temporarily; if it isn't used we can return it immediately to
+       the global freelist. *)
+    let usedlist_ops (uo:_ Usedlist.origin) : ((r,t)Usedlist.ops,t)m  =
       plist_factory#with_blk_dev_ops ~blk_dev_ops ~barrier |> fun x -> 
       x#init#from_endpts uo >>= fun pl -> 
       x#with_ref pl |> fun y -> 
-      x#with_state y#with_plist  |> fun plist_ops -> 
-      return plist_ops
+      x#with_state y#with_plist  |> fun (plist_ops:(_,_,_,_)Plist_intf.plist_ops) -> 
+      let add r = 
+        blk_alloc.blk_alloc () >>= fun nxt -> 
+        plist_ops.add ~nxt ~elt:r >>= fun ropt ->
+        match ropt with
+        | None -> return ()
+        | Some nxt -> blk_alloc.blk_free nxt
+      in      
+      let get_origin () = plist_ops.get_origin () in
+      let flush () = return () in
+      (* $(FIXME("usedlist flush is a no-op, since plist is uncached ATM")) *)
+      return Usedlist.{
+          add=add;
+          get_origin;
+          flush
+        }
       
     let alloc_via_usedlist (ul_ops: _ Usedlist.ops) =
       let alloc () = 
@@ -203,34 +254,8 @@ module Make_v1(S:S) (* : T with module S = S*) = struct
       in
       object method alloc_via_usedlist=alloc end
 
-    module Blk_idx = struct
-      (* FIXME may be better to just reuse int r map *)
-      let blk_sz = Shared_ctxt.blk_sz
-      module S = struct
-        type k = idx
-        type v = Shared_ctxt.r
-        type r = Shared_ctxt.r
-        type t = Shared_ctxt.t
-        let k_cmp: k -> k -> int = Stdlib.compare
-        let monad_ops = Shared_ctxt.monad_ops
-        let k_mshlr = idx_mshlr
-        let v_mshlr = bp_mshlrs#r_mshlr
-        let r_mshlr = bp_mshlrs#r_mshlr
 
-        let k_size = let module X = (val k_mshlr) in X.max_sz
-        let v_size = let module X = (val v_mshlr) in X.max_sz
-        let cs = Tjr_btree.Bin_prot_marshalling.make_constants ~blk_sz ~k_size ~v_size
-        let r_cmp = Shared_ctxt.r_cmp
-      end
-      
-      module M = Tjr_btree.Make_6.Make_v2(S)
-      let btree_factory = M.btree_factory
-    end (* Blk_idx *)
-
-
-    let blk_alloc = failwith "FIXME"
-
-    let blk_index_map_ops r : (idx,_,_,_)Btree_ops.t = 
+    let mk_blk_idx_map r : (int,r,r,t)Btree_ops.t = 
       let uncached = S.uncached
           ~blk_dev_ops
           ~blk_alloc
@@ -245,163 +270,205 @@ module Make_v1(S:S) (* : T with module S = S*) = struct
         find         =(fun k -> find ~k);
         insert       =(fun k v -> insert ~k ~v);
         delete       =(fun k -> delete ~k);
-        delete_after =(fun _k -> failwith "FIXME");
-        flush        =(fun () -> return ()); (* NOTE we are using uncached B-tree currently *)
+        delete_after =(fun _k -> failwith "FIXME delete_after"); 
+        (* $(FIXME("bt delete_after")) *)
+        flush        =(fun () -> return ()); 
+        (* NOTE we are using uncached B-tree currently, so nothing to
+           flush *)
         get_root
       }
+
+    let _ = mk_blk_idx_map
 
     [@@@warning "-27"]
 
     module File_ops(S3:sig
-        val usedlist_ops       : (blk_id,t) Usedlist.ops
+        val usedlist           : (blk_id,t) Usedlist.ops
         val alloc_via_usedlist : (unit -> (blk_id,t)m)
-        val blk_index_map_ops  : (r -> (idx,blk_id,blk_id,t)Btree_ops.t)
-        val with_fim           : (blk_id File_im.t,t) with_state
+        val blk_idx_map        : (int,blk_id,blk_id,t)Btree_ops.t
+        val file_size          : int
       end) 
     = 
     struct
 
-          
-(*
       open S3
 
       let empty_blk () = buf_ops.of_string (String.make blk_sz (Char.chr 0))
       (* assumes functional blk impl ?; FIXME blk_ops pads string automatically? *)
 
-      let bind = blk_index_map_ops
+      let bind = blk_idx_map
       let dev = blk_dev_ops
 
+      let alloc = alloc_via_usedlist
+
+      let fim = File_im.{ file_size }
+      let fim_ref = ref fim
+      let with_fim = with_imperative_ref ~monad_ops fim_ref
       let with_fim = with_fim.with_state
 
       let size () = 
         with_fim (fun ~state ~set_state:_ -> 
-            return state.origin_info.file_size)
+            return state.file_size)
   
       let blk_ops = Shared_ctxt.blk_ops
         
       let truncate_blk ~blk ~blk_off = 
         blk |> blk_ops.to_string |> fun blk -> String.sub blk 0 blk_off |> blk_ops.of_string
   
-      let truncate ~(size:size) = 
+      let truncate ~(size:int) = 
         (* FIXME the following code is rather hacky, to say the least *)
         with_fim (fun ~state:fim ~set_state -> 
-            match size.Int_like.size >= fim.origin_info.file_size.size with
+            match size >= fim.file_size with
             | true -> 
-              (* no need to drop blocks *)
-              FIXME we need to unify all the size params, and add binprot marshalling
-              set_state{fim with origin_info={fim.origin_info with file_size=size}}
+              (* no need to drop blocks *)              
+              set_state {file_size=size}
             | false -> 
               (* FIXME check the maths of this - if size is 0 we may want to have no entries in blk_index *)
               (* drop all blocks after size/blk_sz FIXME would be nice to have
-           "delete from"; perhaps we list the contents of the index_map
-           and remove the relevant keys? or a monadic fold or iteration? *)
-        (* also need to zero out the bytes in the final block beyond size.size *)
-        let i,blk_off = size.size / blk_sz, size.size mod blk_sz in
-        let r = inode.blk_index_map_root in
-        bind.delete_after ~r ~k:i >>= fun r ->
-        (
-          match blk_off > 0 with
-          | true -> (
-              (* read blk and zero out suffix, then rewrite *)
-              bind.find ~r ~k:i >>= function
-              | None -> return ()
-              | Some blk_id -> 
-                dev.read ~blk_id >>= fun blk ->
-                truncate_blk ~blk ~blk_off |> fun blk ->
-                (* FIXME we need a rewrite here *)
-                dev.write ~blk_id ~blk)
-          | false -> return ()
-        ) >>= fun () -> 
-        set_state {file_size=size; blk_index_map_root=r})
-  in
-  let read_blk {index=(i:int)} =
-    with_state (fun ~state:inode ~set_state -> 
-      bind.find ~r:inode.blk_index_map_root ~k:i >>= function
-      | None -> (
-          alloc () >>= fun r -> 
-          let blk = empty_blk () in
-          (* this ensures that every blk_id corresponds to a blk that has been written *)
-          dev.write ~blk_id:r ~blk >>= fun () ->
-          (* NOTE need to add to index map *)
-          bind.insert ~r:inode.blk_index_map_root ~k:i ~v:r >>= fun ropt ->
-          match ropt with
-          | None -> return (r,blk)
-          | Some blk_index_map_root -> 
-            set_state {inode with blk_index_map_root} >>= fun () ->
-            return (r,blk))
-      | Some blk_id -> 
-        dev.read ~blk_id >>= fun blk ->
-        return (blk_id,blk))
-  in
-  let _ = read_blk in
-  let alloc_and_write_blk {index=i} blk = 
-    with_state (fun ~state:inode ~set_state ->       
-      alloc () >>= fun blk_id -> 
-      dev.write ~blk_id ~blk >>= fun () ->
-      bind.insert ~r:inode.blk_index_map_root ~k:i ~v:blk_id >>= fun opt ->
-      match opt with
-      | None -> return ()
-      | Some blk_index_map_root -> 
-        set_state {inode with blk_index_map_root} >>= fun () -> 
-        return ())
-  in
-  let buf_ops = bytes_buf_ops in
-  let rewrite_blk_or_alloc {index=_i} (blk_id,blk) = 
-    (* FIXME at the moment, this always succeeds FIXME note we don't
-       attempt to reinsert into B-tree (concurrent modification by
-       another thread may result in unusual behaviour) FIXME maybe
-       need another layer about blk_dev, which allows rewrite *)
-    (* FIXME if we have not already inserted index -> blk_id into the map, we probably should *)
-    (* let blk_id = i |> Blk_id_as_int.of_int in *)
-    dev.write ~blk_id ~blk >>= fun () -> return ()
-  in
-  let int_index_iso = {a_to_b=(fun x -> x); b_to_a=(fun x -> x) } in
-  let Iter_block_blit.{ pread;pwrite } = 
-    Iter_block_blit.make ~monad_ops ~buf_ops ~blk_ops ~int_index_iso ~read_blk 
-      ~alloc_and_write_blk ~rewrite_blk_or_alloc
-  in
-  let pread ~off ~len =     
-    with_state (fun ~state:inode ~set_state:_ ->
-      let size = inode.file_size in
-      (* don't attempt to read beyond end of file *)
-      let len = {len=min len.len (size.size - off.off)} in
-      pread_check ~size ~off ~len |> function 
-      | Ok () -> pread ~off ~len >>= fun x -> return (Ok x)
-      | Error s -> return (Error (Pread_error s)))
-  in
-  let pwrite ~src ~src_off ~src_len ~dst_off =
-    with_state (fun ~state:inode ~set_state ->
-      let size = inode.file_size in
-      pwrite_check ~buf_ops ~src ~src_off ~src_len ~dst_off |> function
-      | Error s -> return (Error (Pwrite_error s))
-      | Ok () -> pwrite ~src ~src_off ~src_len ~dst_off >>= fun x -> 
-        (* now may need to adjust the size of the file *)
-        begin
-          let size' = dst_off.off+src_len.len in
-          match size' > size.size with
-          | true -> set_state {inode with file_size={size=size'}}
-          | false -> return ()
-        end >>= fun () ->
-        return (Ok x)
-    )
-  in
-  { size; truncate; pread; pwrite }
-*)
+                 "delete from"; perhaps we list the contents of the index_map
+                 and remove the relevant keys? or a monadic fold or iteration? *)
+              (* also need to zero out the bytes in the final block beyond size.size *)
+              let i,blk_off = size / blk_sz, size mod blk_sz in
+              bind.delete_after i >>= fun () ->
+              (
+                match blk_off > 0 with
+                | true -> (
+                    (* read blk and zero out suffix, then rewrite *)
+                    bind.find i >>= function
+                    | None -> return ()
+                    | Some blk_id -> 
+                      dev.read ~blk_id >>= fun blk ->
+                      truncate_blk ~blk ~blk_off |> fun blk ->
+                      (* FIXME we need a rewrite here *)
+                      dev.write ~blk_id ~blk)
+                | false -> return ()
+              ) >>= fun () -> 
+              set_state { file_size })
+
+      (* NOTE the following are setting up the Iter_block_blit module *)
       
+      let read_blk (i:int) =
+        bind.find i >>= function
+        | None -> (
+            alloc () >>= fun r -> 
+            let blk : blk = empty_blk () in
+            (* this ensures that every blk_id corresponds to a blk
+               that has been written... which is assumed by the
+               testing code? FIXME why assume this? *)
+            dev.write ~blk_id:r ~blk >>= fun () ->
+            (* NOTE need to add to index map *)
+            bind.insert i r >>= fun () ->
+            return (r,blk))
+        | Some blk_id -> 
+          dev.read ~blk_id >>= fun blk ->
+          return (blk_id,blk)
+
+      let _ = read_blk
+
+      let alloc_and_write_blk i blk = 
+        alloc () >>= fun blk_id -> 
+        dev.write ~blk_id ~blk >>= fun () ->
+        bind.insert i blk_id 
+
+      (* NOTE at the moment, we do not CoW the blk_dev, so this always
+         succeeds in rewriting the block *)
+      let rewrite_blk_or_alloc (i:int) (blk_id,blk) = 
+        (* FIXME if we have not already inserted i -> blk_id into
+           the map, we probably should; but isn't this guaranteed? *)
+        dev.write ~blk_id ~blk
+
+      let Fv2_iter_block_blit.{ pread;pwrite } = 
+        Fv2_iter_block_blit.make ~monad_ops ~buf_ops ~blk_ops 
+          ~read_blk:(fun idx -> read_blk idx.idx)
+          ~alloc_and_write_blk:(fun idx blk -> alloc_and_write_blk idx.idx blk)
+          ~rewrite_blk_or_alloc:(fun idx x -> rewrite_blk_or_alloc idx.idx x)
+
+      let pread ~off ~len =     
+        with_fim (fun ~state ~set_state:_ ->
+            let size = state.file_size in
+            (* don't attempt to read beyond end of file *)
+            let len = {len=min len.len (size - off.off)} in
+            pread_check ~size:{size} ~off ~len |> function 
+            | Ok () -> pread ~off ~len >>= fun x -> return (Ok x)
+            | Error s -> return (Error (Pread_error s)))
+      
+      let pwrite ~src ~src_off ~src_len ~dst_off =
+        with_fim (fun ~state ~set_state ->
+            let size = fim.file_size in
+            pwrite_check ~buf_ops ~src ~src_off ~src_len ~dst_off |> function
+            | Error s -> return (Error (Pwrite_error s))
+            | Ok () -> pwrite ~src ~src_off ~src_len ~dst_off >>= fun x -> 
+              (* now may need to adjust the size of the file *)
+              begin
+                let size' = dst_off.off+src_len.len in
+                match size' > size with
+                | true -> set_state {file_size=size'}
+                | false -> return ()
+              end >>= fun () ->
+              return (Ok x.size) )
+
+      (* $(TERMINOLOGY("""flush doesn't force to disk, it just clears
+         the caches down to the blk dev and issues a blk dev
+         barrier""")) *)
+      (** NOTE this doesn't force to disk, it just clears caches down
+         to blk dev and issues a blk_dev barrier *)
+      let flush () = 
+        usedlist.flush() >>= fun () ->
+        blk_idx_map.flush () >>= fun () ->
+        S2.barrier()
+        
+      let sync () = 
+        flush () >>= fun () ->
+        S2.sync()
+          
+      let file_ops =   { size; truncate; pread; pwrite; flush; sync; }
+
     end
 
-
     let file_ops
-        (usedlist_ops       : (blk_id,t) Usedlist.ops)
-        (alloc_via_usedlist : (unit -> (blk_id,t)m))
-        (blk_index_map_ops  : (r -> (idx,blk_id,blk_id,t)Btree_ops.t))
-        (with_fim           : (blk_id File_im.t,t) with_state)
+        ~(usedlist           : (blk_id,t) Usedlist.ops)
+        ~(alloc_via_usedlist : (unit -> (blk_id,t)m))
+        ~(blk_idx_map        : (int,blk_id,blk_id,t)Btree_ops.t)
+        ~(file_size          :int)
       : (_,_)file_ops 
       =
-      failwith ""
+      let module S = struct
+        let usedlist, alloc_via_usedlist, blk_idx_map, file_size = 
+          usedlist, alloc_via_usedlist, blk_idx_map, file_size
+      end
+      in
+      let module X = File_ops(S) in
+      X.file_ops
+
+    let export = object 
+      method usedlist_ops = usedlist_ops
+      method alloc_via_usedlist = alloc_via_usedlist
+      method mk_blk_idx_map = mk_blk_idx_map
+      method file_ops = file_ops
+      method file_from_origin = failwith ""
+      method file_from_origin_blk = failwith ""
+    end
 
   end (* With_ *)
+
+  let with_ ~blk_dev_ops ~barrier ~sync ~freelist_ops =
+    let module X = struct
+      let blk_dev_ops = blk_dev_ops
+      let barrier = barrier
+      let sync = sync
+      let freelist_ops = freelist_ops
+    end
+    in
+    let module W = With_(X) in
+    W.export
+
+  let _ = with_
   
-  let file_factory = failwith ""
+  let file_factory : (_,_,_,_) file_factory = object
+    method read_origin = read_origin
+    method write_origin = write_origin
+    method usedlist_origin = usedlist_origin
+    method with_ = with_
+  end
 end
 

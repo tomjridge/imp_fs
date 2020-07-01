@@ -43,7 +43,7 @@ module Usedlist = struct
   *)      
   type ('blk_id,'t) usedlist_ops = {
     add        : 'blk_id -> (unit,'t)m;    
-    get_origin : unit -> 'blk_id origin;
+    get_origin : unit -> ('blk_id origin,'t)m;
     flush      : unit -> (unit,'t)m;
   }
 
@@ -65,10 +65,10 @@ module Btree_ops = struct
     delete       : 'k -> (unit,'t) m;
 
     delete_after : 'k -> (unit,'t) m; 
-    (** delete all entries for keys > r; used for truncate *)
+    (** delete all entries for keys AFTER (>) k; used for truncate *)
 
     flush        : unit -> (unit,'t)m;
-    get_root     : unit -> 'r;
+    get_root     : unit -> ('r,'t)m;
   }
 
     (* $(FIXME(""" btree should have a get_root method, flush/barrier and sync""")) *)
@@ -85,11 +85,11 @@ module File_origin_block = struct
   open Bin_prot.Std
 
   (* NOTE Tjr_fs_shared has size but no deriving bin_io; FIXME perhaps it should? *)
-  type size = {size:int} [@@deriving bin_io]
+  (* type size = {size:int} [@@deriving bin_io] *)
 
   (* $(PIPE2SH("""sed -n '/type[ ].*file_origin_block =/,/}/p' >GEN.file_origin_block.ml_""")) *)
   type 'blk_id file_origin_block = {
-    file_size          : size; (* in bytes of course *)
+    file_size          : int; (* in bytes of course *)
     blk_index_map_root : 'blk_id;
     usedlist_origin    : 'blk_id Usedlist.origin;
   }[@@deriving bin_io]
@@ -102,19 +102,16 @@ module Fo = File_origin_block
 
 
 
+
 (** State we hold in memory for a particular file *)
 module File_im = struct
 
-  type 'blk_id t = {
-    origin_info  : 'blk_id File_origin_block.t;
-    origin_dirty : bool;
-    (* blk_dev_ops; barrier; sync *)
-    (* btree cache *)
-    (* data cache *)
+  type t = {
+    file_size: int;
   }
-  (**
-     origin_dirty - whether we need to write out the origin (ie any of the
-     relevant fields have changed)  *)
+  (** The usedlist and blk-idx map are fixed for the lifetime of the
+     file, so should be parameters on creation. Other than that, we
+     just have a single field for file size. *)
 
 end
 
@@ -136,11 +133,11 @@ NOTE for pwrite, we always return src_len since all bytes are written
 
 For pread, we always return a buffer of length len.  *)
 type ('buf,'t) file_ops = {
-  size     : unit -> (size,'t)m;
+  size     : unit -> (int,'t)m;
   pwrite   : src:'buf -> src_off:offset -> src_len:len -> 
-    dst_off:offset -> ((size,pwrite_error)result,'t)m;
+    dst_off:offset -> ((int (*n_written*),pwrite_error)result,'t)m;
   pread    : off:offset -> len:len -> (('buf,pread_error)result,'t)m;
-  truncate : size:size -> (unit,'t)m;
+  truncate : size:int -> (unit,'t)m;
   flush    : unit -> (unit,'t)m;
   sync     : unit -> (unit,'t)m;
 }
