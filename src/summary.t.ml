@@ -1,9 +1,19 @@
 (** Summary of main interfaces *)
 
+(** {2 Usedlist interface} 
+
+{[
+$(INCLUDE("common/GEN.usedlist*.ml_"))
+]}
+
+*)
+
+
+
 (** {2 File interface} 
 
 {[
-$(INCLUDE("common/GEN*"))
+$(INCLUDE("common/GEN.file*.ml_"))
 ]}
 
 {v
@@ -13,6 +23,16 @@ $(INCLUDE("common/fv2.md"))
 v}
 
 *)
+
+
+(** {2 Dir interface} 
+
+{[
+$(INCLUDE("common/GEN.dir*.ml_"))
+]}
+
+*)
+
 
 
 (** {2 V1 interfaces}

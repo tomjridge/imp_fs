@@ -29,7 +29,7 @@ TODO:
 
 
 open Int_like
-open Buffers_from_btree
+open Buffers_from_btree (* FIXME combine with the other buf_ops *)
 open Fv2_types
 
 module Iter_block_blit = Fv2_iter_block_blit
@@ -182,6 +182,10 @@ module Make_v1(S:S) (* : T with module S = S*) = struct
     
   let usedlist_origin (fo: _ Fo.t) = fo.usedlist_origin
 
+  module U = Usedlist_impl.Make_v2(S)
+  let usedlist_factory = U.usedlist_factory
+
+
   module Blk_idx = struct
     (* FIXME may be better to just reuse int r map *)
     let blk_sz = Shared_ctxt.blk_sz
@@ -220,48 +224,19 @@ module Make_v1(S:S) (* : T with module S = S*) = struct
     (* NOTE unlike a buffer, a blk typically has a fixed size eg 4096 bytes *)        
     let blk_sz = blk_dev_ops.blk_sz |> Blk_sz.to_int
 
+    let usedlist_factory' = usedlist_factory#with_ 
+        ~blk_dev_ops
+        ~barrier
+        ~freelist_ops
 
     (** Implement the usedlist, using the plist and the global
        freelist. NOTE For the usedlist, we may hold a free block
        temporarily; if it isn't used we can return it immediately to
        the global freelist. *)
-    let usedlist_ops (uo:_ Usedlist.origin) : ((r,t)Usedlist.ops,t)m  =
-      plist_factory#with_blk_dev_ops ~blk_dev_ops ~barrier |> fun x -> 
-      x#init#from_endpts uo >>= fun pl -> 
-      x#with_ref pl |> fun y -> 
-      x#with_state y#with_plist  |> fun (plist_ops:(_,_,_,_)Plist_intf.plist_ops) -> 
-      let add r = 
-        freelist_ops.blk_alloc () >>= fun nxt -> 
-        plist_ops.add ~nxt ~elt:r >>= fun ropt ->
-        match ropt with
-        | None -> return ()
-        | Some nxt -> freelist_ops.blk_free nxt
-      in      
-      let get_origin () = plist_ops.get_origin () in
-      let flush () = return () in
-      (* $(FIXME("usedlist flush is a no-op, since plist is uncached ATM")) *)
-      return Usedlist.{
-          add=add;
-          get_origin;
-          flush
-        }
-      
-    let alloc_via_usedlist (ul_ops: _ Usedlist.ops) =
-      let blk_alloc () = 
-        freelist_ops.blk_alloc () >>= fun blk_id -> 
-        ul_ops.add blk_id >>= fun () -> 
-        barrier() >>= fun () ->
-        return blk_id
-      in
-      let blk_free _r = 
-        Printf.printf "Free called on usedlist; currently this is a \
-                       no-op; at some point we should reclaim blks \
-                       from live objects (at the moment, we reclaim \
-                       only when an object such as a file is \
-                       completely deleted)";
-        return ()
-      in
-      { blk_alloc; blk_free }
+    let usedlist_ops  : (_ Usedlist.origin) -> ((r,t)Usedlist.ops,t)m =
+      usedlist_factory'#usedlist_ops
+        
+    let alloc_via_usedlist = usedlist_factory'#alloc_via_usedlist
 
     let mk_blk_idx_map 
         ~(usedlist:_ Usedlist.ops) 

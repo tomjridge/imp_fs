@@ -1,5 +1,50 @@
 (** Summary of main interfaces *)
 
+(** {2 Usedlist interface} 
+
+{[
+type ('blk_id,'blk,'t) usedlist_factory = <
+  
+  (* NOTE we don't implement origin read/write because usedlists are
+     always used in conjunction with some other object, which will
+     take care of persisting the origin information; this object is
+     also in charge of issuing sync calls to the blk dev when
+     necessary *)
+  
+  with_: 
+    blk_dev_ops  : ('blk_id,'blk,'t) blk_dev_ops -> 
+    barrier      : (unit -> (unit,'t)m) -> 
+    freelist_ops : ('blk_id,'t) blk_allocator_ops -> 
+    <
+      usedlist_ops : 'blk_id Usedlist.origin -> (('blk_id,'t) Usedlist.ops,'t)m;
+      
+      alloc_via_usedlist : 
+        ('blk_id,'t) Usedlist.ops ->         
+        ('blk_id,'t)blk_allocator_ops;
+            
+    >;
+
+>
+
+  (** usedlist_ops: The operations provided by the usedlist; in
+     addition we need to integrate the freelist with the usedlist:
+     alloc_via_usedlist
+
+      NOTE a sync is just a flush followed by a sync of the underlying
+     blkdev, since we assume all object operations are routed to the
+     same blkdev *)      
+  type ('blk_id,'t) usedlist_ops = {
+    add        : 'blk_id -> (unit,'t)m;    
+    get_origin : unit -> ('blk_id origin,'t)m;
+    flush      : unit -> (unit,'t)m;
+  }
+
+]}
+
+*)
+
+
+
 (** {2 File interface} 
 
 {[
@@ -104,19 +149,6 @@ type ('buf,'t) file_ops = {
     usedlist_origin  : 'blk_id Usedlist.origin;
   }[@@deriving bin_io]
 
-  (** usedlist_ops: The operations provided by the usedlist; in addition we need to
-     integrate the freelist with the usedlist: alloc_via_usedlist 
-
-      NOTE a sync is just a flush followed by a sync of the underlying
-     blkdev, since we assume all object operations are routed to the
-     same blkdev
-  *)      
-  type ('blk_id,'t) usedlist_ops = {
-    add        : 'blk_id -> (unit,'t)m;    
-    get_origin : unit -> ('blk_id origin,'t)m;
-    flush      : unit -> (unit,'t)m;
-  }
-
 ]}
 
 {v
@@ -184,6 +216,67 @@ handles barriers efficiently).
 v}
 
 *)
+
+
+(** {2 Dir interface} 
+
+{[
+(** NOTE 'de stands for dir_entry *)
+type ('blk_id,'blk,'de,'t) dir_factory = <
+  read_origin: 
+    blk_dev_ops : ('blk_id,'blk,'t) blk_dev_ops -> 
+    blk_id : 'blk_id -> 
+    ('blk_id Dir_origin.t,'t)m;
+
+  write_origin:
+    blk_dev_ops : ('blk_id,'blk,'t) blk_dev_ops -> 
+    blk_id : 'blk_id -> 
+    origin: 'blk_id Dir_origin.t -> 
+    (unit,'t)m;
+    
+  with_: 
+    blk_dev_ops  : ('blk_id,'blk,'t) blk_dev_ops -> 
+    barrier      : (unit -> (unit,'t)m) -> 
+    sync         : (unit -> (unit,'t)m) -> 
+    freelist_ops : ('blk_id,'t) blk_allocator_ops -> 
+    <    
+      usedlist_ops : 'blk_id Usedlist.origin -> (('blk_id,'t) Usedlist.ops,'t)m;
+
+      alloc_via_usedlist : 
+        ('blk_id,'t) Usedlist.ops ->         
+        ('blk_id,'t)blk_allocator_ops;
+      
+      mk_dir  : 
+        usedlist     : ('blk_id,'t) Usedlist.ops ->        
+        dir_map_root : 'blk_id -> 
+        origin       : 'blk_id ->
+        (str_256,'de,'blk_id,'t)Dir.t;
+
+      (* Convenience *)
+      
+      dir_from_origin_blk: 'blk_id Dir_origin.t -> ((str_256,'de,'blk_id,'t)Dir.t,'t)m;
+
+      dir_from_origin: 'blk_id -> ((str_256,'de,'blk_id,'t)Dir.t,'t)m;
+    >;  
+>
+
+  type ('k,'v,'r,'t) dir_ops = {
+    find     : 'k -> ('v option,'t) m;
+    insert   : 'k -> 'v -> (unit,'t) m;
+    delete   : 'k -> (unit,'t) m;
+    flush    : unit -> (unit,'t)m;
+    sync     : unit -> (unit,'t)m;
+  }
+
+  type 'blk_id dir_origin = {
+    dir_map_root: 'blk_id;
+    usedlist_origin: 'blk_id Usedlist.origin;
+  }[@@deriving bin_io]
+
+]}
+
+*)
+
 
 
 (** {2 V1 interfaces}

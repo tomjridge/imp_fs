@@ -17,6 +17,8 @@ FUSE_MNT_PT:=./fuse_mount/
 update_generated_doc::
 	cd src/common && (ocamldoc_pyexpander fv2_types.ml)
 	cd src/common && (ocamldoc_pyexpander file_impl_v2.ml)
+	cd src/common && (ocamldoc_pyexpander usedlist_impl.ml)
+	cd src/common && (ocamldoc_pyexpander dir_impl.ml)
 	cd src/v1 && (ocamldoc_pyexpander v1_generic.ml)
 	cd src && (ocamldoc_pyexpander summary.t.ml > summary.ml)
 

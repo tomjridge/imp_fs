@@ -34,13 +34,13 @@ module Usedlist = struct
   type 'blk_id origin = 'blk_id Plist_intf.Pl_origin.pl_origin[@@deriving bin_io]
 
   (* $(PIPE2SH("""sed -n '/usedlist_ops:[ ]/,/}/p' >GEN.usedlist_ops.ml_""")) *)
-  (** usedlist_ops: The operations provided by the usedlist; in addition we need to
-     integrate the freelist with the usedlist: alloc_via_usedlist 
+  (** usedlist_ops: The operations provided by the usedlist; in
+     addition we need to integrate the freelist with the usedlist:
+     alloc_via_usedlist
 
       NOTE a sync is just a flush followed by a sync of the underlying
      blkdev, since we assume all object operations are routed to the
-     same blkdev
-  *)      
+     same blkdev *)      
   type ('blk_id,'t) usedlist_ops = {
     add        : 'blk_id -> (unit,'t)m;    
     get_origin : unit -> ('blk_id origin,'t)m;
@@ -50,7 +50,7 @@ module Usedlist = struct
   type ('blk_id,'t) ops = ('blk_id,'t) usedlist_ops
 end
 
-
+(*
 module Freelist = struct
   (* FIXME this type is almost the same as blk_allocator *)
   type ('blk_id,'t) ops = {
@@ -58,7 +58,7 @@ module Freelist = struct
     free: 'blk_id -> (unit,'t)m;
   }
 end
-
+*)
 
 module Btree_ops = struct
   type ('k,'v,'r,'t) t = {
@@ -72,8 +72,6 @@ module Btree_ops = struct
     flush        : unit -> (unit,'t)m;
     get_root     : unit -> ('r,'t)m;
   }
-
-    (* $(FIXME(""" btree should have a get_root method, flush/barrier and sync""")) *)
 end
 
 
