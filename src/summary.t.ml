@@ -6,6 +6,12 @@
 $(INCLUDE("common/GEN*"))
 ]}
 
+{v
+
+$(INCLUDE("common/fv2.md"))
+
+v}
+
 *)
 
 

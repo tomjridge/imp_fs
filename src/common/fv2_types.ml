@@ -134,7 +134,9 @@ NOTE we expect buf to be string for the functional version; for
 NOTE for pwrite, we always return src_len since all bytes are written
    (unless there is an error of course). 
 
-For pread, we always return a buffer of length len.  *)
+For pread, we always return a buffer of length len (assuming off+len <= file size).
+
+*)
 type ('buf,'t) file_ops = {
   size     : unit -> (int,'t)m;
   pwrite   : src:'buf -> src_off:offset -> src_len:len -> 
