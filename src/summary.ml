@@ -33,35 +33,47 @@ type ('buf,'blk,'blk_id,'t) file_factory = <
     origin: 'blk_id File_origin_block.t -> 
     (unit,'t)m;
 
-  origin_to_fim: 'blk_id File_origin_block.t -> 'blk_id File_im.t;
+  (* origin_to_fim: 'blk_id File_origin_block.t -> 'blk_id File_im.t; *)
 
   usedlist_origin : 'blk_id File_origin_block.t -> 'blk_id Usedlist.origin;
   (** (2.1) *)
+
 
   with_: 
     blk_dev_ops  : ('blk_id,'blk,'t) blk_dev_ops -> 
     barrier      : (unit -> (unit,'t)m) -> 
     sync         : (unit -> (unit,'t)m) -> 
-    freelist_ops : ('blk_id,'t) Freelist.ops -> 
+    freelist_ops : ('blk_id,'t) blk_allocator_ops -> 
     <    
       usedlist_ops : 'blk_id Usedlist.origin -> (('blk_id,'t) Usedlist.ops,'t)m;
       (** (2.2) *)
 
       alloc_via_usedlist : 
         ('blk_id,'t) Usedlist.ops ->         
-        < alloc_via_usedlist: unit -> ('blk_id,'t)m>;
+        ('blk_id,'t)blk_allocator_ops;
       (** (2.3) Allocate and record in usedlist *)
-
-      blk_index_map_ops : 'blk_id -> (idx,'blk_id,'blk_id,'t)Btree_ops.t;
-      (** (3.1) Argument is the B-tree on-disk root *)
+      
+      mk_blk_idx_map  : 
+        usedlist: ('blk_id,'t) Usedlist.ops ->        
+        btree_root:'blk_id -> 
+        (int,'blk_id,'blk_id,'t)Btree_ops.t;
+      (** (3.1) *)
       
       file_ops: 
-        usedlist_ops       : ('blk_id,'t) Usedlist.ops -> 
+        usedlist           : ('blk_id,'t) Usedlist.ops -> 
         alloc_via_usedlist : (unit -> ('blk_id,'t)m) ->         
-        blk_index_map_ops  : (int,'blk_id,'blk_id,'t)Btree_ops.t -> 
-        with_fim           : ('blk_id File_im.t,'t) with_state -> 
+        blk_idx_map        : (int,'blk_id,'blk_id,'t)Btree_ops.t -> 
+        file_origin        : 'blk_id ->         
+        file_size          : int -> 
         ('buf,'t)file_ops;
       (** (4) *)
+
+      (* Convenience *)
+
+      file_from_origin : 
+        ('blk_id * 'blk_id File_origin_block.t) -> (('buf,'t)file_ops,'t)m;
+      
+      file_from_origin_blk : 'blk_id -> (('buf,'t)file_ops,'t)m;
     >
 >
 
@@ -75,19 +87,19 @@ NOTE for pwrite, we always return src_len since all bytes are written
 
 For pread, we always return a buffer of length len.  *)
 type ('buf,'t) file_ops = {
-  size     : unit -> (size,'t)m;
+  size     : unit -> (int,'t)m;
   pwrite   : src:'buf -> src_off:offset -> src_len:len -> 
-    dst_off:offset -> ((size,pwrite_error)result,'t)m;
+    dst_off:offset -> ((int (*n_written*),pwrite_error)result,'t)m;
   pread    : off:offset -> len:len -> (('buf,pread_error)result,'t)m;
-  truncate : size:size -> (unit,'t)m;
+  truncate : size:int -> (unit,'t)m;
   flush    : unit -> (unit,'t)m;
   sync     : unit -> (unit,'t)m;
 }
 
   type 'blk_id file_origin_block = {
-    file_size          : size; (* in bytes of course *)
-    blk_index_map_root : 'blk_id;
-    usedlist_origin    : 'blk_id Usedlist.origin;
+    file_size        : int; (* in bytes of course *)
+    blk_idx_map_root : 'blk_id;
+    usedlist_origin  : 'blk_id Usedlist.origin;
   }[@@deriving bin_io]
 
   (** usedlist_ops: The operations provided by the usedlist; in addition we need to
@@ -99,7 +111,7 @@ type ('buf,'t) file_ops = {
   *)      
   type ('blk_id,'t) usedlist_ops = {
     add        : 'blk_id -> (unit,'t)m;    
-    get_origin : unit -> 'blk_id origin;
+    get_origin : unit -> ('blk_id origin,'t)m;
     flush      : unit -> (unit,'t)m;
   }
 
