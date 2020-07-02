@@ -91,9 +91,9 @@ module File_origin_block = struct
 
   (* $(PIPE2SH("""sed -n '/type[ ].*file_origin_block =/,/}/p' >GEN.file_origin_block.ml_""")) *)
   type 'blk_id file_origin_block = {
-    file_size          : int; (* in bytes of course *)
-    blk_index_map_root : 'blk_id;
-    usedlist_origin    : 'blk_id Usedlist.origin;
+    file_size        : int; (* in bytes of course *)
+    blk_idx_map_root : 'blk_id;
+    usedlist_origin  : 'blk_id Usedlist.origin;
   }[@@deriving bin_io]
 
   type 'blk_id t = 'blk_id file_origin_block
@@ -113,7 +113,8 @@ module File_im = struct
   }
   (** The usedlist and blk-idx map are fixed for the lifetime of the
      file, so should be parameters on creation. Other than that, we
-     just have a single field for file size. *)
+     just have a field for file size and a field for the location of
+     the origin blk. *)
 
 end
 

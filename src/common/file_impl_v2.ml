@@ -97,13 +97,15 @@ type ('buf,'blk,'blk_id,'t) file_factory = <
         usedlist           : ('blk_id,'t) Usedlist.ops -> 
         alloc_via_usedlist : (unit -> ('blk_id,'t)m) ->         
         blk_idx_map        : (int,'blk_id,'blk_id,'t)Btree_ops.t -> 
+        file_origin        : 'blk_id ->         
         file_size          : int -> 
         ('buf,'t)file_ops;
       (** (4) *)
 
       (* Convenience *)
 
-      file_from_origin : 'blk_id File_origin_block.t -> (('buf,'t)file_ops,'t)m;
+      file_from_origin : 
+        ('blk_id * 'blk_id File_origin_block.t) -> (('buf,'t)file_ops,'t)m;
       
       file_from_origin_blk : 'blk_id -> (('buf,'t)file_ops,'t)m;
     >
@@ -297,6 +299,7 @@ module Make_v1(S:S) (* : T with module S = S*) = struct
         val usedlist           : (blk_id,t) Usedlist.ops
         val alloc_via_usedlist : (unit -> (blk_id,t)m)
         val blk_idx_map        : (int,blk_id,blk_id,t)Btree_ops.t
+        val file_origin        : blk_id
         val file_size          : int
       end) 
     = 
@@ -354,7 +357,7 @@ module Make_v1(S:S) (* : T with module S = S*) = struct
                       dev.write ~blk_id ~blk)
                 | false -> return ()
               ) >>= fun () -> 
-              set_state { file_size })
+              set_state {file_size })
 
       (* NOTE the following are setting up the Iter_block_blit module *)
       
@@ -424,15 +427,28 @@ module Make_v1(S:S) (* : T with module S = S*) = struct
       (** NOTE this doesn't force to disk, it just clears caches down
          to blk dev and issues a blk_dev barrier *)
       let flush () = 
+        (* Flush the usedlist and the blk_idx_map *)
         usedlist.flush() >>= fun () ->
         blk_idx_map.flush () >>= fun () ->
+        S2.barrier() >>= fun () -> 
+
+        (* NOTE now update root block *)
+        size () >>= fun file_size -> 
+        usedlist.get_origin () >>= fun usedlist_origin -> 
+        blk_idx_map.get_root () >>= fun blk_idx_map_root -> 
+        let origin = File_origin_block.{
+            file_size;
+            blk_idx_map_root;
+            usedlist_origin }
+        in
+        write_origin ~blk_dev_ops ~blk_id:file_origin ~origin >>= fun () ->
         S2.barrier()
         
       let sync () = 
         flush () >>= fun () ->
         S2.sync()
           
-      let file_ops =   { size; truncate; pread; pwrite; flush; sync; }
+      let file_ops = { size; truncate; pread; pwrite; flush; sync; }
 
     end
 
@@ -440,24 +456,44 @@ module Make_v1(S:S) (* : T with module S = S*) = struct
         ~(usedlist           : (blk_id,t) Usedlist.ops)
         ~(alloc_via_usedlist : (unit -> (blk_id,t)m))
         ~(blk_idx_map        : (int,blk_id,blk_id,t)Btree_ops.t)
-        ~(file_size          :int)
+        ~(file_origin        : blk_id)
+        ~(file_size          : int)
       : (_,_)file_ops 
       =
       let module S = struct
-        let usedlist, alloc_via_usedlist, blk_idx_map, file_size = 
-          usedlist, alloc_via_usedlist, blk_idx_map, file_size
+        let usedlist, alloc_via_usedlist, blk_idx_map, file_origin, file_size = 
+          usedlist, alloc_via_usedlist, blk_idx_map, file_origin, file_size
       end
       in
       let module X = File_ops(S) in
       X.file_ops
+
+    let file_from_origin (file_origin, origin) = 
+      let File_origin_block.{ file_size; blk_idx_map_root; usedlist_origin } = origin in
+      usedlist_ops usedlist_origin >>= fun usedlist ->
+      let alloc_via_usedlist = alloc_via_usedlist usedlist in
+      let blk_idx_map = mk_blk_idx_map ~usedlist ~btree_root:blk_idx_map_root in
+      let file_ops = 
+        file_ops 
+          ~usedlist 
+          ~alloc_via_usedlist:alloc_via_usedlist.blk_alloc
+          ~blk_idx_map
+          ~file_origin
+          ~file_size
+      in
+      return file_ops
+
+    let file_from_origin_blk blk_id = 
+      read_origin ~blk_dev_ops ~blk_id >>= fun origin ->
+      file_from_origin (blk_id,origin)
 
     let export = object 
       method usedlist_ops = usedlist_ops
       method alloc_via_usedlist = alloc_via_usedlist
       method mk_blk_idx_map = mk_blk_idx_map
       method file_ops = file_ops
-      method file_from_origin = failwith ""
-      method file_from_origin_blk = failwith ""
+      method file_from_origin = file_from_origin
+      method file_from_origin_blk = file_from_origin_blk
     end
 
   end (* With_ *)
