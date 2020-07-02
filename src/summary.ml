@@ -70,10 +70,10 @@ type ('buf,'blk,'blk_id,'t) file_factory = <
 
       (* Convenience *)
 
-      file_from_origin : 
+      file_from_origin_blk : 
         ('blk_id * 'blk_id File_origin_block.t) -> (('buf,'t)file_ops,'t)m;
       
-      file_from_origin_blk : 'blk_id -> (('buf,'t)file_ops,'t)m;
+      file_from_origin : 'blk_id -> (('buf,'t)file_ops,'t)m;
     >
 >
 

@@ -104,10 +104,10 @@ type ('buf,'blk,'blk_id,'t) file_factory = <
 
       (* Convenience *)
 
-      file_from_origin : 
+      file_from_origin_blk : 
         ('blk_id * 'blk_id File_origin_block.t) -> (('buf,'t)file_ops,'t)m;
       
-      file_from_origin_blk : 'blk_id -> (('buf,'t)file_ops,'t)m;
+      file_from_origin : 'blk_id -> (('buf,'t)file_ops,'t)m;
     >
 >
 
@@ -468,7 +468,7 @@ module Make_v1(S:S) (* : T with module S = S*) = struct
       let module X = File_ops(S) in
       X.file_ops
 
-    let file_from_origin (file_origin, origin) = 
+    let file_from_origin_blk (file_origin, origin) = 
       let File_origin_block.{ file_size; blk_idx_map_root; usedlist_origin } = origin in
       usedlist_ops usedlist_origin >>= fun usedlist ->
       let alloc_via_usedlist = alloc_via_usedlist usedlist in
@@ -483,9 +483,9 @@ module Make_v1(S:S) (* : T with module S = S*) = struct
       in
       return file_ops
 
-    let file_from_origin_blk blk_id = 
+    let file_from_origin blk_id = 
       read_origin ~blk_dev_ops ~blk_id >>= fun origin ->
-      file_from_origin (blk_id,origin)
+      file_from_origin_blk (blk_id,origin)
 
     let export = object 
       method usedlist_ops = usedlist_ops
