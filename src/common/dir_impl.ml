@@ -71,7 +71,7 @@ type ('blk_id,'blk,'de,'t) dir_factory = <
         ('blk_id,'t) Usedlist.ops ->         
         ('blk_id,'t)blk_allocator_ops;
       
-      mk_dir  : 
+      mk_dir : 
         usedlist     : ('blk_id,'t) Usedlist.ops ->        
         dir_map_root : 'blk_id -> 
         origin       : 'blk_id ->
@@ -79,7 +79,8 @@ type ('blk_id,'blk,'de,'t) dir_factory = <
 
       (* Convenience *)
       
-      dir_from_origin_blk: 'blk_id Dir_origin.t -> ((str_256,'de,'blk_id,'t)Dir.t,'t)m;
+      dir_from_origin_blk : 
+        ('blk_id*'blk_id Dir_origin.t) -> ((str_256,'de,'blk_id,'t)Dir.t,'t)m;
 
       dir_from_origin: 'blk_id -> ((str_256,'de,'blk_id,'t)Dir.t,'t)m;
     >;  
@@ -143,9 +144,6 @@ module Make_v1(S:S) = struct
     assert( (buf_ops.len buf) = (blk_dev_ops.blk_sz|>Blk_sz.to_int)); 
     blk_dev_ops.write ~blk_id ~blk:buf
 
-  [@@@warning "-32"]
-  [@@@warning "-27"]
-
   module With(S2:sig
       val blk_dev_ops  : (blk_id,blk,t) blk_dev_ops
       val barrier      : (unit -> (unit,t)m)
@@ -171,7 +169,155 @@ module Make_v1(S:S) = struct
         ~(origin       : 'blk_id)
       : _ Dir.t
       =
-      failwith ""
-  end
+      (* NOTE we need to alloc via the used list *)
+      let blk_alloc = alloc_via_usedlist usedlist in
+      let uncached = S.uncached
+          ~blk_dev_ops
+          ~blk_alloc
+          ~init_btree_root:dir_map_root
+      in
+      let get_btree_root = uncached#get_btree_root in
+      let ops (* map_ops_with_ls *) = uncached#map_ops_with_ls in
+      let find k = ops.find ~k in
+      let insert k v = ops.insert ~k ~v in
+      let delete k = ops.delete ~k in
+      let flush () = 
+        (* Flush the usedlist *)
+        usedlist.flush() >>= fun () ->
+        (* NOTE the dir_map is uncached currently *)
+        S2.barrier() >>= fun () ->
+        usedlist.get_origin () >>= fun usedlist_origin ->
+        get_btree_root () >>= fun dir_map_root ->
+        write_origin ~blk_dev_ops ~blk_id:origin 
+          ~origin:Dir_origin.{usedlist_origin;dir_map_root} >>= fun () ->
+        S2.barrier()
+          
+      in
+      let sync () = 
+        flush () >>= fun () ->
+        S2.sync()
+      in
+      Dir.{ find; insert; delete; flush; sync }
+     
+    let dir_from_origin_blk (blk_id,(origin: _ Dir_origin.t)) = 
+      let usedlist_origin = origin.usedlist_origin in
+      usedlist_ops usedlist_origin >>= fun usedlist ->
+      let dir_map_root = origin.dir_map_root in
+      let origin = blk_id in
+      return (mk_dir ~usedlist ~dir_map_root ~origin)
 
+    let dir_from_origin blk_id =
+      read_origin ~blk_dev_ops ~blk_id >>= fun origin -> 
+      dir_from_origin_blk (blk_id,origin)
+
+    let export = object
+      method usedlist_ops = usedlist_ops
+      method alloc_via_usedlist = alloc_via_usedlist
+      method mk_dir = mk_dir
+      method dir_from_origin_blk = dir_from_origin_blk
+      method dir_from_origin = dir_from_origin
+    end
+  end (* With *)
+
+  let with_ ~blk_dev_ops ~barrier ~sync ~freelist_ops =
+    let module X = struct
+      let blk_dev_ops = blk_dev_ops
+      let barrier = barrier
+      let sync = sync
+      let freelist_ops = freelist_ops
+    end
+    in 
+    let module W = With(X) in
+    W.export
+
+  let _ = with_
+
+  let dir_factory : _ dir_factory = object
+    method read_origin=read_origin
+    method write_origin=write_origin
+    method with_=with_
+  end
+  
 end
+
+(** Make with restricted sig *)
+module Make_v2(S:S) : T with module S=S = struct
+  include Make_v1(S)
+end
+
+module Dir_entry = struct
+  open Bin_prot.Std
+  type fid = int[@@deriving bin_io]
+  type did = int[@@deriving bin_io]
+  type sid = int[@@deriving bin_io] 
+
+  type dir_entry = Fid of fid | Did of did | Sid of sid[@@deriving bin_io]                  
+  type t = dir_entry[@@deriving bin_io]
+end
+
+let dir_example = 
+  let module S = struct
+    type blk = ba_buf
+    type blk_id = Shared_ctxt.r
+    type r = Shared_ctxt.r[@@deriving bin_io]
+    type t = Shared_ctxt.t
+    let monad_ops = Shared_ctxt.monad_ops
+
+    let dir_origin_mshlr : blk_id Dir_origin.t ba_mshlr = (
+        let module X = struct
+          open Blk_id_as_int
+          type t = blk_id Dir_origin.t[@@deriving bin_io]
+          let max_sz = 256 (* FIXME check this*)
+        end
+        in
+        let bp_mshlr : _ bp_mshlr = (module X) in
+        bp_mshlrs#ba_mshlr ~mshlr:bp_mshlr ~buf_sz:(Shared_ctxt.blk_sz |> Blk_sz.to_int))
+
+    type dir_entry = Dir_entry.t[@@deriving bin_io]
+    
+    let de_mshlr : dir_entry bp_mshlr = (
+        let module X = struct
+          type t = dir_entry[@@deriving bin_io]
+          let max_sz = 10
+        end
+        in
+        (module X))
+
+    let usedlist_factory : (blk_id,blk,t) usedlist_factory = 
+      Usedlist_impl.usedlist_example
+
+    (* now use the B-tree factory to get hold of the ls type *)
+
+    module S256_de = Tjr_btree.Make_6.Make_v2(struct
+        type k = str_256
+        type v = dir_entry
+        type r = Shared_ctxt.r
+        type t = Shared_ctxt.t
+        let k_cmp: k -> k -> int = 
+          (* FIXME add compare to Str_256 module *)
+          fun x y -> Stdlib.compare (x :> string) (y :> string)
+        let monad_ops = Shared_ctxt.monad_ops
+        let k_mshlr = bp_mshlrs#s256_mshlr
+        let v_mshlr = de_mshlr
+        let r_mshlr = bp_mshlrs#r_mshlr
+
+        let blk_sz = Shared_ctxt.blk_sz
+
+        let k_size = let module X = (val k_mshlr) in X.max_sz
+        let v_size = let module X = (val v_mshlr) in X.max_sz
+        let cs = Tjr_btree.Bin_prot_marshalling.make_constants ~blk_sz ~k_size ~v_size
+        let r_cmp = Shared_ctxt.r_cmp
+      end)
+
+    type ls = S256_de.ls
+
+    let s256_de_factory = S256_de.btree_factory
+                            
+    let uncached = s256_de_factory#uncached
+                     
+  end
+  in
+  let module X = Make_v2(S) in
+  X.dir_factory
+
+let _ = dir_example

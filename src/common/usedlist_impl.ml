@@ -1,7 +1,30 @@
 (** A persistent list that keeps track of blocks that are allocated to
    a particular object. *)
 
-module Usedlist = Fv2_types.Usedlist
+(** NOTE the in-memory state of the usedlist is opaque to us; after
+   operations, we check the origin to see if it has changed and then
+   possibly flush/barrier/sync *)
+module Usedlist = struct
+
+  type 'blk_id origin = 'blk_id Plist_intf.Pl_origin.pl_origin[@@deriving bin_io]
+
+  (* $(PIPE2SH("""sed -n '/usedlist_ops:[ ]/,/}/p' >GEN.usedlist_ops.ml_""")) *)
+  (** usedlist_ops: The operations provided by the usedlist; in
+     addition we need to integrate the freelist with the usedlist:
+     alloc_via_usedlist
+
+      NOTE a sync is just a flush followed by a sync of the underlying
+     blkdev, since we assume all object operations are routed to the
+     same blkdev *)      
+  type ('blk_id,'t) usedlist_ops = {
+    add        : 'blk_id -> (unit,'t)m;    
+    get_origin : unit -> ('blk_id origin,'t)m;
+    flush      : unit -> (unit,'t)m;
+  }
+
+  type ('blk_id,'t) ops = ('blk_id,'t) usedlist_ops
+end
+
 
 (* $(PIPE2SH("""sed -n '/^type[ ].*usedlist_factory/,/^>/p' >GEN.usedlist_factory.ml_""")) *)
 type ('blk_id,'blk,'t) usedlist_factory = <
@@ -140,3 +163,23 @@ end
 module Make_v2(S:S) : T with module S=S = struct
   include Make_v1(S)
 end
+
+
+let usedlist_example = 
+  let module S = struct
+    type blk = Shared_ctxt.blk      
+    type buf = Shared_ctxt.buf
+    type blk_id = Shared_ctxt.r
+    type r = Shared_ctxt.r
+    type t = Shared_ctxt.t
+    let monad_ops = Shared_ctxt.monad_ops
+
+    type a = blk_id
+    let plist_factory : (a,blk_id,blk,buf,t) Plist_intf.plist_factory =
+      Tjr_plist.pl_examples#for_blk_id
+  end
+  in
+  let module X = Make_v2(S) in
+  X.usedlist_factory
+
+let _ = usedlist_example

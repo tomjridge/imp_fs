@@ -312,11 +312,14 @@ module Make_v1(S:S) (* : T with module S = S*) = struct
               (* no need to drop blocks *)              
               set_state {file_size=size}
             | false -> 
-              (* FIXME check the maths of this - if size is 0 we may want to have no entries in blk_index *)
-              (* drop all blocks after size/blk_sz FIXME would be nice to have
-                 "delete from"; perhaps we list the contents of the index_map
-                 and remove the relevant keys? or a monadic fold or iteration? *)
-              (* also need to zero out the bytes in the final block beyond size.size *)
+              (* FIXME check the maths of this - if size is 0 we may
+                 want to have no entries in blk_index *)
+              (* drop all blocks after size/blk_sz FIXME would be nice
+                 to have "delete from"; perhaps we list the contents
+                 of the index_map and remove the relevant keys? or a
+                 monadic fold or iteration? *)
+              (* also need to zero out the bytes in the final block
+                 beyond size.size *)
               let i,blk_off = size / blk_sz, size mod blk_sz in
               bind.delete_after i >>= fun () ->
               (
@@ -494,3 +497,8 @@ module Make_v1(S:S) (* : T with module S = S*) = struct
   end
 end
 
+
+(** Version with restricted sig *)
+module Make_v2(S:S) : T with module S = S = struct
+  include Make_v1(S)
+end

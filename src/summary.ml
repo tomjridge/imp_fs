@@ -246,7 +246,7 @@ type ('blk_id,'blk,'de,'t) dir_factory = <
         ('blk_id,'t) Usedlist.ops ->         
         ('blk_id,'t)blk_allocator_ops;
       
-      mk_dir  : 
+      mk_dir : 
         usedlist     : ('blk_id,'t) Usedlist.ops ->        
         dir_map_root : 'blk_id -> 
         origin       : 'blk_id ->
@@ -254,7 +254,8 @@ type ('blk_id,'blk,'de,'t) dir_factory = <
 
       (* Convenience *)
       
-      dir_from_origin_blk: 'blk_id Dir_origin.t -> ((str_256,'de,'blk_id,'t)Dir.t,'t)m;
+      dir_from_origin_blk : 
+        ('blk_id*'blk_id Dir_origin.t) -> ((str_256,'de,'blk_id,'t)Dir.t,'t)m;
 
       dir_from_origin: 'blk_id -> ((str_256,'de,'blk_id,'t)Dir.t,'t)m;
     >;  
