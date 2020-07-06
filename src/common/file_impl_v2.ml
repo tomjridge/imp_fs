@@ -95,7 +95,7 @@ type ('buf,'blk,'blk_id,'t) file_factory = <
       (** (3.1) *)
       
       file_ops: 
-        usedlist           : ('blk_id,'t) Usedlist.ops -> 
+        usedlist           : ('blk_id,'t) Usedlist.ops -> (* used for? why not just use alloc_via_usedlist? *)
         alloc_via_usedlist : (unit -> ('blk_id,'t)m) ->         
         blk_idx_map        : (int,'blk_id,'blk_id,'t)Btree_ops.t -> 
         file_origin        : 'blk_id ->         
@@ -124,6 +124,8 @@ let pwrite_check = File_impl_v1.pwrite_check
 module type S = sig
   type blk = ba_buf
   type buf = ba_buf
+  val blk_sz : blk_sz (** assumed to match buf size *)
+
   type blk_id = Shared_ctxt.r
   type r = Shared_ctxt.r
   type t
@@ -163,7 +165,7 @@ end
 
 [@@@warning "-32"]
 
-(** Version with full sig *)
+(** Version with full sig; NOTE that this is quite specialized to Shared_ctxt *)
 module Make_v1(S:S) (* : T with module S = S*) = struct
   module S = S
   open S
@@ -190,11 +192,11 @@ module Make_v1(S:S) (* : T with module S = S*) = struct
 
   module Blk_idx = struct
     (* FIXME may be better to just reuse int r map *)
-    let blk_sz = Shared_ctxt.blk_sz
+    let blk_sz = S.blk_sz
     module S = struct
       type k = idx
-      type v = Shared_ctxt.r
-      type r = Shared_ctxt.r
+      type v = S.r
+      type r = S.r
       type t = Shared_ctxt.t
       let k_cmp: k -> k -> int = Stdlib.compare
       let monad_ops = Shared_ctxt.monad_ops
@@ -505,48 +507,271 @@ module Make_v2(S:S) : T with module S = S = struct
   include Make_v1(S)
 end
 
-let file_example = 
-  let module S = struct
-    type blk = ba_buf
-    type buf = ba_buf
-    type blk_id = Shared_ctxt.r
-    type r = Shared_ctxt.r
-    type t = Shared_ctxt.t
+let file_examples = 
+  let mk_example ~blk_sz = 
+    let module S = struct
+      type blk = ba_buf
+      type buf = ba_buf
+      let blk_sz = blk_sz
+      type blk_id = Shared_ctxt.r
+      type r = Shared_ctxt.r
+      type t = Shared_ctxt.t
+      let monad_ops = Shared_ctxt.monad_ops
+
+      let buf_ops : _ Buffers_from_btree.buf_ops = 
+        Buffers_from_btree.Unsafe__ba_buf.buf_ops
+
+      let usedlist_factory = Usedlist_impl.usedlist_example
+
+      let btree_factory = Tjr_btree.Make_6.Examples.int_r_factory
+
+      type _ls = Tjr_btree.Make_6.Examples.Int_r.ls
+
+      let uncached : 
+        blk_dev_ops     : (r, blk, t) blk_dev_ops -> 
+        blk_alloc       : (r, t) blk_allocator_ops -> 
+        init_btree_root : r -> 
+        <
+          get_btree_root  : unit -> (r,t) m;
+          map_ops_with_ls : (int,r,r,_ls,t) Tjr_btree.Btree_intf.map_ops_with_ls
+        >
+        = btree_factory#uncached
+
+      module File_origin_mshlr = struct
+        open Blk_id_as_int
+        type t = blk_id File_origin_block.t[@@deriving bin_io]
+        let max_sz = 256 (* FIXME check *)
+      end
+      let fom_mshlr : _ bp_mshlr = (module File_origin_mshlr)
+
+      let file_origin_mshlr : blk_id File_origin_block.t ba_mshlr = 
+        bp_mshlrs#ba_mshlr ~mshlr:fom_mshlr ~buf_sz:(Shared_ctxt.blk_sz |> Blk_sz.to_int)
+        (* FIXME add buf_sz to Shared_ctxt *)
+
+    end
+    in
+    let module X = Make_v2(S) in
+    X.file_factory
+  in
+  let example_1 = mk_example ~blk_sz:blk_sz_4096 in
+  let example_2 = mk_example ~blk_sz:(Blk_sz.of_int 2) in
+  object
+    method example_1 = example_1
+    method example_2 = example_2
+  end
+(** 
+- example_1: (ba_buf, ba_buf, Shared_ctxt.r, Shared_ctxt.t) file_factory (blk_sz 4096)
+- example_2: (ba_buf, ba_buf, Shared_ctxt.r, Shared_ctxt.t) file_factory (blk_sz 2, for testing)
+*)
+
+
+
+
+
+(** Test the file_example with 
+- monad is Shared_ctxt.t
+- blk_dev is in-memory, map from blk_id to blk; barrier and sync are no-ops
+- blk_id is blk_id_as_int
+- freelist_ops is a dummy counter
+- usedlist is a dummy; alloc_via_usedlist uses the usedlist
+- blk_idx_map is a ref (to a map from int to blk_id)
+- file_origin is a dummy blk_id -1
+- file_size is 0 initially
+
+*)
+module Test() = struct
+
     let monad_ops = Shared_ctxt.monad_ops
 
-    let buf_ops : _ Buffers_from_btree.buf_ops = 
-      Buffers_from_btree.Unsafe__ba_buf.buf_ops
+    let ( >>= ) = monad_ops.bind
 
-    let usedlist_factory = Usedlist_impl.usedlist_example
+    let return = monad_ops.return
 
-    let btree_factory = Tjr_btree.Make_6.Examples.int_r_factory
+    (* we want to use example_2#with_...#file_ops *)
+
+    let example = file_examples#example_2
+
+    let blk_sz = Blk_sz.of_int 2
+
+    type blk_id = Shared_ctxt.blk_id
+
+    type blk = ba_buf
     
-    type _ls = Tjr_btree.Make_6.Examples.Int_r.ls
-
-    let uncached : 
-      blk_dev_ops     : (r, blk, t) blk_dev_ops -> 
-      blk_alloc       : (r, t) blk_allocator_ops -> 
-      init_btree_root : r -> 
-      <
-        get_btree_root  : unit -> (r,t) m;
-        map_ops_with_ls : (int,r,r,_ls,t) Tjr_btree.Btree_intf.map_ops_with_ls
-      >
-      = btree_factory#uncached
-
-    module File_origin_mshlr = struct
-      open Blk_id_as_int
-      type t = blk_id File_origin_block.t[@@deriving bin_io]
-      let max_sz = 256 (* FIXME check *)
+    (* FIXME put in-memory blkdev in fs_shared *)
+    module Blk_dev_im = struct
+      module M = Map.Make(struct
+          type t = blk_id
+          let compare = Stdlib.compare
+        end)
+      type t = blk M.t
+      let with_blk_dev = Tjr_monad.with_imperative_ref ~monad_ops (ref M.empty)
+      let blk_dev_ops ~blk_sz : _ blk_dev_ops = 
+        let write = fun ~blk_id ~blk -> 
+          with_blk_dev.with_state (fun ~state ~set_state -> 
+              set_state (M.add blk_id blk state))
+        in
+        { blk_sz; write;
+          read=(fun ~blk_id -> 
+              with_blk_dev.with_state (fun ~state ~set_state:_ -> 
+                  return (M.find blk_id state)));
+          write_many=(fun xs -> 
+              xs |> iter_k (fun ~k xs -> 
+                  match xs with
+                  | [] -> return ()
+                  | (blk_id,blk)::xs -> 
+                    write ~blk_id ~blk >>= fun () ->
+                    k xs))
+        }
     end
-    let fom_mshlr : _ bp_mshlr = (module File_origin_mshlr)
 
-    let file_origin_mshlr : blk_id File_origin_block.t ba_mshlr = 
-      bp_mshlrs#ba_mshlr ~mshlr:fom_mshlr ~buf_sz:(Shared_ctxt.blk_sz |> Blk_sz.to_int)
-      (* FIXME add buf_sz to Shared_ctxt *)
+    let blk_dev_ops = Blk_dev_im.blk_dev_ops ~blk_sz
+
+
+    let barrier () = return ()
+    let sync () = return ()
+
+    (* FIXME move this example to shared *)
+    module Freelist_im = struct
+      let freelist_ops : _ blk_allocator_ops =
+        let min_free = ref 1 in 
+        let blk_alloc () = 
+          let x = !min_free in 
+          incr min_free; return (Blk_id_as_int.of_int x)
+        in
+        let blk_free _x = return () in
+        { blk_alloc; blk_free }       
+    end
+    let freelist_ops = Freelist_im.freelist_ops
+    
+    let with_ = 
+      example#with_
+        ~blk_dev_ops
+        ~barrier
+        ~sync 
+        ~freelist_ops
+
+    let file_ops = with_#file_ops
+
+    let _ = file_ops
+
+    (* now need to provide impls of:
+        usedlist           : ('blk_id,'t) Usedlist.ops -> (* used for? why not just use alloc_via_usedlist? *)
+        alloc_via_usedlist : (unit -> ('blk_id,'t)m) ->         
+        blk_idx_map        : (int,'blk_id,'blk_id,'t)Btree_ops.t -> 
+        file_origin        : 'blk_id ->         
+        file_size          : int -> 
+    *)
       
-  end
-  in
-  let module X = Make_v2(S) in
-  X.file_factory
 
-let _ : _ file_factory = file_example
+    (* FIXME move this example somewhere *)
+    (* usedlist is just a mutable list of blk_id; get_origin returns a dummy or fails *)
+    let usedlist () = 
+      let xs : 'blk_id list ref = ref [] in
+      let add x = xs:=x::!xs; return () in
+      let get_origin () = failwith __LOC__ in
+      let flush () = return ()
+      in
+      object 
+        method ref_ = xs
+        method ops = Usedlist_impl.Usedlist.{add; get_origin; flush }
+      end
+
+    let usedlist = (usedlist ())#ops
+                     
+    let alloc_via_usedlist () = 
+      freelist_ops.blk_alloc () >>= fun blk_id -> 
+      usedlist.add blk_id >>= fun () -> 
+      return blk_id
+
+    module Blk_idx_map = struct
+      module M = Map.Make(struct type t = int let compare = Stdlib.compare end)
+      type t = blk_id M.t
+         
+      let ops ~(with_state:(t,lwt) with_state) = 
+        let find k = 
+          with_state.with_state (fun ~state ~set_state:_ ->
+              return (M.find_opt k state))
+        in
+        let insert k v = 
+          with_state.with_state (fun ~state ~set_state ->
+              set_state (M.add k v state))
+        in
+        let delete k = 
+          with_state.with_state (fun ~state ~set_state ->
+              set_state (M.remove k state))
+        in
+        (* FIXME add this to stlib map overlay Map_; perhaps consider
+           a version that is actually reasonably efficient *)
+        let delete_after k = 
+          with_state.with_state (fun ~state ~set_state ->
+              state |> M.split k |> fun (_,_,gt) -> 
+              gt |> M.bindings |> fun xs -> 
+              (xs,state) |> iter_k (fun ~k:kont (xs,s) -> 
+                  match xs with
+                  | [] -> set_state s
+                  | (k,_)::xs -> 
+                    M.remove k state |> fun s ->
+                    kont (xs,s)))
+        in
+        let _ = delete_after in
+        let flush () = return () in
+        let get_root () = return (Blk_id_as_int.of_int (-1)) in
+        Btree_ops.{ find;insert;delete;delete_after;flush;get_root }
+
+      let empty = M.empty
+    end
+
+    let blk_idx_map_ref = ref Blk_idx_map.empty
+    let with_state = with_imperative_ref ~monad_ops blk_idx_map_ref
+    let blk_idx_map = Blk_idx_map.ops ~with_state
+    
+    let file_origin = Blk_id_as_int.of_int (-2)
+
+    let file_size = 0
+
+    let file_ops = file_ops
+      ~usedlist
+      ~alloc_via_usedlist
+      ~blk_idx_map
+      ~file_origin
+      ~file_size
+
+    let { pread; pwrite; _ } = file_ops
+
+    let buf_ops = Buffers_from_btree.Unsafe__ba_buf.buf_ops
+
+    let _ = 
+      Printf.printf "File_impl: tests starting...\n";
+      (* read from empty file *)
+      pread ~off:{off=0} ~len:{len=100} >>= fun (Ok buf) ->
+      assert(buf_ops.to_string buf = "");  (* file initially empty *)
+
+      (* write "tom" *)
+      let src = buf_ops.of_string "tom" in
+      pwrite ~src ~src_off:{off=0} ~src_len:{len=3} ~dst_off:{off=0} >>= fun (Ok _nwritten) ->
+      (* Printf.printf "%d\n" size; *)
+      pread ~off:{off=0} ~len:{len=3} >>= fun (Ok buf) ->
+      assert(
+        buf_ops.to_string buf = "tom" || (
+          Printf.printf "|%s|\n" (buf_ops.to_string buf); false));
+
+      (* try to read 10 bytes from file *)
+      pread ~off:{off=0} ~len:{len=10} >>= fun (Ok buf) ->
+      assert(buf_ops.to_string buf = "tom");
+
+      (* make file contain 20xNULL *)
+      let src = buf_ops.of_string (String.make 20 '\x00') in
+      pwrite ~src ~src_off:{off=0} ~src_len:{len=20} ~dst_off:{off=0} >>= fun (Ok _nwritten) ->
+
+      (* write "homas" at off 1 *)
+      let src = buf_ops.of_string "thomas" in
+      pwrite ~src ~src_off:{off=1} ~src_len:{len=5} ~dst_off:{off=1} >>= fun (Ok _nwritten) ->
+
+      (* read 10 bytes *)
+      pread ~off:{off=0} ~len:{len=10} >>= fun (Ok buf) ->
+      assert(buf_ops.to_string buf = "\x00homas\x00\x00\x00\x00");
+      Printf.printf "File_impl: tests end!\n";
+      return ()
+      [@@warning "-8"]
+
+end
