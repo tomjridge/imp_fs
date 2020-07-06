@@ -72,7 +72,7 @@ module File_origin_block = struct
     usedlist_origin  : 'blk_id Usedlist.origin;
   }[@@deriving bin_io]
 
-  type 'blk_id t = 'blk_id file_origin_block
+  type 'blk_id t = 'blk_id file_origin_block[@@deriving bin_io]
   
 
 end

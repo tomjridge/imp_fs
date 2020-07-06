@@ -30,6 +30,7 @@ TODO:
 
 open Int_like
 open Buffers_from_btree (* FIXME combine with the other buf_ops *)
+open Usedlist_impl
 open Fv2_types
 
 module Iter_block_blit = Fv2_iter_block_blit
@@ -129,11 +130,12 @@ module type S = sig
   val monad_ops   : t monad_ops
   val buf_ops     : buf buf_ops  (* FIXME create_zeroed? *)
 
+  
+  val usedlist_factory : (blk_id,blk,t) usedlist_factory
 
   (** For the usedlist *)
-  type a = blk_id
-  val plist_factory : (a,blk_id,blk,buf,t) Plist_intf.plist_factory
-
+  (* type a = blk_id *)
+  (* val plist_factory : (a,blk_id,blk,buf,t) Plist_intf.plist_factory *)
 
   (* we don't use leaf-streams for idx maps *)
   type _ls
@@ -182,8 +184,8 @@ module Make_v1(S:S) (* : T with module S = S*) = struct
     
   let usedlist_origin (fo: _ Fo.t) = fo.usedlist_origin
 
-  module U = Usedlist_impl.Make_v2(S)
-  let usedlist_factory = U.usedlist_factory
+  (* module U = Usedlist_impl.Make_v2(S) *)
+  (* let usedlist_factory = U.usedlist_factory *)
 
 
   module Blk_idx = struct
@@ -502,3 +504,49 @@ end
 module Make_v2(S:S) : T with module S = S = struct
   include Make_v1(S)
 end
+
+let file_example = 
+  let module S = struct
+    type blk = ba_buf
+    type buf = ba_buf
+    type blk_id = Shared_ctxt.r
+    type r = Shared_ctxt.r
+    type t = Shared_ctxt.t
+    let monad_ops = Shared_ctxt.monad_ops
+
+    let buf_ops : _ Buffers_from_btree.buf_ops = 
+      Buffers_from_btree.Unsafe__ba_buf.buf_ops
+
+    let usedlist_factory = Usedlist_impl.usedlist_example
+
+    let btree_factory = Tjr_btree.Make_6.Examples.int_r_factory
+    
+    type _ls = Tjr_btree.Make_6.Examples.Int_r.ls
+
+    let uncached : 
+      blk_dev_ops     : (r, blk, t) blk_dev_ops -> 
+      blk_alloc       : (r, t) blk_allocator_ops -> 
+      init_btree_root : r -> 
+      <
+        get_btree_root  : unit -> (r,t) m;
+        map_ops_with_ls : (int,r,r,_ls,t) Tjr_btree.Btree_intf.map_ops_with_ls
+      >
+      = btree_factory#uncached
+
+    module File_origin_mshlr = struct
+      open Blk_id_as_int
+      type t = blk_id File_origin_block.t[@@deriving bin_io]
+      let max_sz = 256 (* FIXME check *)
+    end
+    let fom_mshlr : _ bp_mshlr = (module File_origin_mshlr)
+
+    let file_origin_mshlr : blk_id File_origin_block.t ba_mshlr = 
+      bp_mshlrs#ba_mshlr ~mshlr:fom_mshlr ~buf_sz:(Shared_ctxt.blk_sz |> Blk_sz.to_int)
+      (* FIXME add buf_sz to Shared_ctxt *)
+      
+  end
+  in
+  let module X = Make_v2(S) in
+  X.file_factory
+
+let _ : _ file_factory = file_example
