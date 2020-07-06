@@ -294,24 +294,51 @@ module Make_v1(S:S) (* : T with module S = S*) = struct
 
       let alloc = alloc_via_usedlist
 
-      let fim = File_im.{ file_size }
-      let fim_ref = ref fim
-      let with_fim = with_imperative_ref ~monad_ops fim_ref
-      let with_fim = with_fim.with_state
+      module Pvt = struct
+        let fim = File_im.{ file_size }
+        let fim_ref = ref fim
+        let with_fim = with_imperative_ref ~monad_ops fim_ref
+        let with_fim = with_fim.with_state
+      end
+
+      let with_fim = Pvt.with_fim
 
       let size () = 
         with_fim (fun ~state ~set_state:_ -> 
             return state.file_size)
-  
-      let blk_ops = Shared_ctxt.blk_ops
+
+      (* FIXME wrap this up in a functor, with a private type in result *)
+      let make_ba_blk_ops ~blk_sz = { 
+        blk_sz;
+        of_string=(fun s ->
+            assert(String.length s <= Blk_sz.to_int blk_sz);        
+            let buf = Bigstring.create (Blk_sz.to_int blk_sz) in
+            Bigstring.blit_of_string s 0 buf 0 (String.length s);
+            buf);
+        to_string=(fun ba -> Bigstring.to_string ba);
+        of_bytes=(fun bs ->
+            assert(Bytes.length bs = Blk_sz.to_int blk_sz);
+            Bigstring.of_bytes bs);
+        to_bytes=(fun ba -> 
+            Bigstring.to_bytes ba)
+      }
+
+      let blk_ops = make_ba_blk_ops ~blk_sz:blk_dev_ops.blk_sz
+
+      let _ = assert (
+        let b = blk_ops.blk_sz = blk_dev_ops.blk_sz in
+        if b then true else
+          (Printf.printf "%s: blk_dev_ops and blk_ops disagree over size: %d %d\n%!"
+            __FILE__ (blk_dev_ops.blk_sz |> Blk_sz.to_int) (blk_ops.blk_sz |> Blk_sz.to_int);
+           false))
         
       let truncate_blk ~blk ~blk_off = 
         blk |> blk_ops.to_string |> fun blk -> String.sub blk 0 blk_off |> blk_ops.of_string
   
-      let truncate ~(size:int) = 
+      let truncate ~(size:int) : (unit,'t)m = 
         (* FIXME the following code is rather hacky, to say the least *)
-        with_fim (fun ~state:fim ~set_state -> 
-            match size >= fim.file_size with
+        with_fim (fun ~state ~set_state -> 
+            match size >= state.file_size with
             | true -> 
               (* no need to drop blocks *)              
               set_state {file_size=size}
@@ -390,7 +417,7 @@ module Make_v1(S:S) (* : T with module S = S*) = struct
       
       let pwrite ~src ~src_off ~src_len ~dst_off =
         with_fim (fun ~state ~set_state ->
-            let size = fim.file_size in
+            let size = state.file_size in
             pwrite_check ~buf_ops ~src ~src_off ~src_len ~dst_off |> function
             | Error s -> return (Error (Pwrite_error s))
             | Ok () -> pwrite ~src ~src_off ~src_len ~dst_off >>= fun x -> 
@@ -740,7 +767,7 @@ module Test() = struct
 
     let buf_ops = Buffers_from_btree.Unsafe__ba_buf.buf_ops
 
-    let _ = 
+    let run () = 
       Printf.printf "File_impl: tests starting...\n";
       (* read from empty file *)
       pread ~off:{off=0} ~len:{len=100} >>= fun (Ok buf) ->
@@ -761,7 +788,8 @@ module Test() = struct
 
       (* make file contain 20xNULL *)
       let src = buf_ops.of_string (String.make 20 '\x00') in
-      pwrite ~src ~src_off:{off=0} ~src_len:{len=20} ~dst_off:{off=0} >>= fun (Ok _nwritten) ->
+      pwrite ~src ~src_off:{off=0} ~src_len:{len=20} ~dst_off:{off=0} >>= fun (Ok nwritten) ->
+      assert(nwritten=20);
 
       (* write "homas" at off 1 *)
       let src = buf_ops.of_string "thomas" in
@@ -769,7 +797,11 @@ module Test() = struct
 
       (* read 10 bytes *)
       pread ~off:{off=0} ~len:{len=10} >>= fun (Ok buf) ->
-      assert(buf_ops.to_string buf = "\x00homas\x00\x00\x00\x00");
+      assert(
+        let b = buf_ops.to_string buf = "\x00homas\x00\x00\x00\x00" in
+        if b then true else (
+          Printf.printf "%s: string comparison failure: %s\n%!" __FILE__ (buf_ops.to_string buf |> String.escaped);
+          false));
       Printf.printf "File_impl: tests end!\n";
       return ()
       [@@warning "-8"]
