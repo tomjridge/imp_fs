@@ -768,7 +768,7 @@ module Test() = struct
     let buf_ops = Buffers_from_btree.Unsafe__ba_buf.buf_ops
 
     let run () = 
-      Printf.printf "File_impl: tests starting...\n";
+      Printf.printf "%s: tests starting...\n" __MODULE__;
       (* read from empty file *)
       pread ~off:{off=0} ~len:{len=100} >>= fun (Ok buf) ->
       assert(buf_ops.to_string buf = "");  (* file initially empty *)
@@ -802,7 +802,7 @@ module Test() = struct
         if b then true else (
           Printf.printf "%s: string comparison failure: %s\n%!" __FILE__ (buf_ops.to_string buf |> String.escaped);
           false));
-      Printf.printf "File_impl: tests end!\n";
+      Printf.printf "%s: tests end!\n" __MODULE__;
       return ()
       [@@warning "-8"]
 

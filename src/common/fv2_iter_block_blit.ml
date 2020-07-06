@@ -111,7 +111,7 @@ module Make_v1(S:S) = struct
   let blk_sz = blk_ops.blk_sz |> Blk_sz.to_int 
 
   let _ = assert(
-    Printf.printf "%s: blk_sz is %d\n%!" __FILE__ blk_sz;
+    Printf.printf "%s: blk_sz is %d\n%!" __MODULE__ blk_sz;
     true)
 
   (** This version assumes that the arguments pass the
