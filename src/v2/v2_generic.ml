@@ -1,6 +1,6 @@
-(** An abstract generic development; this layer deals with path
-    resolution, times and a few other things; assumes create_dir and
-    create_file. *)
+(** V2 generic development based on V1 generic; this layer deals with
+   path resolution, times and a few other things; assumes create_dir
+   and create_file. *)
 
 type exn_ = Tjr_minifs.Minifs_intf.exn_
 
@@ -41,7 +41,8 @@ module S1(S0:S0) = struct
   type dir_v = dir_entry
 
   type dh = (dir_k,dir_v,t)Tjr_btree.Btree_intf.ls (** dir handle *)
-  (* NOTE since dh is supposed to not change whilst we traverse the directory, we can't just identify dh with ls *)
+  (* NOTE since dh is supposed to not change whilst we traverse the
+     directory, we can't just identify dh with ls *)
 
 
   type dir_ops = {
@@ -63,7 +64,7 @@ module S1(S0:S0) = struct
   type dirs_ops = {
     find   : did -> (dir_ops,t)m;    
     delete : did -> (unit,t)m;    
-    (* create : did -> (unit,t)m; we can't create a dir without rb, which requires the parent *)
+    create_dir: parent:did -> name:str_256 -> times:stat_times -> (unit,t)m;
   }
   (** NOTE for create, use create_dir; this needs to add the did to the gom *)
 
@@ -88,10 +89,12 @@ module S1(S0:S0) = struct
 
   type files_ops = {
     find: fid -> (file_ops,t)m;
-    create: fid -> stat_times -> (unit,t)m;
-    (* delete: fid -> (unit,t)m; *)
+    create_raw: fid -> stat_times -> (unit,t)m;
+    create_file: parent:did -> name:str_256 -> times:stat_times -> (unit,t)m;
+    create_symlink: parent:did -> name:str_256 -> times:stat_times -> contents:str_256 -> (unit,t)m;
+
   }
-  (** NOTE create just creates a new file in the gom; it doesn't link
+  (** NOTE create_raw just creates a new file in the gom; it doesn't link
       it into a parent etc *)
 
   type resolved_path_or_err = (fid,did)Tjr_path_resolution.resolved_path_or_err
@@ -123,13 +126,6 @@ module S2(S0:S0) = struct
     val mk_stat_times: unit -> (stat_times,t)m
 
     val extra: extra_ops
-
-    (* in a later step, we refine this further *)
-    val create_dir: parent:did -> name:str_256 -> times:stat_times -> (unit,t)m
-
-    val create_file: parent:did -> name:str_256 -> times:stat_times -> (unit,t)m
-
-    val create_symlink: parent:did -> name:str_256 -> times:stat_times -> contents:str_256 -> (unit,t)m
   end
 end
 
@@ -167,6 +163,13 @@ module Make(S0:S0) = struct
     let err (e:exn_) = return (Error e)
 
     let ok x = return (Ok x)
+
+
+    (* pull these create functions from X *)
+    let create_file = files.create_file
+    let create_symlink = files.create_symlink
+    let create_dir = dirs.create_dir
+
 
     let resolve_path ~follow_last_symlink path =
       resolve_path ~follow_last_symlink path >>= function

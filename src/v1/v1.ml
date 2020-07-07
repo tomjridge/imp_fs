@@ -66,7 +66,7 @@ let mk_stat_times () =
 
 (** {2 Implement definitions from T2, ie, the core filesystem} *)
 
-type obj_root = blk_id  [@@deriving bin_io]
+(* type obj_root = blk_id  [@@deriving bin_io] *)
 
 type dir_entry = S1.dir_entry
 ;;
