@@ -21,42 +21,63 @@ A directory is really a thin layer over a B-tree, interfacing with the
 module Usedlist = Fv2_types.Usedlist
 open Usedlist_impl
 
+type stat_times = Minifs_intf.times[@@deriving bin_io]
+
 module Dir_origin = struct
   (* $(PIPE2SH("""sed -n '/type[ ].*dir_origin =/,/}/p' >GEN.dir_origin.ml_""")) *)
-  type 'blk_id dir_origin = {
-    dir_map_root: 'blk_id;
-    usedlist_origin: 'blk_id Usedlist.origin;
+  type ('blk_id,'did) dir_origin = {
+    dir_map_root    : 'blk_id;
+    usedlist_origin : 'blk_id Usedlist.origin;
+    parent          : 'did;
+    stat_times      : stat_times;
   }[@@deriving bin_io]
 
-  type 'blk_id t = 'blk_id dir_origin[@@deriving bin_io]
+  type ('blk_id,'did) t = ('blk_id,'did) dir_origin[@@deriving bin_io]
 end
 
-module Dir = struct
+module Dir_ops = struct
   (* $(PIPE2SH("""sed -n '/type[ ].*dir_ops =/,/}/p' >GEN.dir_ops.ml_""")) *)
-  type ('k,'v,'r,'t) dir_ops = {
+  type ('k,'v,'r,'t,'did) dir_ops = {
     find     : 'k -> ('v option,'t) m;
     insert   : 'k -> 'v -> (unit,'t) m;
     delete   : 'k -> (unit,'t) m;
+
+    ls_create: unit -> (('k,'v,'t)Tjr_btree.Btree_intf.ls,'t)m;
+    set_parent: 'did -> (unit,'t)m;
+    get_parent: unit -> ('did,'t)m;
+    set_times : stat_times -> (unit,'t)m;
+    get_times : unit -> (stat_times,'t)m;    
+
     flush    : unit -> (unit,'t)m;
-    sync     : unit -> (unit,'t)m;
+    sync     : unit -> (unit,'t)m;    
+
+    get_origin: unit -> (('r,'did)Dir_origin.t,'t)m;
   }
-  type ('k,'v,'r,'t) t = ('k,'v,'r,'t) dir_ops
+  type ('k,'v,'r,'t,'did) t = ('k,'v,'r,'t,'did) dir_ops
 end
 
-
+(** What we keep in memory to represent a dir (in addition to the used
+   list and the dir map) *)
+module Dir_im = struct
+  type 'did dir_im = {
+    parent : 'did;
+    stat_times : stat_times;
+  }
+end
+open Dir_im
 
 (* $(PIPE2SH("""sed -n '/NOTE[ ].de stands for/,/^>/p' >GEN.dir_factory.ml_""")) *)
 (** NOTE 'de stands for dir_entry *)
-type ('blk_id,'blk,'de,'t) dir_factory = <
+type ('blk_id,'blk,'de,'t,'did) dir_factory = <
   read_origin: 
     blk_dev_ops : ('blk_id,'blk,'t) blk_dev_ops -> 
     blk_id : 'blk_id -> 
-    ('blk_id Dir_origin.t,'t)m;
+    (('blk_id,'did) Dir_origin.t,'t)m;
 
   write_origin:
     blk_dev_ops : ('blk_id,'blk,'t) blk_dev_ops -> 
     blk_id : 'blk_id -> 
-    origin: 'blk_id Dir_origin.t -> 
+    origin: ('blk_id,'did) Dir_origin.t -> 
     (unit,'t)m;
     
   with_: 
@@ -69,20 +90,30 @@ type ('blk_id,'blk,'de,'t) dir_factory = <
 
       alloc_via_usedlist : 
         ('blk_id,'t) Usedlist.ops ->         
-        ('blk_id,'t)blk_allocator_ops;
+        ('blk_id,'t) blk_allocator_ops;
       
+      (* NOTE this doesn't update the origin when things change *)
       mk_dir : 
-        usedlist     : ('blk_id,'t) Usedlist.ops ->        
-        dir_map_root : 'blk_id -> 
-        origin       : 'blk_id ->
-        (str_256,'de,'blk_id,'t)Dir.t;
+        usedlist   : ('blk_id,'t) Usedlist.ops ->
+        btree_root : 'blk_id ->
+        with_dir   : ('did dir_im,'t)with_state -> 
+        (str_256,'de,'blk_id,'t,'did)Dir_ops.t;
+
 
       (* Convenience *)
-      
-      dir_from_origin_blk : 
-        ('blk_id*'blk_id Dir_origin.t) -> ((str_256,'de,'blk_id,'t)Dir.t,'t)m;
 
-      dir_from_origin: 'blk_id -> ((str_256,'de,'blk_id,'t)Dir.t,'t)m;
+      dir_add_autosync : 
+        'blk_id -> 
+        (str_256,'de,'blk_id,'t,'did)Dir_ops.t -> 
+        (str_256,'de,'blk_id,'t,'did)Dir_ops.t;
+      (** Wrap the ops with code that automatically updates the origin *)
+      
+      (* NOTE the following functions include autosync *)
+
+      dir_from_origin_blk : 
+        ('blk_id*('blk_id,'did) Dir_origin.t) -> ((str_256,'de,'blk_id,'t,'did)Dir_ops.t,'t)m;
+      
+      dir_from_origin: 'blk_id -> ((str_256,'de,'blk_id,'t,'did)Dir_ops.t,'t)m;
     >;  
 >
 
@@ -91,11 +122,12 @@ module type S = sig
   type blk = ba_buf
   type blk_id = Shared_ctxt.r
   type r = Shared_ctxt.r
+  type did
   type t
   val monad_ops : t monad_ops
   (* FIXME two different versions of buf_ops *)
 
-  val dir_origin_mshlr: blk_id Dir_origin.t ba_mshlr
+  val dir_origin_mshlr: (blk_id,did) Dir_origin.t ba_mshlr
 
   type dir_entry
   val de_mshlr: dir_entry bp_mshlr
@@ -118,7 +150,7 @@ end
 module type T = sig
   module S : S
   open S
-  val dir_factory : (blk_id,blk,dir_entry,t) dir_factory
+  val dir_factory : (blk_id,blk,dir_entry,t,did) dir_factory
 end
 
 
@@ -153,6 +185,7 @@ module Make_v1(S:S) = struct
   = 
   struct
     open S2
+
     let usedlist_factory' = usedlist_factory#with_ 
         ~blk_dev_ops
         ~barrier
@@ -165,55 +198,138 @@ module Make_v1(S:S) = struct
 
     let mk_dir 
         ~(usedlist     : ('blk_id,'t) Usedlist.ops)        
-        ~(dir_map_root : 'blk_id)
-        ~(origin       : 'blk_id)
-      : _ Dir.t
+        ~(btree_root : 'blk_id)
+        ~(with_dir   : ('did dir_im,'t)with_state) 
+      : _ Dir_ops.t
       =
       (* NOTE we need to alloc via the used list *)
       let blk_alloc = alloc_via_usedlist usedlist in
       let uncached = S.uncached
           ~blk_dev_ops
           ~blk_alloc
-          ~init_btree_root:dir_map_root
+          ~init_btree_root:btree_root
       in
-      let get_btree_root = uncached#get_btree_root in
+      (* let get_btree_root = uncached#get_btree_root in *)
       let ops (* map_ops_with_ls *) = uncached#map_ops_with_ls in
       let find k = ops.find ~k in
       let insert k v = ops.insert ~k ~v in
       let delete k = ops.delete ~k in
+      
+      let ls_create 
+        : unit -> (('k,'v,'t)Tjr_btree.Btree_intf.ls,'t)m
+        =
+        fun () ->
+          Tjr_btree.Btree_intf.ls2object ~monad_ops ~leaf_stream_ops:ops.leaf_stream_ops
+            ~get_r:uncached#get_btree_root ()          
+      in
+
+      let get_parent () = 
+        with_dir.with_state (fun ~state ~set_state:_ ->
+            return state.parent)
+      in
+
+      let set_parent parent = 
+        with_dir.with_state (fun ~state ~set_state ->
+            set_state {state with parent})
+      in
+
+      let get_times () = 
+        with_dir.with_state (fun ~state ~set_state:_ ->
+            return state.stat_times)
+      in
+
+      let set_times stat_times =
+        with_dir.with_state (fun ~state ~set_state ->
+            set_state {state with stat_times})
+      in
+
+      let get_origin () = 
+        uncached#get_btree_root () >>= fun dir_map_root -> 
+        usedlist.get_origin () >>= fun usedlist_origin ->
+        with_dir.with_state (fun ~state ~set_state:_ ->
+            let { parent; stat_times } = state in
+            return Dir_origin.{dir_map_root;usedlist_origin;parent;stat_times}
+          )
+      in
+
       let flush () = 
         (* Flush the usedlist *)
         usedlist.flush() >>= fun () ->
         (* NOTE the dir_map is uncached currently *)
         S2.barrier() >>= fun () ->
-        usedlist.get_origin () >>= fun usedlist_origin ->
-        get_btree_root () >>= fun dir_map_root ->
-        write_origin ~blk_dev_ops ~blk_id:origin 
-          ~origin:Dir_origin.{usedlist_origin;dir_map_root} >>= fun () ->
-        S2.barrier()
-          
+        (* $(FIXME("""the B-tree should probably also have a flush and
+           sync (for when we use the cached version)""")) *)
+        return ()
       in
-      let sync () = 
-        flush () >>= fun () ->
-        S2.sync()
-      in
-      Dir.{ find; insert; delete; flush; sync }
-     
-    let dir_from_origin_blk (blk_id,(origin: _ Dir_origin.t)) = 
-      let usedlist_origin = origin.usedlist_origin in
-      usedlist_ops usedlist_origin >>= fun usedlist ->
-      let dir_map_root = origin.dir_map_root in
-      let origin = blk_id in
-      return (mk_dir ~usedlist ~dir_map_root ~origin)
 
+      (* NOTE this should be overridden when wrapping using autosync *)
+      let sync =
+        let msg = lazy(Printf.printf "%s: WARNING! attempt to use \
+                                      no-op sync; likely something is \
+                                      wrong" __FILE__) in
+        fun () -> Lazy.force msg; return ()
+      in
+      Dir_ops.{ 
+        find; insert; delete; flush; sync; ls_create;
+        get_parent; set_parent; get_times; set_times;
+        get_origin
+      }
+     
+    let wrap (type a) ~sync_origin ~(dir_ops:_ Dir_ops.t) (f:unit -> (a,t)m) = 
+      let Dir_ops.{ get_origin; _ } = dir_ops in
+      get_origin () >>= fun o1 -> 
+      f () >>= fun r -> 
+      get_origin () >>= fun o2 -> 
+      (match o1=o2 with
+       | true -> return ()
+       | false -> sync_origin o2) >>= fun () -> 
+      return r
+
+    let dir_add_autosync blk_id (dir_ops:_ Dir_ops.t) =
+      let sync_origin o = write_origin ~blk_dev_ops ~blk_id ~origin:o in
+      let wrap x = wrap ~sync_origin ~dir_ops x in
+      let Dir_ops.{ 
+          find; insert; delete; flush; sync=_; ls_create;
+          get_parent; set_parent; get_times; set_times;
+          get_origin } = dir_ops 
+      in
+      Dir_ops.{
+        find=(fun k -> wrap (fun () -> find k)); 
+        insert=(fun k v -> wrap (fun () -> insert k v)); 
+        delete=(fun k -> wrap (fun () -> delete k)); 
+        flush=(fun () -> wrap (fun () -> flush ()));
+        sync=(fun () -> flush () >>= fun () -> 
+               (* $(FIXME("""need sync for btree and usedlist""")) *)
+               get_origin () >>= fun o -> 
+               sync_origin o >>= fun () ->
+               (* FIXME S2.barrier? or S2.sync? *)
+               S2.sync ());
+       ls_create;
+       get_parent;
+       set_parent=(fun p -> wrap (fun () -> set_parent p));
+       get_times;
+       set_times=(fun t -> wrap (fun () -> set_times t));
+       get_origin}
+        
+
+    let dir_from_origin_blk (blk_id,(origin: _ Dir_origin.t)) = 
+      let Dir_origin.{dir_map_root;usedlist_origin;parent;stat_times} = origin in
+      usedlist_ops usedlist_origin >>= fun usedlist ->
+      let dir_im = Dir_im.{parent;stat_times} in
+      let with_dir = Tjr_monad.with_imperative_ref ~monad_ops (ref dir_im) in
+      let dir_ops = mk_dir ~usedlist ~btree_root:dir_map_root ~with_dir in
+      let dir_ops' = dir_add_autosync blk_id dir_ops in
+      return dir_ops'
+                  
     let dir_from_origin blk_id =
       read_origin ~blk_dev_ops ~blk_id >>= fun origin -> 
-      dir_from_origin_blk (blk_id,origin)
+      dir_from_origin_blk (blk_id,origin)        
 
     let export = object
       method usedlist_ops = usedlist_ops
       method alloc_via_usedlist = alloc_via_usedlist
       method mk_dir = mk_dir
+      method dir_add_autosync = dir_add_autosync
       method dir_from_origin_blk = dir_from_origin_blk
       method dir_from_origin = dir_from_origin
     end
@@ -261,12 +377,14 @@ let dir_example =
     type blk_id = Shared_ctxt.r
     type r = Shared_ctxt.r[@@deriving bin_io]
     type t = Shared_ctxt.t
+    type did = Dir_entry.did[@@deriving bin_io]
+
     let monad_ops = Shared_ctxt.monad_ops
 
-    let dir_origin_mshlr : blk_id Dir_origin.t ba_mshlr = (
+    let dir_origin_mshlr : (blk_id,did) Dir_origin.t ba_mshlr = (
         let module X = struct
           open Blk_id_as_int
-          type t = blk_id Dir_origin.t[@@deriving bin_io]
+          type t = (blk_id,did) Dir_origin.t[@@deriving bin_io]
           let max_sz = 256 (* FIXME check this*)
         end
         in
@@ -321,3 +439,5 @@ let dir_example =
   X.dir_factory
 
 let _ = dir_example
+
+

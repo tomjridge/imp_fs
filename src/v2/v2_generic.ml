@@ -34,7 +34,7 @@ module S1(S0:S0) = struct
 
   (** We expect an implementation which maps an id to a root block *)
 
-  type dir_entry = Fid of fid | Did of did | Sid of sid[@@deriving bin_io]                  
+  type dir_entry = (fid,did,sid) V2_intf.dir_entry'[@@deriving bin_io]                  
 
   type dir_k = str_256
 

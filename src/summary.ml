@@ -105,7 +105,7 @@ type ('buf,'blk,'blk_id,'t) file_factory = <
       (** (3.1) *)
       
       file_ops: 
-        usedlist           : ('blk_id,'t) Usedlist.ops -> 
+        usedlist           : ('blk_id,'t) Usedlist.ops -> (* used for? why not just use alloc_via_usedlist? *)
         alloc_via_usedlist : (unit -> ('blk_id,'t)m) ->         
         blk_idx_map        : (int,'blk_id,'blk_id,'t)Btree_ops.t -> 
         file_origin        : 'blk_id ->         
@@ -222,16 +222,16 @@ v}
 
 {[
 (** NOTE 'de stands for dir_entry *)
-type ('blk_id,'blk,'de,'t) dir_factory = <
+type ('blk_id,'blk,'de,'t,'did) dir_factory = <
   read_origin: 
     blk_dev_ops : ('blk_id,'blk,'t) blk_dev_ops -> 
     blk_id : 'blk_id -> 
-    ('blk_id Dir_origin.t,'t)m;
+    (('blk_id,'did) Dir_origin.t,'t)m;
 
   write_origin:
     blk_dev_ops : ('blk_id,'blk,'t) blk_dev_ops -> 
     blk_id : 'blk_id -> 
-    origin: 'blk_id Dir_origin.t -> 
+    origin: ('blk_id,'did) Dir_origin.t -> 
     (unit,'t)m;
     
   with_: 
@@ -244,34 +244,55 @@ type ('blk_id,'blk,'de,'t) dir_factory = <
 
       alloc_via_usedlist : 
         ('blk_id,'t) Usedlist.ops ->         
-        ('blk_id,'t)blk_allocator_ops;
+        ('blk_id,'t) blk_allocator_ops;
       
+      (* NOTE this doesn't update the origin when things change *)
       mk_dir : 
-        usedlist     : ('blk_id,'t) Usedlist.ops ->        
-        dir_map_root : 'blk_id -> 
-        origin       : 'blk_id ->
-        (str_256,'de,'blk_id,'t)Dir.t;
+        usedlist   : ('blk_id,'t) Usedlist.ops ->
+        btree_root : 'blk_id ->
+        with_dir   : ('did dir_im,'t)with_state -> 
+        (str_256,'de,'blk_id,'t,'did)Dir_ops.t;
+
 
       (* Convenience *)
-      
-      dir_from_origin_blk : 
-        ('blk_id*'blk_id Dir_origin.t) -> ((str_256,'de,'blk_id,'t)Dir.t,'t)m;
 
-      dir_from_origin: 'blk_id -> ((str_256,'de,'blk_id,'t)Dir.t,'t)m;
+      dir_add_autosync : 
+        'blk_id -> 
+        (str_256,'de,'blk_id,'t,'did)Dir_ops.t -> 
+        (str_256,'de,'blk_id,'t,'did)Dir_ops.t;
+      (** Wrap the ops with code that automatically updates the origin *)
+      
+      (* NOTE the following functions include autosync *)
+
+      dir_from_origin_blk : 
+        ('blk_id*('blk_id,'did) Dir_origin.t) -> ((str_256,'de,'blk_id,'t,'did)Dir_ops.t,'t)m;
+      
+      dir_from_origin: 'blk_id -> ((str_256,'de,'blk_id,'t,'did)Dir_ops.t,'t)m;
     >;  
 >
 
-  type ('k,'v,'r,'t) dir_ops = {
+  type ('k,'v,'r,'t,'did) dir_ops = {
     find     : 'k -> ('v option,'t) m;
     insert   : 'k -> 'v -> (unit,'t) m;
     delete   : 'k -> (unit,'t) m;
+
+    ls_create: unit -> (('k,'v,'t)Tjr_btree.Btree_intf.ls,'t)m;
+    set_parent: 'did -> (unit,'t)m;
+    get_parent: unit -> ('did,'t)m;
+    set_times : stat_times -> (unit,'t)m;
+    get_times : unit -> (stat_times,'t)m;    
+
     flush    : unit -> (unit,'t)m;
-    sync     : unit -> (unit,'t)m;
+    sync     : unit -> (unit,'t)m;    
+
+    get_origin: unit -> (('r,'did)Dir_origin.t,'t)m;
   }
 
-  type 'blk_id dir_origin = {
-    dir_map_root: 'blk_id;
-    usedlist_origin: 'blk_id Usedlist.origin;
+  type ('blk_id,'did) dir_origin = {
+    dir_map_root    : 'blk_id;
+    usedlist_origin : 'blk_id Usedlist.origin;
+    parent          : 'did;
+    stat_times      : stat_times;
   }[@@deriving bin_io]
 
 ]}
@@ -299,7 +320,7 @@ end
 module S1(S0:S0) = struct
   open S0
 
-  (** We expect an implentation which maps an id to a root block *)
+  (** We expect an implementation which maps an id to a root block *)
 
   type dir_entry = Fid of fid | Did of did | Sid of sid[@@deriving bin_io]                  
 

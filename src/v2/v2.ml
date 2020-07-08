@@ -17,9 +17,9 @@ module G = V2_generic
 module S0 = struct
   type t = lwt
   let monad_ops = monad_ops
-  type fid = {fid:int}[@@deriving bin_io]
-  type did = {did:int}[@@deriving bin_io]
-  type sid = {sid:int}[@@deriving bin_io]
+  type fid = int[@@deriving bin_io]
+  type did = int[@@deriving bin_io]
+  type sid = int[@@deriving bin_io]
 end
 open S0
 
@@ -42,7 +42,7 @@ module Make_2 = Make.Make_2
 
 (** {2 Some simple defns we can complete here} *)
 
-let root_did = {did=0}
+let root_did = 0
 
 let mk_stat_times () = 
   Unix.time () |> fun t -> (* 1s resolution? FIXME *)
@@ -66,7 +66,8 @@ let dir_entry_mshlr : dir_entry bp_mshlr =
 
 module Stage_1(S1:sig
     val blk_dev_ops : (r,blk,t)blk_dev_ops
-    val origin : r Fs_origin_block.t
+    val fs_origin : r Fs_origin_block.t
+    (* FIXME replace with fl_examples#fl_params_1 *)
     val fl_params : Tjr_plist_freelist.Freelist_intf.params
   end) = struct
   open S1
@@ -74,131 +75,153 @@ module Stage_1(S1:sig
   let barrier () = return ()
   let sync () = return ()
 
+  (** {2 New identifiers} *)
+
+  (** We use mutually exclusive subsets of int for identifiers; NOTE 0
+      is reserved for the root directory *)
+  let min_free_id_ref = ref fs_origin.min_free_object_id 
+  (* FIXME make sure to flush *)
+
+  let new_id () = 
+    let r = !min_free_id_ref in
+    incr min_free_id_ref;
+    return r
+
+  let new_did () = new_id () 
+
+  let new_fid () = new_id () 
+
+  let new_sid () = new_id () 
+
+  let id_to_int = function
+    | Did did -> did
+    | Fid fid -> fid
+    | Sid sid -> sid
+
+
   (** {2 The freelist } *)
   
   (** We need to read the freelist origin block, and resurrect the freelist *)
-
-  module Fl_origin = Tjr_plist_freelist.Freelist_intf.Fl_origin
-  module Pl_origin = Tjr_plist.Plist_intf.Pl_origin
-
+  
+  let fl_params = object
+    method tr_upper=2000
+    method tr_lower=1000
+    method min_free_alloc_size=500
+  end
+    
+  (* FIXME we need to initialize the freelist at some point of course;
+     an init functor? *)
   let freelist = 
-    let open (struct 
-      let fl_examples = Tjr_plist_freelist.fl_examples
-      let fl_factory = fl_examples#freelist_factory 
-      let fl_origin_ops = 
-        fl_factory#origin_ops
-          ~blk_dev_ops
-          ~barrier
-          ~sync
-          ~blk_id:origin.fl_origin
-
-      let with_ = 
-        fl_factory#with_
-          ~blk_dev_ops
-          ~barrier
-          ~sync
-          ~origin_ops:fl_origin_ops
-          ~params:fl_params
-
-      end)
+    let fact = fl_examples#for_r in
+    let with_ = 
+      fact#with_
+        ~blk_dev_ops
+        ~barrier
+        ~sync
+        ~params:fl_params
     in
-    fl_origin_ops.read () >>= fun fl_origin -> 
-    let pl_origin = fl_examples#origin_to_pl fl_origin in
-    with_#plist_ops pl_origin >>= fun plist_ops -> 
-    with_#with_plist_ops plist_ops >>= fun o -> 
-    let min_free : _ Freelist_intf.min_free_ops = 
-      match fl_origin.min_free with
-      | None -> assert(false)
-      | Some min_free -> Freelist_intf.{
-          min_free_alloc=(fun r i -> 
-              
-        (min_free,(fun r -> 
-);
-    o#with_locked_ref (
-      fl_factory#empty_freelist
-        ~min_free:(fl_origin.min_free
-                         
+    with_#from_origin_with_autosync fs_origin.fl_origin
+
+  let fl_ops = freelist >>= fun x -> 
+    return x#freelist_ops
     
 
+  module Stage_2(S2:sig val fl_ops: (r,r,t)Freelist_intf.freelist_ops end) = struct
+    open S2
+
+
+    (** {2 Blk allocator using freelist} *)
+
+    let blk_alloc : _ blk_allocator_ops =     
+      {
+        blk_alloc=S2.fl_ops.alloc;
+        blk_free=S2.fl_ops.free
+      }
+
       
-      let plist_ops () = with_#plist_ops (Plist_intf.Pl_origin.{hd;tl;blk_len})
+    (** {2 The global object map (GOM) } *)
+
+    (** NOTE FIXME this should really track the blocks it uses, as
+       files and directories do; so the GOM has its own origin block,
+       with a pointer to the root and a pointer to the used list *)
+
+    let gom = V2_gom.uncached
+        ~blk_dev_ops
+        ~blk_alloc
+        ~init_btree_root:fs_origin.gom_root
+        
+    let _ = gom
+
+    let gom_ops = gom#map_ops_with_ls
+
+    (* FIXME promote Map_ops_with_ls module to top of Tjr_btree *)
+    let Tjr_btree.Btree_intf.Map_ops_with_ls.{ find=gom_find; _ } = gom_ops
+      
+    (* NOTE we also have to make sure we flush the GOM root... *)
+
+
+    (** {2 Dirs} *)
+
+    let gom_find_opt = gom_ops.find
+
+    let gom_find k = gom_find_opt ~k >>= function
+      | Some r -> return r
+      | None -> 
+        Printf.printf "Error: gom key %d not found\n%!" (id_to_int k);
+        failwith "gom: id did not map to an entry"
+
+    let gom_insert = gom_ops.insert
+
+    let gom_delete = gom_ops.delete
+
+    let dirs : dirs_ops = {
+      find = (fun did -> 
+          gom_find (Did did) >>= fun blk_id ->
+          Dir.read_rb ~blk_id >>= fun rb ->
+        let rb = ref rb in
+        let write_rb () = Dir.write_rb ~blk_id (!rb) in
+        let root_ops = 
+          let with_state f = 
+            f ~state:(!rb.map_root) ~set_state:(fun map_root ->
+                rb:={!rb with map_root};
+                write_rb())
+          in
+          {with_state}
+        in
+        let dir_map_ops = Dir.dir_map_ops ~root_ops in
+        let set_parent did = 
+          rb:={!rb with parent=did};
+          write_rb()
+        in
+        let get_parent () = (!rb).parent |> return in
+        let set_times times =
+          rb:={!rb with times};
+          write_rb()
+        in
+        let get_times () = (!rb).times |> return in          
+        let dir_ops = {
+          find=(fun k -> dir_map_ops.find ~k);
+          insert=(fun k v -> dir_map_ops.insert ~k ~v);
+          delete=(fun k -> dir_map_ops.delete ~k);
+          ls_create=
+            Tjr_btree.Btree_intf.ls2object 
+              ~monad_ops 
+              ~leaf_stream_ops:dir_map_ops.leaf_stream_ops
+              ~get_r:(fun () -> return !rb.map_root);
+          set_parent;
+          get_parent;
+          set_times;
+          get_times;
+        }
+        in
+        return dir_ops);                           
+    delete = (fun did -> gom_delete ~k:(Did did))
+
+    }
+    
 
   end
-
-  (** {2 The global object map (GOM) } *)
-
-        let gom = V2_gom.uncached
-              ~blk_dev_ops
-              ~blk_alloc
-              ~init_btree_root:origin.gom_root
-              
+    
 end
 
-(*
-
-module Gom = struct
-
-  (** Could just use disjoint subsets of int and drop the constructors *)
-
-  type id = dir_entry
-  [@@deriving bin_io]
-
-  let v_size = 10 (* FIXME check 9+1 *)
-
-  let id_mshlr : id bp_mshlr = 
-    (module 
-      (struct 
-        type t = id[@@deriving bin_io] 
-        let max_sz = v_size
-      end))
-  
-  let consistent_entry id e = 
-    match id,e with
-    | Fid _,Fid _  | Did _,Did _ | Sid _, Sid _ -> true
-    | _ -> false
-
-  type k = id[@@deriving bin_io]
-
-  let k_mshlr : k bp_mshlr = id_mshlr
-
-  (** The gom maps an id to a root blk *)
-  type v = blk_id
-
-  let v_mshlr : v bp_mshlr = bp_mshlrs#r_mshlr
-
-  let k_cmp: id -> id -> int = Stdlib.compare
-
-  (*
-  let gom_args = object
-    method k_cmp: id -> id -> int = Stdlib.compare
-    method k_mshlr = k_mshlr
-    method v_mshlr = v_mshlr
-  end  
-*)
-  type r = Shared_ctxt.r
-  let r_cmp = Shared_ctxt.r_cmp
-  let r_mshlr = bp_mshlrs#r_mshlr  (* FIXME put in Shared_ctxt *)
-
-  let cs = Shared_ctxt.(Tjr_btree.Bin_prot_marshalling.make_constants ~blk_sz ~k_size:r_size ~v_size)
-
-  type t = Shared_ctxt.t
-  let monad_ops = Shared_ctxt.monad_ops
-
-end
-(* open Gom *)
-
-module Gom_btree = Tjr_btree.Pvt.Make_5.Make(Gom)
-
-let gom_factory = lazy (
-  Gom_btree.btree_factory 
-    ~blk_dev_ops:(Lazy.force blk_dev_ops)
-    ~blk_allocator_ops:(Lazy.force blk_alloc)
-    ~blk_sz:Shared_ctxt.blk_sz)
-
-(* FIXME move bt_1 etc to a top-level module *)
-let (* gom_empty_leaf_as_blk,*) (gom_btree : (Gom.k,Gom.v,_,_,t) Tjr_btree.Pvt.Make_5.Btree_factory.bt_1 Lazy.t) = 
-  lazy(
-    (Lazy.force gom_factory)#make_uncached (Lazy.force root_ops))
-
-let _ = gom_btree
-*)
+             

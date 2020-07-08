@@ -2,19 +2,29 @@
 
 This is just an instance of Tjr_btree, mapping object id (which we
    identify with dir_entry) to blk_id 
+
+FIXME this should use allocation via a usedlist
+
 *)
 open V2_intf
 
 let blk_sz = Shared_ctxt.blk_sz 
 
+module Dir_entry = struct
+  open Bin_prot.Std
+  type t = (int,int,int) dir_entry'[@@deriving bin_io]
+  let max_sz = 9
+end
+
 module S = struct
-  type k = Dir_entry.t
+  let k_mshlr : _ bp_mshlr = (module Dir_entry)
+  type k = Dir_entry.t[@@deriving bin_io]
   type v = Shared_ctxt.r
   type r = Shared_ctxt.r
   type t = Shared_ctxt.t
   let k_cmp: k -> k -> int = Stdlib.compare
   let monad_ops = Shared_ctxt.monad_ops
-  let k_mshlr = dir_entry_mshlr
+  (* let k_mshlr = dir_entry_mshlr *)
   let v_mshlr = bp_mshlrs#r_mshlr
   let r_mshlr = bp_mshlrs#r_mshlr
 
@@ -26,7 +36,8 @@ end
 
 module T = Tjr_btree.Make_6.Make_v2(S)
 
-(** Use the uncached method from the following to implement the GOM FIXME need to add write_empty_leaf to btree_factory intf *)
+(** Use the uncached method from the following to implement the GOM
+   FIXME need to add write_empty_leaf to btree_factory intf *)
 let gom_factory : (Dir_entry.t, S.v, S.r, S.t, T.leaf, T.node,
  (T.node, T.leaf) Isa_btree.dnode, T.ls, T.blk, T.wbc)
 Tjr_btree.Make_6.btree_factory
