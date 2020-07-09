@@ -2,7 +2,17 @@
 
 
 (** Object ids *)
-type ('fid,'did,'sid) dir_entry' = Fid of 'fid | Did of 'did | Sid of 'sid[@@deriving bin_io]
+
+type ('fid,'did,'sid) dir_entry' = 
+  ('fid,'did,'sid) Dir_impl.Dir_entry.dir_entry'[@@deriving bin_io]
+type dir_entry = Dir_impl.Dir_entry.dir_entry[@@deriving bin_io]
+
+let dir_entry_to_int = Dir_impl.Dir_entry.dir_entry_to_int
+
+(* type ('fid,'did,'sid) dir_entry' = Fid of 'fid | Did of 'did | Sid of 'sid[@@deriving bin_io] *)
+
+
+
 
 (*
 module Dir_entry = struct

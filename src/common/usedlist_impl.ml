@@ -45,6 +45,11 @@ type ('blk_id,'blk,'t) usedlist_factory = <
       alloc_via_usedlist : 
         ('blk_id,'t) Usedlist.ops ->         
         ('blk_id,'t)blk_allocator_ops;
+      
+      create : unit -> (('blk_id,'t)Usedlist.ops,'t)m;
+      (** Create a new usedlist, without an origin (since the origin
+         info is typically stored with the object's origin block);
+         NOTE can get the ul origin info using the ops *)
             
     >;
 
@@ -92,13 +97,15 @@ module Make_v1(S:S) = struct
     open S2
 
     let blk_sz = blk_dev_ops.blk_sz |> Blk_sz.to_int
+
+    let plist_factory' = plist_factory#with_blk_dev_ops ~blk_dev_ops ~barrier
                                          
     (** Implement the usedlist, using the plist and the global
        freelist. NOTE For the usedlist, we may hold a free block
        temporarily; if it isn't used we can return it immediately to
        the global freelist. *)
     let usedlist_ops (uo:_ Usedlist.origin) : ((r,t)Usedlist.ops,t)m  =
-      plist_factory#with_blk_dev_ops ~blk_dev_ops ~barrier |> fun x -> 
+      let x = plist_factory' in
       x#init#from_endpts uo >>= fun pl -> 
       x#with_ref pl |> fun y -> 
       x#with_state y#with_plist  |> fun (plist_ops:(_,_,_,_)Plist_intf.plist_ops) -> 
@@ -135,9 +142,19 @@ module Make_v1(S:S) = struct
       in
       { blk_alloc; blk_free }
 
+    let create () = 
+      freelist_ops.blk_alloc () >>= fun blk_id ->       
+      plist_factory'#init#create blk_id >>= fun pl ->
+      let Plist_intf.{hd;tl;blk_len;_} = pl in
+      let ul_origin = Pl_origin.{hd;tl;blk_len} in
+      usedlist_ops ul_origin >>= fun ul_ops ->
+      return ul_ops
+      
+
     let export = object
       method usedlist_ops = usedlist_ops
       method alloc_via_usedlist = alloc_via_usedlist
+      method create = create
     end
   end  
 

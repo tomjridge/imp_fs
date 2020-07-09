@@ -28,7 +28,92 @@ TODO:
 *)
 
 
+(** {2 File types} *)
+
 open Int_like
+
+module Usedlist = Usedlist_impl.Usedlist
+
+module Times = Minifs_intf.Times
+type stat_times = Times.times[@@deriving bin_io]
+
+(* NOTE now() is currently not modelled monadically *)
+let now () = Unix.gettimeofday ()
+let update_atim = Times.update_atim (now())
+let update_mtim = Times.update_mtim (now())
+let new_times () = now() |> fun tim -> Times.{atim=tim;mtim=tim}
+
+(** We reconstruct the file from the contents of the file's origin
+   blk; this includes the size, the [blk->index] map root, and the
+   pointers for the used list (which is used to implement alloc in
+   conjunction with the freelist) *)
+module File_origin_block = struct
+
+  open Bin_prot.Std
+
+  (* NOTE Tjr_fs_shared has size but no deriving bin_io; FIXME perhaps it should? *)
+  (* type size = {size:int} [@@deriving bin_io] *)
+
+  (* $(PIPE2SH("""sed -n '/type[ ].*file_origin_block =/,/}/p' >GEN.file_origin_block.ml_""")) *)
+  type 'blk_id file_origin_block = {
+    file_size        : int; (* in bytes of course *)
+    times            : stat_times;
+    blk_idx_map_root : 'blk_id;
+    usedlist_origin  : 'blk_id Usedlist.origin;
+  }[@@deriving bin_io]
+
+  type 'blk_id t = 'blk_id file_origin_block[@@deriving bin_io]
+  
+
+end
+module Fo = File_origin_block
+
+
+(** State we hold in memory for a particular file *)
+module File_im = struct
+
+  type t = {
+    file_size: int;
+    times : stat_times
+  }
+  (** The usedlist and blk-idx map are fixed for the lifetime of the
+     file, so should be parameters on creation. Other than that, we
+     just have a field for file size and a field for the location of
+     the origin blk. *)
+
+end
+
+
+type pread_error = Pread_error of string
+
+type pwrite_error = Pwrite_error of string
+
+(* $(FIXME("for pwrite, perhaps return unit")) *)
+
+(* $(PIPE2SH("""sed -n '/Standard[ ]file operations/,/^}/p' >GEN.file_ops.ml_""")) *)
+(** Standard file operations, pwrite, pread, size and truncate.
+
+NOTE we expect buf to be string for the functional version; for
+   mutable buffers we may want to pass the buffer in as a parameter?
+
+NOTE for pwrite, we always return src_len since all bytes are written
+   (unless there is an error of course). 
+
+For pread, we always return a buffer of length len (assuming off+len <= file size).
+
+*)
+type ('buf,'t) file_ops = {
+  size     : unit -> (int,'t)m;
+  pwrite   : src:'buf -> src_off:offset -> src_len:len -> 
+    dst_off:offset -> ((int (*n_written*),pwrite_error)result,'t)m;
+  pread    : off:offset -> len:len -> (('buf,pread_error)result,'t)m;
+  truncate : size:int -> (unit,'t)m;
+  flush    : unit -> (unit,'t)m;
+  sync     : unit -> (unit,'t)m;
+  (* FIXME get_times, set_times *)
+}
+
+
 open Buffers_from_btree (* FIXME combine with the other buf_ops *)
 open Usedlist_impl
 open Fv2_types
@@ -36,6 +121,8 @@ open Fv2_types
 module Iter_block_blit = Fv2_iter_block_blit
 type idx = Iter_block_blit.idx
 let idx_mshlr = Iter_block_blit.idx_mshlr 
+
+(* type stat_times = Minifs_intf.times *)
 
 (* $(PIPE2SH("""sed -n '/Construct[ ]file operations/,/^>/p' >GEN.file_factory.ml_""")) *)
 (** Construct file operations.
@@ -99,7 +186,8 @@ type ('buf,'blk,'blk_id,'t) file_factory = <
         alloc_via_usedlist : (unit -> ('blk_id,'t)m) ->         
         blk_idx_map        : (int,'blk_id,'blk_id,'t)Btree_ops.t -> 
         file_origin        : 'blk_id ->         
-        file_size          : int -> 
+        init_file_size     : int -> 
+        init_times         : stat_times ->
         ('buf,'t)file_ops;
       (** (4) *)
 
@@ -279,7 +367,8 @@ module Make_v1(S:S) (* : T with module S = S*) = struct
         val alloc_via_usedlist : (unit -> (blk_id,t)m)
         val blk_idx_map        : (int,blk_id,blk_id,t)Btree_ops.t
         val file_origin        : blk_id
-        val file_size          : int
+        val init_file_size     : int
+        val init_times         : stat_times
       end) 
     = 
     struct
@@ -295,11 +384,12 @@ module Make_v1(S:S) (* : T with module S = S*) = struct
       let alloc = alloc_via_usedlist
 
       module Pvt = struct
-        let fim = File_im.{ file_size }
+        let fim = File_im.{ file_size=init_file_size; times=init_times }
         let fim_ref = ref fim
         let with_fim = with_imperative_ref ~monad_ops fim_ref
         let with_fim = with_fim.with_state
       end
+
 
       let with_fim = Pvt.with_fim
 
@@ -341,7 +431,7 @@ module Make_v1(S:S) (* : T with module S = S*) = struct
             match size >= state.file_size with
             | true -> 
               (* no need to drop blocks *)              
-              set_state {file_size=size}
+              set_state {file_size=size;times=new_times()} (* FIXME check time updates are correct *)
             | false -> 
               (* FIXME check the maths of this - if size is 0 we may
                  want to have no entries in blk_index *)
@@ -366,7 +456,7 @@ module Make_v1(S:S) (* : T with module S = S*) = struct
                       dev.write ~blk_id ~blk)
                 | false -> return ()
               ) >>= fun () -> 
-              set_state {file_size })
+              set_state {file_size=size;times=new_times () })
 
       (* NOTE the following are setting up the Iter_block_blit module *)
       
@@ -425,7 +515,7 @@ module Make_v1(S:S) (* : T with module S = S*) = struct
               begin
                 let size' = dst_off.off+src_len.len in
                 match size' > size with
-                | true -> set_state {file_size=size'}
+                | true -> set_state {file_size=size';times=new_times()}
                 | false -> return ()
               end >>= fun () ->
               return (Ok x.size) )
@@ -447,6 +537,7 @@ module Make_v1(S:S) (* : T with module S = S*) = struct
         blk_idx_map.get_root () >>= fun blk_idx_map_root -> 
         let origin = File_origin_block.{
             file_size;
+            times=new_times();
             blk_idx_map_root;
             usedlist_origin }
         in
@@ -466,19 +557,20 @@ module Make_v1(S:S) (* : T with module S = S*) = struct
         ~(alloc_via_usedlist : (unit -> (blk_id,t)m))
         ~(blk_idx_map        : (int,blk_id,blk_id,t)Btree_ops.t)
         ~(file_origin        : blk_id)
-        ~(file_size          : int)
+        ~(init_file_size     : int)
+        ~(init_times         : Times.times)
       : (_,_)file_ops 
       =
       let module S = struct
-        let usedlist, alloc_via_usedlist, blk_idx_map, file_origin, file_size = 
-          usedlist, alloc_via_usedlist, blk_idx_map, file_origin, file_size
+        let usedlist, alloc_via_usedlist, blk_idx_map, file_origin, init_file_size, init_times = 
+          usedlist, alloc_via_usedlist, blk_idx_map, file_origin, init_file_size, init_times
       end
       in
       let module X = File_ops(S) in
       X.file_ops
 
     let file_from_origin_blk (file_origin, origin) = 
-      let File_origin_block.{ file_size; blk_idx_map_root; usedlist_origin } = origin in
+      let File_origin_block.{ file_size; times; blk_idx_map_root; usedlist_origin } = origin in
       usedlist_ops usedlist_origin >>= fun usedlist ->
       let alloc_via_usedlist = alloc_via_usedlist usedlist in
       let blk_idx_map = mk_blk_idx_map ~usedlist ~btree_root:blk_idx_map_root in
@@ -488,7 +580,8 @@ module Make_v1(S:S) (* : T with module S = S*) = struct
           ~alloc_via_usedlist:alloc_via_usedlist.blk_alloc
           ~blk_idx_map
           ~file_origin
-          ~file_size
+          ~init_file_size:file_size
+          ~init_times:times
       in
       return file_ops
 
@@ -754,14 +847,17 @@ module Test() = struct
     
     let file_origin = Blk_id_as_int.of_int (-2)
 
-    let file_size = 0
+    let init_file_size = 0
+
+    let init_times = new_times()
 
     let file_ops = file_ops
       ~usedlist
       ~alloc_via_usedlist
       ~blk_idx_map
       ~file_origin
-      ~file_size
+      ~init_file_size
+      ~init_times
 
     let { pread; pwrite; _ } = file_ops
 

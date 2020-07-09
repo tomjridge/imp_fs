@@ -1,3 +1,4 @@
+(*
 (** V2 - compared to V1, this version implements files (via file_impl_v2).
 
 We try to reuse V1_generic. Some of the following copied from v1.ml *)
@@ -93,10 +94,10 @@ module Stage_1(S1:sig
 
   let new_sid () = new_id () 
 
-  let id_to_int = function
+  let id_to_int = Dir_impl.Dir_entry.(function
     | Did did -> did
     | Fid fid -> fid
-    | Sid sid -> sid
+    | Sid sid -> sid)
 
 
   (** {2 The freelist } *)
@@ -138,6 +139,7 @@ module Stage_1(S1:sig
         blk_free=S2.fl_ops.free
       }
 
+    let freelist_ops = blk_alloc
       
     (** {2 The global object map (GOM) } *)
 
@@ -174,50 +176,34 @@ module Stage_1(S1:sig
 
     let gom_delete = gom_ops.delete
 
-    let dirs : dirs_ops = {
-      find = (fun did -> 
-          gom_find (Did did) >>= fun blk_id ->
-          Dir.read_rb ~blk_id >>= fun rb ->
-        let rb = ref rb in
-        let write_rb () = Dir.write_rb ~blk_id (!rb) in
-        let root_ops = 
-          let with_state f = 
-            f ~state:(!rb.map_root) ~set_state:(fun map_root ->
-                rb:={!rb with map_root};
-                write_rb())
-          in
-          {with_state}
-        in
-        let dir_map_ops = Dir.dir_map_ops ~root_ops in
-        let set_parent did = 
-          rb:={!rb with parent=did};
-          write_rb()
-        in
-        let get_parent () = (!rb).parent |> return in
-        let set_times times =
-          rb:={!rb with times};
-          write_rb()
-        in
-        let get_times () = (!rb).times |> return in          
-        let dir_ops = {
-          find=(fun k -> dir_map_ops.find ~k);
-          insert=(fun k v -> dir_map_ops.insert ~k ~v);
-          delete=(fun k -> dir_map_ops.delete ~k);
-          ls_create=
-            Tjr_btree.Btree_intf.ls2object 
-              ~monad_ops 
-              ~leaf_stream_ops:dir_map_ops.leaf_stream_ops
-              ~get_r:(fun () -> return !rb.map_root);
-          set_parent;
-          get_parent;
-          set_times;
-          get_times;
-        }
-        in
-        return dir_ops);                           
-    delete = (fun did -> gom_delete ~k:(Did did))
+    
+    let dir_impl = Dir_impl.dir_example
+    let dir_impl' =             
+      Dir_impl.dir_example#with_
+        ~blk_dev_ops
+        ~barrier
+        ~sync
+        ~freelist_ops
 
-    }
+
+    let dirs : dirs_ops = 
+      let find = (fun did -> 
+          gom_find (Did did) >>= fun blk_id ->
+          dir_impl'#dir_from_origin blk_id
+        )
+      in
+      {
+        find;
+        delete = (fun did -> gom_delete ~k:(Did did));
+        create_dir = (fun ~parent ~name ~times -> 
+            new_did () >>= fun did ->
+            dir_impl'#create_dir ~parent ~times >>= fun blk_id ->
+            gom_insert ~k:(Did did) ~v:blk_id >>= fun () ->
+            find parent >>= fun p ->
+            p.insert name (Did did))
+      }
+
+    let files : files_ops = 
     
 
   end
@@ -225,3 +211,4 @@ module Stage_1(S1:sig
 end
 
              
+*)

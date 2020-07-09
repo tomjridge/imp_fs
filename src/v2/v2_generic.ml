@@ -44,7 +44,7 @@ module S1(S0:S0) = struct
   (* NOTE since dh is supposed to not change whilst we traverse the
      directory, we can't just identify dh with ls *)
 
-
+(*
   type dir_ops = {
     find      : str_256 -> (dir_entry option,t)m;
     insert    : str_256 -> dir_entry -> (unit,t)m;
@@ -55,6 +55,13 @@ module S1(S0:S0) = struct
     set_times : stat_times -> (unit,t)m;
     get_times : unit -> (stat_times,t)m;
   }
+*)
+  (* In the generic development, this is the only place where blk_id
+     appears; arguably it is part of the internal interface; however,
+     I am reluctant to remove the get_origin field from the dir_ops
+     type *)
+  type blk_id' = Shared_ctxt.r
+  type dir_ops = (str_256,dir_entry,blk_id',t,did) Dir_impl.Dir_ops.t
 
   (* val read_symlink: sid -> (str_256,t)m *)
   (* FIXME we probably want path res to return an sid, which could be
@@ -66,7 +73,11 @@ module S1(S0:S0) = struct
     delete : did -> (unit,t)m;    
     create_dir: parent:did -> name:str_256 -> times:stat_times -> (unit,t)m;
   }
-  (** NOTE for create, use create_dir; this needs to add the did to the gom *)
+  (** NOTE for dir.create, use create_dir; this needs to:
+      allocate a new did;
+      initialize a new directory;
+      add the did to the GOM;
+      add the did to the parent *)
 
   type fd = fid
 

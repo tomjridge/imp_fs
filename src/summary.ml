@@ -21,6 +21,11 @@ type ('blk_id,'blk,'t) usedlist_factory = <
       alloc_via_usedlist : 
         ('blk_id,'t) Usedlist.ops ->         
         ('blk_id,'t)blk_allocator_ops;
+      
+      create : unit -> (('blk_id,'t)Usedlist.ops,'t)m;
+      (** Create a new usedlist, without an origin (since the origin
+         info is typically stored with the object's origin block);
+         NOTE can get the ul origin info using the ops *)
             
     >;
 
@@ -109,7 +114,8 @@ type ('buf,'blk,'blk_id,'t) file_factory = <
         alloc_via_usedlist : (unit -> ('blk_id,'t)m) ->         
         blk_idx_map        : (int,'blk_id,'blk_id,'t)Btree_ops.t -> 
         file_origin        : 'blk_id ->         
-        file_size          : int -> 
+        init_file_size     : int -> 
+        init_times         : stat_times ->
         ('buf,'t)file_ops;
       (** (4) *)
 
@@ -141,10 +147,12 @@ type ('buf,'t) file_ops = {
   truncate : size:int -> (unit,'t)m;
   flush    : unit -> (unit,'t)m;
   sync     : unit -> (unit,'t)m;
+  (* FIXME get_times, set_times *)
 }
 
   type 'blk_id file_origin_block = {
     file_size        : int; (* in bytes of course *)
+    times            : stat_times;
     blk_idx_map_root : 'blk_id;
     usedlist_origin  : 'blk_id Usedlist.origin;
   }[@@deriving bin_io]
@@ -255,6 +263,15 @@ type ('blk_id,'blk,'de,'t,'did) dir_factory = <
 
 
       (* Convenience *)
+
+      (* NOTE this has nothing to do with the GOM, so no name, not
+         added to parent etc *)
+      create_dir : 
+        parent:'did -> times:stat_times -> ('blk_id,'t)m;
+      (** Returns the 'blk_id of the origin blk; NOTE this has nothing
+         to do with the GOM, and does not add the entry to the parent
+         directory (no way to access the parent directory here) *)
+        
 
       dir_add_autosync : 
         'blk_id -> 

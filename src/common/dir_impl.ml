@@ -102,6 +102,15 @@ type ('blk_id,'blk,'de,'t,'did) dir_factory = <
 
       (* Convenience *)
 
+      (* NOTE this has nothing to do with the GOM, so no name, not
+         added to parent etc *)
+      create_dir : 
+        parent:'did -> times:stat_times -> ('blk_id,'t)m;
+      (** Returns the 'blk_id of the origin blk; NOTE this has nothing
+         to do with the GOM, and does not add the entry to the parent
+         directory (no way to access the parent directory here) *)
+        
+
       dir_add_autosync : 
         'blk_id -> 
         (str_256,'de,'blk_id,'t,'did)Dir_ops.t -> 
@@ -136,7 +145,8 @@ module type S = sig
 
   type ls
 
-  (** NOTE this is the type for btree_factory#uncached *)
+  (** NOTE this is the type for btree_factory#uncached; FIXME could
+     just assume btree_factory *)
   val uncached : 
     blk_dev_ops     : (r, blk, t) blk_dev_ops -> 
     blk_alloc       : (r, t) blk_allocator_ops -> 
@@ -145,6 +155,13 @@ module type S = sig
       get_btree_root  : unit -> (r,t) m;
       map_ops_with_ls : (str_256,dir_entry,r,ls,t) Tjr_btree.Btree_intf.map_ops_with_ls
     >
+    
+  (** NOTE from btree_factory *)
+  val write_empty_leaf:    
+    blk_dev_ops : (r, blk, t) blk_dev_ops -> 
+    blk_id : r -> 
+    (unit,t)m
+
 end
 
 module type T = sig
@@ -275,6 +292,27 @@ module Make_v1(S:S) = struct
         get_origin
       }
      
+
+    let create_dir ~parent ~times =
+      (* create a B-tree and a usedlist, and then an origin blk *)
+      (* B-tree *)
+      freelist_ops.blk_alloc () >>= fun btree_root -> 
+      S.write_empty_leaf ~blk_dev_ops ~blk_id:btree_root >>= fun () ->
+      (* usedlist *)
+      usedlist_factory'#create () >>= fun ul_ops ->
+      ul_ops.get_origin () >>= fun usedlist_origin -> 
+      let origin = Dir_origin.{
+          dir_map_root=btree_root;
+          usedlist_origin;
+          parent;
+          stat_times=times
+        }
+      in
+      freelist_ops.blk_alloc () >>= fun blk_id -> 
+      write_origin ~blk_dev_ops ~blk_id ~origin >>= fun () ->
+      return blk_id
+      
+
     let wrap (type a) ~sync_origin ~(dir_ops:_ Dir_ops.t) (f:unit -> (a,t)m) = 
       let Dir_ops.{ get_origin; _ } = dir_ops in
       get_origin () >>= fun o1 -> 
@@ -329,6 +367,7 @@ module Make_v1(S:S) = struct
       method usedlist_ops = usedlist_ops
       method alloc_via_usedlist = alloc_via_usedlist
       method mk_dir = mk_dir
+      method create_dir = create_dir
       method dir_add_autosync = dir_add_autosync
       method dir_from_origin_blk = dir_from_origin_blk
       method dir_from_origin = dir_from_origin
@@ -367,8 +406,16 @@ module Dir_entry = struct
   type did = int[@@deriving bin_io]
   type sid = int[@@deriving bin_io] 
 
-  type dir_entry = Fid of fid | Did of did | Sid of sid[@@deriving bin_io]                  
+  type ('fid,'did,'sid) dir_entry' = 
+      Fid of 'fid | Did of 'did | Sid of 'sid[@@deriving bin_io]
+  type dir_entry = (fid,did,sid)dir_entry'[@@deriving bin_io]                  
   type t = dir_entry[@@deriving bin_io]
+
+  let dir_entry_to_int = function
+    | Did did -> did
+    | Fid fid -> fid
+    | Sid sid -> sid
+
 end
 
 let dir_example = 
@@ -432,6 +479,8 @@ let dir_example =
     let s256_de_factory = S256_de.btree_factory
                             
     let uncached = s256_de_factory#uncached
+
+    let write_empty_leaf = s256_de_factory#write_empty_leaf
                      
   end
   in
