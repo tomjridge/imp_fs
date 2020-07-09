@@ -1,4 +1,3 @@
-(*
 (** V2 - compared to V1, this version implements files (via file_impl_v2).
 
 We try to reuse V1_generic. Some of the following copied from v1.ml *)
@@ -179,7 +178,7 @@ module Stage_1(S1:sig
     
     let dir_impl = Dir_impl.dir_example
     let dir_impl' =             
-      Dir_impl.dir_example#with_
+      dir_impl#with_
         ~blk_dev_ops
         ~barrier
         ~sync
@@ -203,12 +202,28 @@ module Stage_1(S1:sig
             p.insert name (Did did))
       }
 
+
+    let file_impl = File_impl_v2.file_examples#example_1
+    let file_impl' = 
+      file_impl#with_
+        ~blk_dev_ops
+        ~barrier
+        ~sync
+        ~freelist_ops
+      
     let files : files_ops = 
-    
+      let find fid = 
+        gom_find (Fid fid) >>= fun blk_id -> 
+        file_impl'#file_from_origin blk_id
+      in
+      let create_raw = failwith "" in
+      let create_file = failwith "" in
+      let create_symlink = failwith "" in
+      { find; create_raw; create_file; create_symlink }
+      
 
   end
     
 end
 
              
-*)

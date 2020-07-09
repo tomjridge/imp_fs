@@ -100,8 +100,6 @@ type ('blk_id,'blk,'de,'t,'did) dir_factory = <
         (str_256,'de,'blk_id,'t,'did)Dir_ops.t;
 
 
-      (* Convenience *)
-
       (* NOTE this has nothing to do with the GOM, so no name, not
          added to parent etc *)
       create_dir : 
@@ -109,8 +107,10 @@ type ('blk_id,'blk,'de,'t,'did) dir_factory = <
       (** Returns the 'blk_id of the origin blk; NOTE this has nothing
          to do with the GOM, and does not add the entry to the parent
          directory (no way to access the parent directory here) *)
-        
 
+
+      (* Convenience *)
+       
       dir_add_autosync : 
         'blk_id -> 
         (str_256,'de,'blk_id,'t,'did)Dir_ops.t -> 

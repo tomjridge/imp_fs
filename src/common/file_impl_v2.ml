@@ -84,11 +84,15 @@ module File_im = struct
 end
 
 
-type pread_error = Pread_error of string
+(* type pread_error = Pread_error of string *)
+type pread_error = Call_specific_errors.pread_err
+(* type pwrite_error = Pwrite_error of string *)
+type pwrite_error = Call_specific_errors.pwrite_err
 
-type pwrite_error = Pwrite_error of string
 
 (* $(FIXME("for pwrite, perhaps return unit")) *)
+
+(* $(FIXME("""check that file operations obey the origin/flush/sync behaviour""")) *)
 
 (* $(PIPE2SH("""sed -n '/Standard[ ]file operations/,/^}/p' >GEN.file_ops.ml_""")) *)
 (** Standard file operations, pwrite, pread, size and truncate.
@@ -97,12 +101,19 @@ NOTE we expect buf to be string for the functional version; for
    mutable buffers we may want to pass the buffer in as a parameter?
 
 NOTE for pwrite, we always return src_len since all bytes are written
-   (unless there is an error of course). 
+   (unless there is an error of course).
 
-For pread, we always return a buffer of length len (assuming off+len <= file size).
+For pread, we always return a buffer of length len (assuming off+len
+   <= file size).
+
+NOTE origin/flush/sync behaviour: flush forces changes (including
+   origin) to disk and issues a barrier; sync ditto, and issues a
+   sync; otherwise, changes that affect the origin should be
+   accompanied by a barrier -> origin-write -> barrier posthook FIXME
+   are they?
 
 *)
-type ('buf,'t) file_ops = {
+type ('blk_id,'buf,'t) file_ops = {
   size     : unit -> (int,'t)m;
   pwrite   : src:'buf -> src_off:offset -> src_len:len -> 
     dst_off:offset -> ((int (*n_written*),pwrite_error)result,'t)m;
@@ -110,7 +121,11 @@ type ('buf,'t) file_ops = {
   truncate : size:int -> (unit,'t)m;
   flush    : unit -> (unit,'t)m;
   sync     : unit -> (unit,'t)m;
-  (* FIXME get_times, set_times *)
+
+  (* NOTE get_origin is the only function that exposes the blk_id type *)
+  get_origin: unit -> ('blk_id File_origin_block.t,'t)m;
+  get_times: unit -> (times,'t)m;
+  set_times: times -> (unit,'t)m;
 }
 
 
@@ -188,15 +203,19 @@ type ('buf,'blk,'blk_id,'t) file_factory = <
         file_origin        : 'blk_id ->         
         init_file_size     : int -> 
         init_times         : stat_times ->
-        ('buf,'t)file_ops;
+        ('blk_id,'buf,'t)file_ops;
       (** (4) *)
+
+      (* NOTE this has nothing to do with the GOM, so not added to
+         parent etc; FIXME perhaps we should return file_ops? *)
+      create_file : stat_times -> ('blk_id, 't)m;
 
       (* Convenience *)
 
       file_from_origin_blk : 
-        ('blk_id * 'blk_id File_origin_block.t) -> (('buf,'t)file_ops,'t)m;
+        ('blk_id * 'blk_id File_origin_block.t) -> (('blk_id,'buf,'t)file_ops,'t)m;
       
-      file_from_origin : 'blk_id -> (('buf,'t)file_ops,'t)m;
+      file_from_origin : 'blk_id -> (('blk_id,'buf,'t)file_ops,'t)m;
     >
 >
 
@@ -239,6 +258,13 @@ module type S = sig
       get_btree_root  : unit -> (r,t) m;
       map_ops_with_ls : (int,r,r,_ls,t) Tjr_btree.Btree_intf.map_ops_with_ls
     >
+
+  (* NOTE from btree_factory *)
+  val write_empty_leaf:
+    blk_dev_ops : (r, blk, t) blk_dev_ops -> 
+    blk_id : r -> 
+    (unit,t)m
+
 
   val file_origin_mshlr: blk_id File_origin_block.t ba_mshlr
 end
@@ -503,13 +529,13 @@ module Make_v1(S:S) (* : T with module S = S*) = struct
             let len = {len=min len.len (size - off.off)} in
             pread_check ~size:{size} ~off ~len |> function 
             | Ok () -> pread ~off ~len >>= fun x -> return (Ok x)
-            | Error s -> return (Error (Pread_error s)))
+            | Error s -> return (Error `Error_other)) (* FIXME really EINVAL *)
       
       let pwrite ~src ~src_off ~src_len ~dst_off =
         with_fim (fun ~state ~set_state ->
             let size = state.file_size in
             pwrite_check ~buf_ops ~src ~src_off ~src_len ~dst_off |> function
-            | Error s -> return (Error (Pwrite_error s))
+            | Error s -> return (Error `Error_other) (* FIXME really EINVAL *)
             | Ok () -> pwrite ~src ~src_off ~src_len ~dst_off >>= fun x -> 
               (* now may need to adjust the size of the file *)
               begin
@@ -519,6 +545,27 @@ module Make_v1(S:S) (* : T with module S = S*) = struct
                 | false -> return ()
               end >>= fun () ->
               return (Ok x.size) )
+
+          
+      let get_times () =
+        with_fim (fun ~state ~set_state:_ -> 
+            return state.times)
+
+      let set_times times =
+        with_fim (fun ~state ~set_state -> 
+            set_state {state with times})
+
+      let get_origin () =
+        with_fim (fun ~state ~set_state:_ ->
+            usedlist.get_origin () >>= fun usedlist_origin -> 
+            blk_idx_map.get_root () >>= fun blk_idx_map_root -> 
+            let origin = File_origin_block.{
+                file_size=state.file_size;
+                times=state.times;
+                blk_idx_map_root;
+                usedlist_origin }
+            in
+            return origin)        
 
       (* $(TERMINOLOGY("""flush doesn't force to disk, it just clears
          the caches down to the blk dev and issues a blk dev
@@ -532,25 +579,18 @@ module Make_v1(S:S) (* : T with module S = S*) = struct
         S2.barrier() >>= fun () -> 
 
         (* NOTE now update root block *)
-        size () >>= fun file_size -> 
-        usedlist.get_origin () >>= fun usedlist_origin -> 
-        blk_idx_map.get_root () >>= fun blk_idx_map_root -> 
-        let origin = File_origin_block.{
-            file_size;
-            times=new_times();
-            blk_idx_map_root;
-            usedlist_origin }
-        in
+        get_origin () >>= fun origin ->
         write_origin ~blk_dev_ops ~blk_id:file_origin ~origin >>= fun () ->
         S2.barrier()
         
       let sync () = 
         flush () >>= fun () ->
         S2.sync()
-          
-      let file_ops = { size; truncate; pread; pwrite; flush; sync; }
 
-    end
+      let file_ops = { size; truncate; pread; pwrite; flush; sync;
+                       get_times; set_times; get_origin}
+                     
+    end (* File_ops *)
 
     let file_ops
         ~(usedlist           : (blk_id,t) Usedlist.ops)
@@ -559,7 +599,7 @@ module Make_v1(S:S) (* : T with module S = S*) = struct
         ~(file_origin        : blk_id)
         ~(init_file_size     : int)
         ~(init_times         : Times.times)
-      : (_,_)file_ops 
+      : (_,_,_)file_ops 
       =
       let module S = struct
         let usedlist, alloc_via_usedlist, blk_idx_map, file_origin, init_file_size, init_times = 
@@ -568,6 +608,24 @@ module Make_v1(S:S) (* : T with module S = S*) = struct
       in
       let module X = File_ops(S) in
       X.file_ops
+
+    let create_file times =
+      (* initialize usedlist and btree, then origin *)
+      usedlist_factory'#create () >>= fun ul_ops ->
+      let alloc_via_usedlist' = alloc_via_usedlist ul_ops in
+      alloc_via_usedlist'.blk_alloc () >>= fun blk_id ->
+      S.write_empty_leaf ~blk_dev_ops ~blk_id >>= fun () ->
+      alloc_via_usedlist'.blk_alloc () >>= fun origin_blk_id ->      
+      ul_ops.get_origin() >>= fun usedlist_origin -> 
+      let origin = File_origin_block.{
+          file_size=0;
+          times;
+          blk_idx_map_root=blk_id;
+          usedlist_origin
+        }
+      in
+      write_origin ~blk_dev_ops ~blk_id:origin_blk_id ~origin >>= fun () ->
+      return origin_blk_id
 
     let file_from_origin_blk (file_origin, origin) = 
       let File_origin_block.{ file_size; times; blk_idx_map_root; usedlist_origin } = origin in
@@ -594,6 +652,7 @@ module Make_v1(S:S) (* : T with module S = S*) = struct
       method alloc_via_usedlist = alloc_via_usedlist
       method mk_blk_idx_map = mk_blk_idx_map
       method file_ops = file_ops
+      method create_file = create_file
       method file_from_origin = file_from_origin
       method file_from_origin_blk = file_from_origin_blk
     end
@@ -656,6 +715,8 @@ let file_examples =
           map_ops_with_ls : (int,r,r,_ls,t) Tjr_btree.Btree_intf.map_ops_with_ls
         >
         = btree_factory#uncached
+
+      let write_empty_leaf = btree_factory#write_empty_leaf
 
       module File_origin_mshlr = struct
         open Blk_id_as_int

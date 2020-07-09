@@ -85,8 +85,9 @@ module S1(S0:S0) = struct
 
   (* FIXME open minifs automatically? or at least some of the
      submodules within minifs_intf? *)
-  open Call_specific_errors
+  (* open Call_specific_errors *)
 
+(*
   type file_ops = {
     pread: foff:int -> len:int -> buf:buf -> boff:int -> 
       ((int,pread_err)result, t) m;
@@ -97,13 +98,15 @@ module S1(S0:S0) = struct
     set_times: stat_times -> (unit,t)m;
     get_times: unit -> (stat_times,t)m;
   }
+*)
+
+  type file_ops = (blk_id',buf,t) File_impl_v2.file_ops
 
   type files_ops = {
     find: fid -> (file_ops,t)m;
     create_raw: fid -> stat_times -> (unit,t)m;
     create_file: parent:did -> name:str_256 -> times:stat_times -> (unit,t)m;
     create_symlink: parent:did -> name:str_256 -> times:stat_times -> contents:str_256 -> (unit,t)m;
-
   }
   (** NOTE create_raw just creates a new file in the gom; it doesn't link
       it into a parent etc *)
@@ -271,12 +274,17 @@ module Make(S0:S0) = struct
     (* FIXME must account for reading beyond end of file; FIXME atim *)
     let pread ~fd ~foff ~len ~buf ~boff = 
       files.find fd >>= fun file ->
-      file.pread ~foff ~len ~buf ~boff
+      file.pread ~off:{off=foff} ~len:{len} >>=| fun buf' ->
+      assert(Bigstring.size buf' = len);
+      (* FIXME unnecessary blit between buffers *)
+      Bigstring.blit buf' 0 buf boff len;
+      return (Ok len)
 
     let pwrite ~fd ~foff ~len ~buf ~boff =
       files.find fd >>= fun file ->
-      file.pwrite ~foff ~len ~buf ~boff
-
+      (* file.pwrite ~foff ~len ~buf ~boff *)
+      file.pwrite ~src:buf ~src_off:{off=boff} ~src_len:{len} ~dst_off:{off=foff}
+      
     let close _fd = ok ()  (* FIXME record which are open? *)
 
     (* FIXME ddir and sdir may be the same, so we need to be careful to
@@ -360,7 +368,7 @@ module Make(S0:S0) = struct
     let truncate path length = 
       resolve_file_path path >>=| fun fid ->
       files.find fid >>= fun file ->
-      file.truncate length >>= fun () ->
+      file.truncate ~size:length >>= fun () ->
       mk_stat_times () >>= fun times -> 
       file.set_times times >>= fun () ->
       ok ()
@@ -378,7 +386,7 @@ module Make(S0:S0) = struct
       | Missing -> err `Error_no_entry
       | File fid ->
         files.find fid >>= fun file ->
-        file.get_sz () >>= fun sz ->
+        file.size () >>= fun sz ->
         file.get_times () >>= fun times ->
         ok { sz;kind=`File; times }
       | Dir did -> 
