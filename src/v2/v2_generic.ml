@@ -104,11 +104,12 @@ module S1(S0:S0) = struct
 
   type files_ops = {
     find: fid -> (file_ops,t)m;
-    create_raw: fid -> stat_times -> (unit,t)m;
+    (* create_raw: fid -> stat_times -> (unit,t)m; FIXME not needed? *)
     create_file: parent:did -> name:str_256 -> times:stat_times -> (unit,t)m;
     create_symlink: parent:did -> name:str_256 -> times:stat_times -> contents:str_256 -> (unit,t)m;
   }
-  (** NOTE create_raw just creates a new file in the gom; it doesn't link
+
+  (* NOTE create_raw just creates a new file in the gom; it doesn't link
       it into a parent etc *)
 
   type resolved_path_or_err = (fid,did)Tjr_path_resolution.resolved_path_or_err

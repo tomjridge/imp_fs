@@ -210,16 +210,35 @@ module Stage_1(S1:sig
         ~barrier
         ~sync
         ~freelist_ops
+
+    let symlink_impl = Symlink_impl.example
+    let symlink_impl' =
+      symlink_impl#with_
+        ~blk_dev_ops
+        ~freelist_ops
       
     let files : files_ops = 
       let find fid = 
         gom_find (Fid fid) >>= fun blk_id -> 
         file_impl'#file_from_origin blk_id
       in
-      let create_raw = failwith "" in
-      let create_file = failwith "" in
-      let create_symlink = failwith "" in
-      { find; create_raw; create_file; create_symlink }
+      let create_file ~parent ~name ~times = 
+        new_fid () >>= fun fid ->
+        file_impl'#create_file times >>= fun blk_id ->
+        gom_insert ~k:(Fid fid) ~v:blk_id >>= fun () ->
+        dirs.find parent >>= fun p ->
+        p.insert name (Fid fid)
+      in
+      let _ = assert(blk_sz|>Blk_sz.to_int >= 256) in
+      let create_symlink ~parent ~name ~times:_ ~contents = 
+        (* NOTE symlink times are currently ignored *)
+        new_sid () >>= fun sid ->
+        symlink_impl'#create_symlink contents >>= fun blk_id ->
+        gom_insert ~k:(Sid sid) ~v:blk_id >>= fun () ->
+        dirs.find parent >>= fun p ->
+        p.insert name (Sid sid)
+      in
+      { find; create_file; create_symlink }
       
 
   end
