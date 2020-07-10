@@ -39,6 +39,8 @@ module type T2 = S2.T2
    implementation is {!T2_impl}, towards the end of this file *)
 module Make_2 = Make.Make_2
 
+module Make_3 = Make.Make_3
+
 
 (** {2 Some simple defns we can complete here} *)
 
@@ -129,6 +131,7 @@ module Stage_1(S1:sig
   module Stage_2(S2:sig val fl_ops: (r,r,t)Freelist_intf.freelist_ops end) = struct
     open S2
 
+    let root_did = root_did
 
     (** {2 Blk allocator using freelist} *)
 
@@ -239,10 +242,84 @@ module Stage_1(S1:sig
         p.insert name (Sid sid)
       in
       { find; create_file; create_symlink }
-      
 
-  end
-    
+    let read_symlink : (sid -> (str_256,t)m) = fun sid -> 
+      gom_find (Sid sid) >>= fun blk_id -> 
+      symlink_impl#read_symlink ~blk_dev_ops ~blk_id
+
+    open Tjr_path_resolution.Intf
+    let resolve_comp: did -> comp_ -> ((fid,did)resolved_comp,t)m = 
+      fun did comp ->
+      assert(String.length comp <= 256);
+      let comp = Str_256.make comp in
+      dirs.find did >>= fun dir_ops ->   
+      dir_ops.find comp >>= fun vopt ->
+      match vopt with
+      | None -> return RC_missing
+      | Some x -> 
+        match x with
+        | Fid fid -> RC_file fid |> return
+        | Did did -> RC_dir did |> return
+        | Sid sid -> 
+          read_symlink sid >>= fun s ->
+          RC_sym (s :> string) |> return
+    (* FIXME perhaps we also need to identify a symlink by id
+       during path res? *)
+
+    let fs_ops = {
+      root=root_did;
+      resolve_comp
+    }
+
+    (* NOTE for fuse we always resolve absolute paths *)
+    let resolve = Tjr_path_resolution.resolve ~monad_ops ~fs_ops ~cwd:root_did
+
+    let _ :
+      follow_last_symlink:follow_last_symlink ->
+      string ->
+      ((fid, did) resolved_path_or_err,t)m 
+      = resolve
+
+    let resolve_path = resolve
+
+    let mk_stat_times = mk_stat_times
+
+    (** {2 Extra ops} *)
+
+
+    let extra : extra_ops = {
+      internal_err=(fun s -> failwith s);  (* FIXME *)
+      is_ancestor=(fun ~parent:_ ~child:_ -> return false) (* FIXME *)
+    }
+
+  end (* Stage_2 *)
+
+  let make () : (_ Tjr_minifs.Minifs_intf.ops, t) m = 
+    fl_ops >>= fun fl_ops ->
+    let module S2 = struct
+      let fl_ops = fl_ops
+    end
+    in
+    let module X = Stage_2(S2) in
+    let module Y = Make_2(X) in
+    return Y.ops
 end
 
              
+let make 
+  ~blk_dev_ops
+  ~fs_origin
+  ~fl_params 
+  : ( _ Tjr_minifs.Minifs_intf.ops,t)m
+  = 
+  let module S1 = struct
+    let blk_dev_ops=blk_dev_ops
+    let fs_origin = fs_origin
+    let fl_params = fl_params
+  end in
+  let module X = Stage_1(S1) in
+  X.make ()
+
+let _ = make
+
+(** What remains is to establish the blk_dev_ops and fs_origin, and origin syncing *)

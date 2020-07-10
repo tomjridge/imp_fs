@@ -36,8 +36,7 @@ end
 
 module T = Tjr_btree.Make_6.Make_v2(S)
 
-(** Use the uncached method from the following to implement the GOM
-   FIXME need to add write_empty_leaf to btree_factory intf *)
+(** Use the uncached method from the following to implement the GOM *)
 let gom_factory : (Dir_entry.t, S.v, S.r, S.t, T.leaf, T.node,
  (T.node, T.leaf) Isa_btree.dnode, T.ls, T.blk, T.wbc)
 Tjr_btree.Make_6.btree_factory
