@@ -6,19 +6,19 @@
 module Fs_origin_block = struct
   open Bin_prot.Std
 
-  module X = struct
-    type 'blk_id t = {
-      fl_origin : 'blk_id;
-      gom_root  : 'blk_id;    
-      counter   : int;
-    }[@@deriving bin_io]
-    (** freelist origin; root of GOM; object id counter (numbers >=
-        counter are free to be used as object identifiers) *)
-  end
-  include X
+  type 'blk_id t = {
+    fl_origin : 'blk_id;
+    gom_origin  : 'blk_id;    
+    counter   : int;
+  }[@@deriving bin_io]
+(** freelist origin; root of GOM; object id counter (numbers >=
+    counter are free to be used as object identifiers) *)
+end
 
+module Pvt = struct
+  
   module Bp = struct
-    type t = Shared_ctxt.r X.t[@@deriving bin_io]
+    type t = Shared_ctxt.r Fs_origin_block.t[@@deriving bin_io]
     let max_sz = 3*9 (* FIXME check *)
   end
       

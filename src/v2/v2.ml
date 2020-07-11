@@ -8,6 +8,8 @@ open Tjr_monad.With_lwt
 open Shared_ctxt
 open Bin_prot.Std
 open V2_intf
+open V2_fs_impl
+
 module G = V2_generic
 
 
@@ -81,8 +83,7 @@ module Stage_1(S1:sig
 
   (** We use mutually exclusive subsets of int for identifiers; NOTE 0
       is reserved for the root directory *)
-  let min_free_id_ref = ref fs_origin.min_free_object_id 
-  (* FIXME make sure to flush *)
+  let min_free_id_ref = ref fs_origin.counter
 
   let new_id () = 
     let r = !min_free_id_ref in
