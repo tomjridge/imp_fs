@@ -4,12 +4,12 @@
 
 (** The origin block for the whole system (typically stored in block 0) *)
 module Fs_origin_block = struct
-  open Bin_prot.Std
+  (* open Bin_prot.Std *)
 
   type 'blk_id t = {
-    fl_origin : 'blk_id;
-    gom_origin  : 'blk_id;    
-    counter   : int;
+    fl_origin      : 'blk_id;
+    gom_origin     : 'blk_id;    
+    counter_origin : 'blk_id;
   }[@@deriving bin_io]
 (** freelist origin; root of GOM; object id counter (numbers >=
     counter are free to be used as object identifiers) *)

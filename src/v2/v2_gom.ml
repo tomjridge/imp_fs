@@ -13,7 +13,7 @@ open V2_intf
 module Usedlist = Usedlist_impl.Usedlist
 
 module Gom_origin_block = struct
-  open Bin_prot.Std
+  (* open Bin_prot.Std *)
 
   type 'blk_id t = {
     gom_root        : 'blk_id;
@@ -70,17 +70,22 @@ type ('blk_id,'blk,'t,'de,'gom_ops) gom_factory = <
         ('blk_id,'t) Usedlist.ops ->         
         ('blk_id,'t) blk_allocator_ops;
             
-      create         : unit -> ('gom_ops,'t)m;
-      init_from_origin    : 'blk_id -> 'blk_id origin -> ('gom_ops,'t)m;      
-      init_from_disk : 'blk_id -> ('gom_ops,'t)m;
+      create           : unit -> ('gom_ops,'t)m;
+      (** Construct new gom_ops *)
+
+      init_from_origin : 'blk_id -> 'blk_id origin -> ('gom_ops,'t)m;      
+      (** Assuming blk_id holds origin, construct gom_ops *)
+
+      init_from_disk   : 'blk_id -> ('gom_ops,'t)m;
+      (** Assuming blk_id holds a gom origin, construct gom_ops *)
     >
 >
 
-
+(** Functor, reasonably abstract, but assumes blk=ba_buf, t=lwt *)
 module Make(S:sig
     type blk_id 
     type r = blk_id
-    type blk
+    type blk = ba_buf
     type t = lwt
     type dir_entry
 
@@ -88,16 +93,13 @@ module Make(S:sig
 
     val origin_mshlr : blk_id origin ba_mshlr
 
-    type _ls (* we don't use leafstreams for the GOM *)
-        
-    (* NOTE this is from btree_factory *)
-    val uncached : 
-      blk_dev_ops     : (r, blk, t) blk_dev_ops ->
-      blk_alloc       : (r, t) blk_allocator_ops ->
-      init_btree_root : r ->
-      < get_btree_root  : unit -> (r, t) Tjr_monad.m;
-        map_ops_with_ls : 
-          (dir_entry, blk_id, r, _ls, t) Tjr_btree.Btree_intf.map_ops_with_ls >
+    type _leaf 
+    type _node
+    type _dnode
+    type _ls 
+    type _wbc
+    val btree_factory : 
+      (dir_entry,blk_id,blk_id,t,_leaf,_node,_dnode,_ls,blk,_wbc) Tjr_btree.Make_6.btree_factory                        
 
     val usedlist_factory : (blk_id,blk,t) Usedlist_impl.usedlist_factory
     
@@ -113,11 +115,11 @@ module Make(S:sig
 
   module Origin_mshlr = (val origin_mshlr)
 
-  let read_origin ~blk_dev_ops ~blk_id = 
+  let read_origin ~(blk_dev_ops:_ blk_dev_ops) ~blk_id = 
     blk_dev_ops.read ~blk_id >>= fun blk -> 
     Origin_mshlr.unmarshal blk |> return
     
-  let write_origin ~blk_dev_ops ~blk_id ~origin = 
+  let write_origin ~(blk_dev_ops:_ blk_dev_ops) ~blk_id ~origin = 
     Origin_mshlr.marshal origin |> fun blk ->
     blk_dev_ops.write ~blk_id ~blk
 
@@ -130,18 +132,103 @@ module Make(S:sig
   = 
   struct
     open W
+
+    let usedlist_factory' = usedlist_factory#with_ 
+        ~blk_dev_ops
+        ~barrier
+        ~freelist_ops
+
+    let usedlist_ops  : (_ Usedlist.origin) -> ((r,t)Usedlist.ops,t)m =
+      usedlist_factory'#usedlist_ops
         
-    let usedlist_ops = ()
+    let alloc_via_usedlist = usedlist_factory'#alloc_via_usedlist
 
-    let alloc_via_usedlist = ()
-                             
-    let create = ()
-    let init_from_origin = ()
-    let init_from_disk = ()
+    let wrap ~get_origin ~write_origin ~sync_blk_dev f () =
+      get_origin () >>= fun o1 -> 
+      f () >>= fun r -> 
+      get_origin () >>= fun o2 -> 
+      match o1=o2 with
+      | false -> 
+        write_origin o2 >>= fun () ->
+        sync_blk_dev () >>= fun () ->
+        return r
+      | true -> 
+        return r      
+          
+    (** Wrap gom_ops with auto-sync *)
+    let wrap ~get_origin ~write_origin ~sync_blk_dev ~(gom_ops:gom_ops) = 
+      let Gom_ops.{ find; insert; delete; get_root; sync } = gom_ops in
+      let wrap f = wrap ~get_origin ~write_origin ~sync_blk_dev f () in
+      let find k = wrap (fun () -> find k) in
+      let insert k v = wrap (fun () -> insert k v) in
+      let delete k = wrap (fun () -> delete k) in
+      Gom_ops.{ find; insert; delete; get_root; sync }
 
-    (* FIXME implement the above *)
+    (* Assume that blk_id holds origin; construct B-tree using usedlist *)
+    let init_from_origin blk_id (origin:_ origin) = 
+      usedlist_ops origin.usedlist_origin >>= fun usedlist_ops ->
+      let blk_alloc = alloc_via_usedlist usedlist_ops in
+      let btree = 
+        btree_factory#uncached ~blk_dev_ops ~blk_alloc ~init_btree_root:origin.gom_root in
+      let Tjr_btree.Btree_intf.Map_ops_with_ls.{ find; insert; delete; _ } = 
+        btree#map_ops_with_ls in
+      let get_origin () =
+        btree#get_btree_root () >>= fun gom_root -> 
+        usedlist_ops.get_origin () >>= fun usedlist_origin -> 
+        let origin = Gom_origin_block.{ gom_root; usedlist_origin } in
+        return origin
+      in
+      let sync () = 
+        get_origin () >>= fun origin -> 
+        write_origin ~blk_dev_ops ~blk_id ~origin
+      in
+      let gom_ops = Gom_ops.{
+          find=(fun k -> find ~k); 
+          insert=(fun k v -> insert ~k ~v); 
+          delete=(fun k -> delete ~k); 
+          get_root=btree#get_btree_root;
+          sync;
+        }
+      in
+      let gom_ops' = 
+        wrap 
+          ~get_origin 
+          ~write_origin:(fun origin -> write_origin ~blk_dev_ops ~blk_id ~origin) 
+          ~sync_blk_dev:W.sync 
+          ~gom_ops
+      in 
+      return gom_ops'
+          
+    let create () = 
+      (* usedlist *)
+      usedlist_factory'#create () >>= fun usedlist_ops ->
+      let alloc_via_usedlist = alloc_via_usedlist usedlist_ops in
+      
+      (* B-tree *)
+      alloc_via_usedlist.blk_alloc () >>= fun gom_root -> 
+      btree_factory#write_empty_leaf ~blk_dev_ops ~blk_id:gom_root >>= fun () ->
+            
+      (* Origin *)     
+      usedlist_ops.flush () >>= fun () ->
+      usedlist_ops.get_origin () >>= fun usedlist_origin -> 
+      let origin = Gom_origin_block.{gom_root; usedlist_origin} in
+      (* NOTE the origin block is not included in the usedlist *)
+      freelist_ops.blk_alloc () >>= fun blk_id -> 
+      write_origin ~blk_dev_ops ~blk_id ~origin >>= fun () -> 
+      init_from_origin blk_id origin
+        
+    let init_from_disk blk_id = 
+      read_origin ~blk_dev_ops ~blk_id >>= fun origin ->
+      init_from_origin blk_id origin
+      
 
-    let export = ()
+    let export = object
+      method usedlist_ops = usedlist_ops
+      method alloc_via_usedlist = alloc_via_usedlist
+      method create = create
+      method init_from_origin = init_from_origin
+      method init_from_disk = init_from_disk
+    end
   end (* With_ *)
 
   let with_ ~blk_dev_ops ~barrier ~sync ~freelist_ops =
@@ -156,15 +243,16 @@ module Make(S:sig
     W.export
 
 
-  
+  let gom_factory : _ gom_factory = object
+    method note_type_abbrev = note_type_abbrev
+    method read_origin = read_origin
+    method write_origin = write_origin
+    method with_ = with_
+  end
 
-  
 end
   
   
-
-
-
 module Dir_entry = struct
   open Bin_prot.Std
   type t = (int,int,int) dir_entry'[@@deriving bin_io]
@@ -173,22 +261,91 @@ end
 
 
 module Pvt = struct
-  let blk_sz = Shared_ctxt.blk_sz 
+  open Shared_ctxt
 
-  module Bp = struct
-    type t = Shared_ctxt.r Gom_origin_block.t[@@deriving bin_io]
-    let max_sz = 9
+  (** We try to fulfil the signature S *)
+  module S = struct
+    type nonrec blk_id = blk_id
+    type r = blk_id
+    type blk = ba_buf
+    type nonrec t = t
+    type dir_entry = Dir_entry.t
+
+    type nonrec gom_ops = (dir_entry,blk_id,blk_id,t)gom_ops
+
+    module Bp = struct
+      type t = Shared_ctxt.r Gom_origin_block.t[@@deriving bin_io]
+      let max_sz = 9
+    end
+
+    let origin_mshlr : blk_id origin ba_mshlr = 
+      let open (struct
+
+        let bp_mshlr : _ bp_mshlr = (module Bp)
+
+        let ba_mshlr = bp_mshlrs#ba_mshlr ~mshlr:bp_mshlr ~buf_sz:(blk_sz |> Blk_sz.to_int)
+
+        let origin_mshlr = ba_mshlr
+      end)
+      in
+      origin_mshlr
+        
+
+    (* btree *)
+
+    module S = struct
+      let k_mshlr : _ bp_mshlr = (module Dir_entry)
+      type k = Dir_entry.t[@@deriving bin_io]
+      type v = Shared_ctxt.r
+      type r = Shared_ctxt.r
+      type t = Shared_ctxt.t
+      let k_cmp: k -> k -> int = Stdlib.compare
+      let monad_ops = Shared_ctxt.monad_ops
+      (* let k_mshlr = dir_entry_mshlr *)
+      let v_mshlr = bp_mshlrs#r_mshlr
+      let r_mshlr = bp_mshlrs#r_mshlr
+
+      let k_size = let module X = (val k_mshlr) in X.max_sz
+      let v_size = let module X = (val v_mshlr) in X.max_sz
+      let cs = Tjr_btree.Bin_prot_marshalling.make_constants ~blk_sz ~k_size ~v_size
+      let r_cmp = Shared_ctxt.r_cmp
+    end
+
+    module T = Tjr_btree.Make_6.Make_v2(S)
+    (* open T *)
+    type _leaf = T.leaf
+    type _node = T.node
+    type _dnode = (_node,_leaf)Isa_btree.dnode
+    type _ls = T.ls
+    type _wbc = T.wbc
+    
+    let btree_factory = T.btree_factory
+
+    let usedlist_factory = Usedlist_impl.usedlist_example
   end
 
-  let bp_mshlr : _ bp_mshlr = (module Bp)
+  module M = Make(S)
 
-  let ba_mshlr = bp_mshlrs#ba_mshlr ~mshlr:bp_mshlr ~buf_sz:(blk_sz |> Blk_sz.to_int)
-
-  include (val ba_mshlr)
+  let gom_factory = M.gom_factory
 
 end
-open Pvt
 
+open Shared_ctxt
+let gom_example 
+  : (blk_id, buf, t, Dir_entry.t, Pvt.S.gom_ops) gom_factory
+  = Pvt.gom_factory
+
+(*
+
+  module Ba = (val ba_mshlr)
+
+  let read_origin ~blk_dev_ops ~blk_id = 
+    blk_dev_ops.read ~blk_id >>= fun blk -> 
+    return (Ba.unmarshal blk)
+
+  let write_origin ~blk_dev_ops ~blk_id ~origin = 
+    Ba.marshal origin |> fun blk -> 
+    blk_dev_ops.write ~blk_id ~blk
 
 module S = struct
   let k_mshlr : _ bp_mshlr = (module Dir_entry)
@@ -221,3 +378,4 @@ let write_empty_leaf = gom_factory#write_empty_leaf
 (** Currently we used the uncached B-tree *)
 let uncached = gom_factory#uncached
 
+*)

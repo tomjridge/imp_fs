@@ -9,6 +9,7 @@ open Shared_ctxt
 open Bin_prot.Std
 open V2_intf
 open V2_fs_impl
+open V2_gom
 
 module G = V2_generic
 
@@ -70,12 +71,12 @@ let dir_entry_mshlr : dir_entry bp_mshlr =
 
 module Stage_1(S1:sig
     val blk_dev_ops : (r,blk,t)blk_dev_ops
-    val fs_origin : r Fs_origin_block.t
+    val fs_origin   : r Fs_origin_block.t
     (* FIXME replace with fl_examples#fl_params_1 *)
-    val fl_params : Tjr_plist_freelist.Freelist_intf.params
+    val fl_params   : Tjr_plist_freelist.Freelist_intf.params
   end) = struct
   open S1
-  
+
   let barrier () = return ()
   let sync () = return ()
 
@@ -83,35 +84,25 @@ module Stage_1(S1:sig
 
   (** We use mutually exclusive subsets of int for identifiers; NOTE 0
       is reserved for the root directory *)
-  let min_free_id_ref = ref fs_origin.counter
 
-  let new_id () = 
-    let r = !min_free_id_ref in
-    incr min_free_id_ref;
-    return r
+  let counter_factory = V2_counter.example
 
-  let new_did () = new_id () 
+  let counter_ops = 
+    counter_factory#with_ ~blk_dev_ops ~sync |> fun o -> 
+    o#init_from_disk fs_origin.counter_origin
 
-  let new_fid () = new_id () 
-
-  let new_sid () = new_id () 
-
-  let id_to_int = Dir_impl.Dir_entry.(function
-    | Did did -> did
-    | Fid fid -> fid
-    | Sid sid -> sid)
 
 
   (** {2 The freelist } *)
-  
+
   (** We need to read the freelist origin block, and resurrect the freelist *)
-  
+
   let fl_params = object
     method tr_upper=2000
     method tr_lower=1000
     method min_free_alloc_size=500
   end
-    
+
   (* FIXME we need to initialize the freelist at some point of course;
      an init functor? *)
   let freelist = 
@@ -127,12 +118,63 @@ module Stage_1(S1:sig
 
   let fl_ops = freelist >>= fun x -> 
     return x#freelist_ops
-    
 
-  module Stage_2(S2:sig val fl_ops: (r,r,t)Freelist_intf.freelist_ops end) = struct
+
+    (** {2 The global object map (GOM) } *)
+
+  let gom_ops = fl_ops >>= fun fl_ops -> 
+    (* FIXME freelistops should have the same intf as blk_alloc *)
+    let blk_alloc : _ blk_allocator_ops =     
+      {
+        blk_alloc=fl_ops.alloc;
+        blk_free=fl_ops.free
+      }
+    in
+    V2_gom.gom_example#with_
+      ~blk_dev_ops
+      ~barrier
+      ~sync
+      ~freelist_ops:blk_alloc |> fun o -> 
+    o#init_from_disk fs_origin.gom_origin
+
+  (* let gom_ops = gom#map_ops_with_ls *)
+
+  (* NOTE we also have to make sure we flush the GOM root... *)
+
+  (** Stage_2: we assume freelist_ops, gom_ops and counter_ops are available *)
+  module Stage_2(S2:sig 
+      val fl_ops      : (r,r,t)Freelist_intf.freelist_ops 
+      val gom_ops     : (dir_entry,blk_id,blk_id,t) Gom_ops.t
+      val counter_ops : t V2_counter.counter_ops
+    end) = struct
     open S2
 
+    let new_id () = counter_ops.alloc ()
+
+    let new_did () = new_id () 
+
+    let new_fid () = new_id () 
+
+    let new_sid () = new_id () 
+
+(*
+
+  let min_free_id_ref = ref fs_origin.counter
+
+  let new_id () = 
+    let r = !min_free_id_ref in
+    incr min_free_id_ref;
+    return r
+
+*)
+
+    let id_to_int = Dir_impl.Dir_entry.(function
+        | Did did -> did
+        | Fid fid -> fid
+        | Sid sid -> sid)
+
     let root_did = root_did
+
 
     (** {2 Blk allocator using freelist} *)
 
@@ -143,33 +185,12 @@ module Stage_1(S1:sig
       }
 
     let freelist_ops = blk_alloc
-      
-    (** {2 The global object map (GOM) } *)
-
-    (** NOTE FIXME this should really track the blocks it uses, as
-       files and directories do; so the GOM has its own origin block,
-       with a pointer to the root and a pointer to the used list *)
-
-    let gom = V2_gom.uncached
-        ~blk_dev_ops
-        ~blk_alloc
-        ~init_btree_root:fs_origin.gom_root
-        
-    let _ = gom
-
-    let gom_ops = gom#map_ops_with_ls
-
-    (* FIXME promote Map_ops_with_ls module to top of Tjr_btree *)
-    let Tjr_btree.Btree_intf.Map_ops_with_ls.{ find=gom_find; _ } = gom_ops
-      
-    (* NOTE we also have to make sure we flush the GOM root... *)
-
 
     (** {2 Dirs} *)
 
     let gom_find_opt = gom_ops.find
 
-    let gom_find k = gom_find_opt ~k >>= function
+    let gom_find k = gom_find_opt k >>= function
       | Some r -> return r
       | None -> 
         Printf.printf "Error: gom key %d not found\n%!" (id_to_int k);
@@ -179,7 +200,7 @@ module Stage_1(S1:sig
 
     let gom_delete = gom_ops.delete
 
-    
+
     let dir_impl = Dir_impl.dir_example
     let dir_impl' =             
       dir_impl#with_
@@ -197,11 +218,11 @@ module Stage_1(S1:sig
       in
       {
         find;
-        delete = (fun did -> gom_delete ~k:(Did did));
+        delete = (fun did -> gom_delete (Did did));
         create_dir = (fun ~parent ~name ~times -> 
             new_did () >>= fun did ->
             dir_impl'#create_dir ~parent ~times >>= fun blk_id ->
-            gom_insert ~k:(Did did) ~v:blk_id >>= fun () ->
+            gom_insert (Did did) blk_id >>= fun () ->
             find parent >>= fun p ->
             p.insert name (Did did))
       }
@@ -220,7 +241,7 @@ module Stage_1(S1:sig
       symlink_impl#with_
         ~blk_dev_ops
         ~freelist_ops
-      
+
     let files : files_ops = 
       let find fid = 
         gom_find (Fid fid) >>= fun blk_id -> 
@@ -229,7 +250,7 @@ module Stage_1(S1:sig
       let create_file ~parent ~name ~times = 
         new_fid () >>= fun fid ->
         file_impl'#create_file times >>= fun blk_id ->
-        gom_insert ~k:(Fid fid) ~v:blk_id >>= fun () ->
+        gom_insert (Fid fid) blk_id >>= fun () ->
         dirs.find parent >>= fun p ->
         p.insert name (Fid fid)
       in
@@ -238,7 +259,7 @@ module Stage_1(S1:sig
         (* NOTE symlink times are currently ignored *)
         new_sid () >>= fun sid ->
         symlink_impl'#create_symlink contents >>= fun blk_id ->
-        gom_insert ~k:(Sid sid) ~v:blk_id >>= fun () ->
+        gom_insert (Sid sid) blk_id >>= fun () ->
         dirs.find parent >>= fun p ->
         p.insert name (Sid sid)
       in
@@ -297,8 +318,12 @@ module Stage_1(S1:sig
 
   let make () : (_ Tjr_minifs.Minifs_intf.ops, t) m = 
     fl_ops >>= fun fl_ops ->
+    gom_ops >>= fun gom_ops ->
+    counter_ops >>= fun counter_ops -> 
     let module S2 = struct
       let fl_ops = fl_ops
+      let gom_ops = gom_ops
+      let counter_ops = counter_ops
     end
     in
     let module X = Stage_2(S2) in
@@ -306,11 +331,11 @@ module Stage_1(S1:sig
     return Y.ops
 end
 
-             
+
 let make 
-  ~blk_dev_ops
-  ~fs_origin
-  ~fl_params 
+    ~blk_dev_ops
+    ~fs_origin
+    ~fl_params 
   : ( _ Tjr_minifs.Minifs_intf.ops,t)m
   = 
   let module S1 = struct
