@@ -99,6 +99,9 @@ type ('blk_id,'blk,'de,'t,'did) dir_factory = <
         with_dir   : ('did dir_im,'t)with_state -> 
         (str_256,'de,'blk_id,'t,'did)Dir_ops.t;
 
+      create_root_dir : root_did:'did -> times:stat_times -> ('blk_id,'t)m;
+      (** NOTE nothing to do with the GOM; this just places an empty
+         root directory with origin at blk_id *)
 
       (* NOTE this has nothing to do with the GOM, so no name, not
          added to parent etc *)
@@ -293,6 +296,31 @@ module Make_v1(S:S) = struct
       }
      
 
+    let create_root_dir ~root_did ~times = 
+      (* usedlist *)
+      usedlist_factory'#create () >>= fun ul_ops ->
+      let alloc_via_usedlist = alloc_via_usedlist ul_ops in
+
+      (* B-tree *)
+      (* NOTE we allocate from the system freelist rather than via usedlist *)
+      alloc_via_usedlist.blk_alloc () >>= fun btree_root -> 
+      S.write_empty_leaf ~blk_dev_ops ~blk_id:btree_root >>= fun () ->
+
+      (* Origin *)
+      alloc_via_usedlist.blk_alloc () >>= fun blk_id -> 
+
+      ul_ops.get_origin () >>= fun usedlist_origin -> 
+
+      let origin = Dir_origin.{
+          dir_map_root=btree_root;
+          usedlist_origin;
+          parent=root_did; (* NOTE set parent to root itself *)
+          stat_times=times
+        }
+      in
+      write_origin ~blk_dev_ops ~blk_id ~origin >>= fun () ->
+      return blk_id
+        
     let create_dir ~parent ~times =
       (* create a usedlist and a B-tree, and then an origin blk; NOTE
          that all blks involved are stored in the usedlist, except for
@@ -377,6 +405,7 @@ module Make_v1(S:S) = struct
       method usedlist_ops = usedlist_ops
       method alloc_via_usedlist = alloc_via_usedlist
       method mk_dir = mk_dir
+      method create_root_dir = create_root_dir
       method create_dir = create_dir
       method dir_add_autosync = dir_add_autosync
       method dir_from_origin_blk = dir_from_origin_blk

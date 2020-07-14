@@ -4,7 +4,11 @@ default: all
 
 all:: 
 	$(DUNE) build bin/v1_main.exe
-	find _build -name "v1_main.exe" -exec cp \{\} . \;
+	$(DUNE) build bin/v2_main.exe
+	cp _build/default/bin/v1_main.exe .
+	cp _build/default/bin/v2_main.exe .
+
+# find _build -name "v2_main.exe" -exec cp \{\} . \;
 
 
 # FIXME why -o sync_read in the following?

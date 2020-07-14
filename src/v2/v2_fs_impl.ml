@@ -91,8 +91,23 @@ module Example = struct
       (* GOM *)
       let gom_factory' = gom_factory#with_ ~blk_dev_ops ~barrier ~sync ~freelist_ops:fl_ops in
       gom_factory'#create () >>= fun x -> 
-      x#gom_ops |> fun _gom_ops -> 
+      x#gom_ops |> fun gom_ops -> 
       let gom_origin = x#origin in
+
+      (* Create root directory *)
+      let root_did = (* Dir_impl.Dir_entry.Did *) 0 in
+      let dir_factory = Dir_impl.dir_example in
+      let dir_factory' = 
+        dir_factory#with_
+          ~blk_dev_ops
+          ~barrier
+          ~sync
+          ~freelist_ops:fl_ops
+      in
+      V1.mk_stat_times () >>= fun times -> 
+      Printf.printf "%s: about to create root dir\n%!" __FILE__;
+      dir_factory'#create_root_dir ~root_did ~times >>= fun blk_id ->
+      gom_ops.V2_gom.Gom_ops.insert (Dir_impl.Dir_entry.Did root_did) blk_id >>= fun () -> 
 
       (* Origin *)
       let origin : _ fs_origin = Fs_origin_block.{ fl_origin; gom_origin; counter_origin } in
