@@ -1,33 +1,21 @@
 (** Implementation of the on-disk filesystem, which is essentially
    on-disk pointers to the freelist and the GOM *)
+open V2_intf
 
+type 'blk_id fs_origin = 'blk_id Fs_origin_block.t
 
-(** The origin block for the whole system (typically stored in block 0) *)
-module Fs_origin_block = struct
-  (* open Bin_prot.Std *)
-
-  type 'blk_id t = {
-    fl_origin      : 'blk_id;
-    gom_origin     : 'blk_id;    
-    counter_origin : 'blk_id;
-  }[@@deriving bin_io]
-(** freelist origin; root of GOM; object id counter (numbers >=
-    counter are free to be used as object identifiers) *)
-end
-
-type 'blk_id origin = 'blk_id Fs_origin_block.t
 
 type ('blk_id,'blk,'t,'fid,'dh) filesystem_factory = <
 
   read_origin: 
     blk_dev_ops : ('blk_id,'blk,'t) blk_dev_ops -> 
     blk_id : 'blk_id -> 
-    ('blk_id origin,'t)m;
+    ('blk_id fs_origin,'t)m;
 
   write_origin:
     blk_dev_ops : ('blk_id,'blk,'t) blk_dev_ops -> 
     blk_id : 'blk_id -> 
-    origin: 'blk_id origin -> 
+    origin: 'blk_id fs_origin -> 
     (unit,'t)m;
 
   with_:
@@ -44,7 +32,6 @@ type ('blk_id,'blk,'t,'fid,'dh) filesystem_factory = <
 >
 
 
-(*
 open Shared_ctxt
 
 module Example = struct
@@ -81,6 +68,8 @@ module Example = struct
 
   let with_ ~blk_dev_ops ~barrier ~sync =    
     let fl_factory' = fl_factory#with_ ~blk_dev_ops ~barrier ~sync ~params:Fl.fl_examples#fl_params_1 in
+    let counter_factory' = counter_factory#with_ ~blk_dev_ops ~sync in
+    let b0 = B.of_int 0 in
     let create () = 
       (* create the three components, write the origin at blk0, and
          return the Minifs ops *)
@@ -96,32 +85,41 @@ module Example = struct
       return x#freelist_ops >>= fun fl_ops ->
       
       (* Counter at fl_origin -1 *)
-      let counter_factory' = counter_factory#with_ ~blk_dev_ops ~sync in
       fl_ops.alloc () >>= fun counter_origin -> 
-      counter_factory'#create ~blk_id:counter_origin ~min_free:1 >>= fun counter_ops -> 
+      counter_factory'#create ~blk_id:counter_origin ~min_free:1 >>= fun _counter_ops -> 
       
       (* GOM *)
       let gom_factory' = gom_factory#with_ ~blk_dev_ops ~barrier ~sync ~freelist_ops:fl_ops in
       gom_factory'#create () >>= fun x -> 
-      x#gom_ops |> fun gom_ops -> 
+      x#gom_ops |> fun _gom_ops -> 
       let gom_origin = x#origin in
-      
-        
-      
-    
-        
-      
-      
-    
-    
 
+      (* Origin *)
+      let origin : _ fs_origin = Fs_origin_block.{ fl_origin; gom_origin; counter_origin } in
+      write_origin ~blk_dev_ops ~blk_id:b0 ~origin >>= fun () -> 
+
+      V2.make ~blk_dev_ops ~fs_origin:origin ~fl_params:Fl.fl_examples#fl_params_1 
+    in
+
+    let restore () = 
+      read_origin ~blk_dev_ops ~blk_id:b0 >>= fun origin -> 
+      V2.make ~blk_dev_ops ~fs_origin:origin ~fl_params:Fl.fl_examples#fl_params_1 
+    in
+
+    object
+      method create=create
+      method restore=restore
+    end
 end
 
-  
-
-end
+open Example
 
 let example : _ filesystem_factory = 
+  object
+    method read_origin=read_origin
+    method write_origin=write_origin
+    method with_=with_
+  end
+  
+  
 
-
-*)
