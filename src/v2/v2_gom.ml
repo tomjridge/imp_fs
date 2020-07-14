@@ -62,7 +62,7 @@ type ('blk_id,'blk,'t,'de,'gom_ops) gom_factory = <
     blk_dev_ops : ('blk_id,'blk,'t) blk_dev_ops -> 
     barrier      : (unit -> (unit,'t)m) -> 
     sync         : (unit -> (unit,'t)m) -> 
-    freelist_ops : ('blk_id,'t) blk_allocator_ops -> 
+    freelist_ops : ('blk_id,'blk_id,'t) Freelist_intf.freelist_ops -> 
     <
       usedlist_ops : 'blk_id Usedlist.origin -> (('blk_id,'t) Usedlist.ops,'t)m;
 
@@ -70,7 +70,10 @@ type ('blk_id,'blk,'t,'de,'gom_ops) gom_factory = <
         ('blk_id,'t) Usedlist.ops ->         
         ('blk_id,'t) blk_allocator_ops;
             
-      create           : unit -> ('gom_ops,'t)m;
+      create           : unit -> 
+        (<
+          gom_ops:'gom_ops;
+          origin:'blk_id > ,'t)m;
       (** Construct new gom_ops *)
 
       init_from_origin : 'blk_id -> 'blk_id origin -> ('gom_ops,'t)m;      
@@ -127,11 +130,15 @@ module Make(S:sig
       val blk_dev_ops  : (blk_id,blk,t) blk_dev_ops
       val barrier      : (unit -> (unit,t)m)
       val sync         : (unit -> (unit,t)m)
-      val freelist_ops : (blk_id,t) blk_allocator_ops
+      (* val freelist_ops : (blk_id,t) blk_allocator_ops  *)
+      val freelist_ops : (blk_id,blk_id,t) Freelist_intf.freelist_ops 
+      (** NOTE this should be the global freelist, which we used for the usedlist *)
     end) 
   = 
   struct
     open W
+
+    let blk_alloctor = Freelist_intf.freelist_to_blk_allocator freelist_ops
 
     let usedlist_factory' = usedlist_factory#with_ 
         ~blk_dev_ops
@@ -155,7 +162,8 @@ module Make(S:sig
       | true -> 
         return r      
           
-    (** Wrap gom_ops with auto-sync *)
+    (** Wrap gom_ops with auto-sync. NOTE all exposed gom_ops include
+       autosync *)
     let wrap ~get_origin ~write_origin ~sync_blk_dev ~(gom_ops:gom_ops) = 
       let Gom_ops.{ find; insert; delete; get_root; sync } = gom_ops in
       let wrap f = wrap ~get_origin ~write_origin ~sync_blk_dev f () in
@@ -190,6 +198,7 @@ module Make(S:sig
           sync;
         }
       in
+      (* NOTE we add autosync to gom_ops *)
       let gom_ops' = 
         wrap 
           ~get_origin 
@@ -208,14 +217,22 @@ module Make(S:sig
       alloc_via_usedlist.blk_alloc () >>= fun gom_root -> 
       btree_factory#write_empty_leaf ~blk_dev_ops ~blk_id:gom_root >>= fun () ->
             
-      (* Origin *)     
+      (* Origin *) 
+      alloc_via_usedlist.blk_alloc () >>= fun blk_id -> 
+
+      (* FIXME is it better to include the origin blk in the usedlist,
+         or not? *)
+
       usedlist_ops.flush () >>= fun () ->
       usedlist_ops.get_origin () >>= fun usedlist_origin -> 
       let origin = Gom_origin_block.{gom_root; usedlist_origin} in
-      (* NOTE the origin block is not included in the usedlist *)
-      freelist_ops.blk_alloc () >>= fun blk_id -> 
+      (* NOTE the origin block IS included in the usedlist *)
       write_origin ~blk_dev_ops ~blk_id ~origin >>= fun () -> 
-      init_from_origin blk_id origin
+      init_from_origin blk_id origin >>= fun gom_ops ->
+      return (object
+        method gom_ops=gom_ops
+        method origin=blk_id
+      end)
         
     let init_from_disk blk_id = 
       read_origin ~blk_dev_ops ~blk_id >>= fun origin ->

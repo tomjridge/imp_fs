@@ -144,3 +144,4 @@ let example : _ counter_factory =
     method with_=with_
   end
       
+let _ = example

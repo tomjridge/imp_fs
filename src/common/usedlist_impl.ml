@@ -38,7 +38,7 @@ type ('blk_id,'blk,'t) usedlist_factory = <
   with_: 
     blk_dev_ops  : ('blk_id,'blk,'t) blk_dev_ops -> 
     barrier      : (unit -> (unit,'t)m) -> 
-    freelist_ops : ('blk_id,'t) blk_allocator_ops -> 
+    freelist_ops : ('blk_id,'blk_id,'t) Freelist_intf.freelist_ops -> 
     <
       usedlist_ops : 'blk_id Usedlist.origin -> (('blk_id,'t) Usedlist.ops,'t)m;
       
@@ -90,11 +90,14 @@ module Make_v1(S:S) = struct
       val blk_dev_ops  : (blk_id,blk,t) blk_dev_ops
       val barrier      : (unit -> (unit,t)m)
       (* val sync         : (unit -> (unit,t)m) *)
-      val freelist_ops : (blk_id,t) blk_allocator_ops
+      (* val freelist_ops : (blk_id,t) blk_allocator_ops *)
+      val freelist_ops : (blk_id,blk_id,t) Freelist_intf.freelist_ops
     end) 
   = 
   struct
     open S2
+
+    let blk_allocator = Freelist_intf.freelist_to_blk_allocator freelist_ops
 
     let blk_sz = blk_dev_ops.blk_sz |> Blk_sz.to_int
 
@@ -110,11 +113,11 @@ module Make_v1(S:S) = struct
       x#with_ref pl |> fun y -> 
       x#with_state y#with_plist  |> fun (plist_ops:(_,_,_,_)Plist_intf.plist_ops) -> 
       let add r = 
-        freelist_ops.blk_alloc () >>= fun nxt -> 
+        blk_allocator.blk_alloc () >>= fun nxt -> 
         plist_ops.add ~nxt ~elt:r >>= fun ropt ->
         match ropt with
         | None -> return ()
-        | Some nxt -> freelist_ops.blk_free nxt
+        | Some nxt -> blk_allocator.blk_free nxt
       in      
       let get_origin () = plist_ops.get_origin () in
       let flush () = return () in
@@ -127,7 +130,7 @@ module Make_v1(S:S) = struct
         
     let alloc_via_usedlist (ul_ops: _ Usedlist.ops) =
       let blk_alloc () = 
-        freelist_ops.blk_alloc () >>= fun blk_id -> 
+        blk_allocator.blk_alloc () >>= fun blk_id -> 
         ul_ops.add blk_id >>= fun () -> 
         barrier() >>= fun () ->
         return blk_id
@@ -143,7 +146,7 @@ module Make_v1(S:S) = struct
       { blk_alloc; blk_free }
 
     let create () = 
-      freelist_ops.blk_alloc () >>= fun blk_id ->       
+      blk_allocator.blk_alloc () >>= fun blk_id ->       
       plist_factory'#init#create blk_id >>= fun pl ->
       let Plist_intf.{hd;tl;blk_len;_} = pl in
       let ul_origin = Pl_origin.{hd;tl;blk_len} in

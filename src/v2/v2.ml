@@ -114,7 +114,7 @@ module Stage_1(S1:sig
         ~sync
         ~params:fl_params
     in
-    with_#from_origin_with_autosync fs_origin.fl_origin
+    with_#restore ~autosync:true ~origin:fs_origin.fl_origin
 
   let fl_ops = freelist >>= fun x -> 
     return x#freelist_ops
@@ -124,17 +124,19 @@ module Stage_1(S1:sig
 
   let gom_ops = fl_ops >>= fun fl_ops -> 
     (* FIXME freelistops should have the same intf as blk_alloc *)
+    (*
     let blk_alloc : _ blk_allocator_ops =     
       {
         blk_alloc=fl_ops.alloc;
         blk_free=fl_ops.free
       }
     in
+*)
     V2_gom.gom_example#with_
       ~blk_dev_ops
       ~barrier
       ~sync
-      ~freelist_ops:blk_alloc |> fun o -> 
+      ~freelist_ops:fl_ops |> fun o -> 
     o#init_from_disk fs_origin.gom_origin
 
   (* let gom_ops = gom#map_ops_with_ls *)
@@ -178,13 +180,15 @@ module Stage_1(S1:sig
 
     (** {2 Blk allocator using freelist} *)
 
+(*
     let blk_alloc : _ blk_allocator_ops =     
       {
         blk_alloc=S2.fl_ops.alloc;
         blk_free=S2.fl_ops.free
       }
+*)
 
-    let freelist_ops = blk_alloc
+    (* let freelist_ops' = blk_alloc *)
 
     (** {2 Dirs} *)
 
@@ -207,7 +211,7 @@ module Stage_1(S1:sig
         ~blk_dev_ops
         ~barrier
         ~sync
-        ~freelist_ops
+        ~freelist_ops:fl_ops
 
 
     let dirs : dirs_ops = 
@@ -234,13 +238,13 @@ module Stage_1(S1:sig
         ~blk_dev_ops
         ~barrier
         ~sync
-        ~freelist_ops
+        ~freelist_ops:fl_ops
 
     let symlink_impl = Symlink_impl.example
     let symlink_impl' =
       symlink_impl#with_
         ~blk_dev_ops
-        ~freelist_ops
+        ~freelist_ops:fl_ops
 
     let files : files_ops = 
       let find fid = 
@@ -329,6 +333,8 @@ module Stage_1(S1:sig
     let module X = Stage_2(S2) in
     let module Y = Make_2(X) in
     return Y.ops
+
+  let _ = make
 end
 
 
@@ -348,4 +354,6 @@ let make
 
 let _ = make
 
-(** What remains is to establish the blk_dev_ops and fs_origin, and origin syncing *)
+(** What remains is to establish the blk_dev_ops and fs_origin (no
+   need for origin syncing, since the 3 individual components have
+   origin blocks whose location doesn't change) *)

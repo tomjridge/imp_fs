@@ -84,7 +84,7 @@ type ('blk_id,'blk,'de,'t,'did) dir_factory = <
     blk_dev_ops  : ('blk_id,'blk,'t) blk_dev_ops -> 
     barrier      : (unit -> (unit,'t)m) -> 
     sync         : (unit -> (unit,'t)m) -> 
-    freelist_ops : ('blk_id,'t) blk_allocator_ops -> 
+    freelist_ops : ('blk_id,'blk_id,'t) Freelist_intf.freelist_ops -> 
     <    
       usedlist_ops : 'blk_id Usedlist.origin -> (('blk_id,'t) Usedlist.ops,'t)m;
 
@@ -197,7 +197,7 @@ module Make_v1(S:S) = struct
       val blk_dev_ops  : (blk_id,blk,t) blk_dev_ops
       val barrier      : (unit -> (unit,t)m)
       val sync         : (unit -> (unit,t)m)
-      val freelist_ops : (blk_id,t) blk_allocator_ops      
+      val freelist_ops : (blk_id,blk_id,t) Freelist_intf.freelist_ops
     end) 
   = 
   struct
@@ -294,13 +294,24 @@ module Make_v1(S:S) = struct
      
 
     let create_dir ~parent ~times =
-      (* create a B-tree and a usedlist, and then an origin blk *)
-      (* B-tree *)
-      freelist_ops.blk_alloc () >>= fun btree_root -> 
-      S.write_empty_leaf ~blk_dev_ops ~blk_id:btree_root >>= fun () ->
+      (* create a usedlist and a B-tree, and then an origin blk; NOTE
+         that all blks involved are stored in the usedlist, except for
+         the blocks that constitute the usedlist itself *)
+
       (* usedlist *)
       usedlist_factory'#create () >>= fun ul_ops ->
+      let alloc_via_usedlist = alloc_via_usedlist ul_ops in
+
+      (* B-tree *)
+      (* NOTE we allocate from the system freelist rather than via usedlist *)
+      alloc_via_usedlist.blk_alloc () >>= fun btree_root -> 
+      S.write_empty_leaf ~blk_dev_ops ~blk_id:btree_root >>= fun () ->
+
+      (* Origin *)
+      alloc_via_usedlist.blk_alloc () >>= fun blk_id -> 
+
       ul_ops.get_origin () >>= fun usedlist_origin -> 
+
       let origin = Dir_origin.{
           dir_map_root=btree_root;
           usedlist_origin;
@@ -308,7 +319,6 @@ module Make_v1(S:S) = struct
           stat_times=times
         }
       in
-      freelist_ops.blk_alloc () >>= fun blk_id -> 
       write_origin ~blk_dev_ops ~blk_id ~origin >>= fun () ->
       return blk_id
       

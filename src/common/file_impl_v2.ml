@@ -180,7 +180,7 @@ type ('buf,'blk,'blk_id,'t) file_factory = <
     blk_dev_ops  : ('blk_id,'blk,'t) blk_dev_ops -> 
     barrier      : (unit -> (unit,'t)m) -> 
     sync         : (unit -> (unit,'t)m) -> 
-    freelist_ops : ('blk_id,'t) blk_allocator_ops -> 
+    freelist_ops : ('blk_id,'blk_id,'t) Freelist_intf.freelist_ops -> 
     <    
       usedlist_ops : 'blk_id Usedlist.origin -> (('blk_id,'t) Usedlist.ops,'t)m;
       (** (2.2) *)
@@ -333,7 +333,7 @@ module Make_v1(S:S) (* : T with module S = S*) = struct
       val blk_dev_ops  : (blk_id,blk,t) blk_dev_ops
       val barrier      : (unit -> (unit,t)m)
       val sync         : (unit -> (unit,t)m)
-      val freelist_ops : (blk_id,t) blk_allocator_ops
+      val freelist_ops : (blk_id,blk_id,t) Freelist_intf.freelist_ops
     end) 
   = 
   struct
@@ -813,14 +813,20 @@ module Test() = struct
 
     (* FIXME move this example to shared *)
     module Freelist_im = struct
-      let freelist_ops : _ blk_allocator_ops =
+      let freelist_ops : _ Freelist_intf.freelist_ops =
         let min_free = ref 1 in 
         let blk_alloc () = 
           let x = !min_free in 
           incr min_free; return (Blk_id_as_int.of_int x)
         in
         let blk_free _x = return () in
-        { blk_alloc; blk_free }       
+        { alloc=blk_alloc; 
+          alloc_many=(fun _ -> failwith __LOC__); 
+          free=blk_free; 
+          free_many=(fun _ -> failwith __LOC__); 
+          get_origin=(fun _ -> failwith __LOC__); 
+          sync=(fun _ -> failwith __LOC__); 
+        }       
     end
     let freelist_ops = Freelist_im.freelist_ops
     
@@ -860,7 +866,7 @@ module Test() = struct
     let usedlist = (usedlist ())#ops
                      
     let alloc_via_usedlist () = 
-      freelist_ops.blk_alloc () >>= fun blk_id -> 
+      freelist_ops.alloc () >>= fun blk_id -> 
       usedlist.add blk_id >>= fun () -> 
       return blk_id
 

@@ -25,7 +25,7 @@ type ('blk_id,'blk,'t) symlink_factory = <
 
   with_:
     blk_dev_ops : ('blk_id,'blk,'t) blk_dev_ops -> 
-    freelist_ops : ('blk_id,'t) blk_allocator_ops -> 
+    freelist_ops : ('blk_id,'blk_id,'t) Freelist_intf.freelist_ops -> 
     <    
       create_symlink : str_256 -> ('blk_id,'t)m;
     >
@@ -45,9 +45,9 @@ let example : (r,buf,t) symlink_factory =
     method read_symlink ~blk_dev_ops ~blk_id =
       blk_dev_ops.read ~blk_id >>= fun blk -> 
       return (M.unmarshal blk)
-    method with_ ~blk_dev_ops ~freelist_ops = object
+    method with_ ~blk_dev_ops ~(freelist_ops: _ Freelist_intf.freelist_ops) = object
       method create_symlink contents = 
-        freelist_ops.blk_alloc () >>= fun blk_id ->
+        freelist_ops.alloc () >>= fun blk_id ->
         write_symlink ~blk_dev_ops ~blk_id ~contents >>= fun () ->
         return blk_id
     end
