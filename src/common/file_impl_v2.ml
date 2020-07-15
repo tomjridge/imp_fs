@@ -339,6 +339,9 @@ module Make_v1(S:S) (* : T with module S = S*) = struct
   struct
     open S2
 
+    (* $(FIXME("currently files don't free blks while they are live")) *)
+    let freelist_ops = {freelist_ops with free=(fun _ -> return ()) }
+
     (* NOTE unlike a buffer, a blk typically has a fixed size eg 4096 bytes *)        
     let blk_sz = blk_dev_ops.blk_sz |> Blk_sz.to_int
 

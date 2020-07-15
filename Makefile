@@ -33,6 +33,11 @@ run_v1:
 	test -d tmp/v1_files || { echo "Missing ./tmp/v1_files directory"; exit -1; }
 	OCAMLRUNPARAM=b ./v1_main.exe $(FUSE_OPTIONS) $(FUSE_MNT_PT)  2>&1
 
+run_v2_create:
+	test -d tmp || { echo "Missing ./tmp directory"; exit -1; }
+	./v2_main.exe create # create empty fs
+	shasum tmp/v2.store # to check if we always get the same result
+
 run_v2_clean:
 	test -d tmp || { echo "Missing ./tmp directory"; exit -1; }
 	./v2_main.exe create # create empty fs

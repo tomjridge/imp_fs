@@ -138,6 +138,9 @@ module Make(S:sig
   struct
     open W
 
+    (* $(FIXME("currently the GOM doesn't free blks")) *)
+    let freelist_ops = {freelist_ops with free=(fun _ -> return ()) }
+    
     let blk_alloctor = Freelist_intf.freelist_to_blk_allocator freelist_ops
 
     let usedlist_factory' = usedlist_factory#with_ 

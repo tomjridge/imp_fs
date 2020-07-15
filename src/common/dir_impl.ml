@@ -205,6 +205,9 @@ module Make_v1(S:S) = struct
   struct
     open S2
 
+    (* $(FIXME("currently dirs don't free blks while they are live")) *)
+    let freelist_ops = {freelist_ops with free=(fun _ -> return ()) }
+
     let usedlist_factory' = usedlist_factory#with_ 
         ~blk_dev_ops
         ~barrier

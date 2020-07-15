@@ -97,12 +97,14 @@ module Example = struct
       Printf.printf "%s: about to create counter\n%!" __FILE__;
       fl_ops.alloc () >>= fun counter_origin -> 
       assert(counter_origin = B.of_int 3);
-      counter_factory'#create ~blk_id:counter_origin ~min_free:1 >>= fun _counter_ops -> 
+      counter_factory'#create ~blk_id:counter_origin ~min_free:1 >>= fun counter_ops -> 
       
       (* GOM *)
       Printf.printf "%s: about to create GOM\n%!" __FILE__;
-      let gom_factory' = gom_factory#with_ ~blk_dev_ops ~barrier ~sync ~freelist_ops:fl_ops in
+      let gom_factory' = 
+        gom_factory#with_ ~blk_dev_ops ~barrier ~sync ~freelist_ops:fl_ops in
       gom_factory'#create () >>= fun x -> 
+      Printf.printf "%s: GOM created\n%!" __FILE__;
       x#gom_ops |> fun gom_ops -> 
       let gom_origin = x#origin in
 
@@ -125,9 +127,13 @@ module Example = struct
       gom_ops.V2_gom.Gom_ops.insert (Dir_impl.Dir_entry.Did root_did) blk_id >>= fun () -> 
       Printf.printf "%s: ...inserted into GOM\n%!" __FILE__;
 
-
+      (* Make sure everything is flushed *)
+      gom_ops.sync () >>= fun _ -> 
+      counter_ops.sync () >>= fun _ ->
       (* Wait for the freelist to finish going to disk *)
-      With_lwt.(sleep 0.1 |> from_lwt) >>= fun () ->
+      With_lwt.(sleep 1.0 |> from_lwt) >>= fun () ->
+      fl_ops.sync () >>= fun _ -> 
+      
 
       (* Origin *)
       let origin : _ fs_origin = Fs_origin_block.{ fl_origin; gom_origin; counter_origin } in
