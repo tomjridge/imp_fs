@@ -33,6 +33,15 @@ run_v1:
 	test -d tmp/v1_files || { echo "Missing ./tmp/v1_files directory"; exit -1; }
 	OCAMLRUNPARAM=b ./v1_main.exe $(FUSE_OPTIONS) $(FUSE_MNT_PT)  2>&1
 
+run_v2_clean:
+	test -d tmp || { echo "Missing ./tmp directory"; exit -1; }
+	./v2_main.exe create # create empty fs
+	$(MAKE) run_v2
+
+run_v2:
+	test -d tmp || { echo "Missing ./tmp directory"; exit -1; }
+	OCAMLRUNPARAM=b ./v2_main.exe $(FUSE_OPTIONS) $(FUSE_MNT_PT)  2>&1
+
 run_tests:
 	$(DUNE) build src-test/test.exe
 	$(DUNE) exec src-test/test.exe

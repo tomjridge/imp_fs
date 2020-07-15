@@ -78,6 +78,8 @@ module Stage_1(S1:sig
   end) = struct
   open S1
 
+  let _ = Printf.printf "%s: Stage_1 starts\n%!" __FILE__
+
   let barrier () = return ()
   let sync () = return ()
 
@@ -93,8 +95,9 @@ module Stage_1(S1:sig
     o#init_from_disk fs_origin.counter_origin
 
 
-
   (** {2 The freelist } *)
+
+  let _ = Printf.printf "%s: Stage_1 freelist\n%!" __FILE__
 
   (** We need to read the freelist origin block, and resurrect the freelist *)
 
@@ -121,18 +124,13 @@ module Stage_1(S1:sig
     return x#freelist_ops
 
 
-    (** {2 The global object map (GOM) } *)
+  (** {2 The global object map (GOM) } *)
+  
+  let _ = Printf.printf "%s: Stage_1 GOM\n%!" __FILE__
 
+
+  (* FIXME freelistops should have the same intf as blk_alloc? *)
   let gom_ops = fl_ops >>= fun fl_ops -> 
-    (* FIXME freelistops should have the same intf as blk_alloc *)
-    (*
-    let blk_alloc : _ blk_allocator_ops =     
-      {
-        blk_alloc=fl_ops.alloc;
-        blk_free=fl_ops.free
-      }
-    in
-*)
     V2_gom.gom_example#with_
       ~blk_dev_ops
       ~barrier
@@ -140,9 +138,10 @@ module Stage_1(S1:sig
       ~freelist_ops:fl_ops |> fun o -> 
     o#init_from_disk fs_origin.gom_origin
 
-  (* let gom_ops = gom#map_ops_with_ls *)
-
   (* NOTE we also have to make sure we flush the GOM root... *)
+
+  let _ = Printf.printf "%s: Stage_1 post GOM\n%!" __FILE__
+
 
   (** Stage_2: we assume freelist_ops, gom_ops and counter_ops are available *)
   module Stage_2(S2:sig 
@@ -151,6 +150,8 @@ module Stage_1(S1:sig
       val counter_ops : t V2_counter.counter_ops
     end) = struct
     open S2
+
+    let _ = Printf.printf "%s: Stage_2\n%!" __FILE__
 
     let new_id () = counter_ops.alloc ()
 
@@ -215,6 +216,8 @@ module Stage_1(S1:sig
         ~freelist_ops:fl_ops
 
 
+    let _ = Printf.printf "%s: Stage_2 dirs\n%!" __FILE__
+
     let dirs : dirs_ops = 
       let find = (fun did -> 
           gom_find (Did did) >>= fun blk_id ->
@@ -233,6 +236,8 @@ module Stage_1(S1:sig
       }
 
 
+    let _ = Printf.printf "%s: Stage_2 file_impl\n%!" __FILE__
+
     let file_impl = File_impl_v2.file_examples#example_1
     let file_impl' = 
       file_impl#with_
@@ -246,6 +251,8 @@ module Stage_1(S1:sig
       symlink_impl#with_
         ~blk_dev_ops
         ~freelist_ops:fl_ops
+
+    let _ = Printf.printf "%s: Stage_2 files\n%!" __FILE__
 
     let files : files_ops = 
       let find fid = 
@@ -313,6 +320,7 @@ module Stage_1(S1:sig
 
     (** {2 Extra ops} *)
 
+    let _ = Printf.printf "%s: Stage_2 extra\n%!" __FILE__
 
     let extra : extra_ops = {
       internal_err=(fun s -> failwith s);  (* FIXME *)
@@ -322,17 +330,24 @@ module Stage_1(S1:sig
   end (* Stage_2 *)
 
   let make () : (_ Tjr_minifs.Minifs_intf.ops, t) m = 
+    let _ = Printf.printf "%s: Stage_1 make() line %d\n%!" __FILE__  __LINE__ in
     fl_ops >>= fun fl_ops ->
+    let _ = Printf.printf "%s: Stage_1 make() line %d\n%!" __FILE__  __LINE__ in
     gom_ops >>= fun gom_ops ->
+    let _ = Printf.printf "%s: Stage_1 make() line %d\n%!" __FILE__  __LINE__ in
     counter_ops >>= fun counter_ops -> 
+    let _ = Printf.printf "%s: Stage_1 make() line %d\n%!" __FILE__  __LINE__ in
     let module S2 = struct
       let fl_ops = fl_ops
       let gom_ops = gom_ops
       let counter_ops = counter_ops
     end
     in
+    let _ = Printf.printf "%s: Stage_1 make() line %d\n%!" __FILE__  __LINE__ in
     let module X = Stage_2(S2) in
+    let _ = Printf.printf "%s: Stage_1 make() line %d\n%!" __FILE__  __LINE__ in
     let module Y = Make_2(X) in
+    let _ = Printf.printf "%s: Stage_1 make() line %d\n%!" __FILE__  __LINE__ in
     return Y.ops
 
   let _ = make

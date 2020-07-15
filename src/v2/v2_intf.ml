@@ -43,9 +43,11 @@ module Fs_origin_block = struct
     fl_origin      : 'blk_id;
     gom_origin     : 'blk_id;    
     counter_origin : 'blk_id;
-  }[@@deriving bin_io]
+  }[@@deriving bin_io, sexp]
 (** freelist origin; root of GOM; object id counter (numbers >=
     counter are free to be used as object identifiers) *)
+
+  type t' = Shared_ctxt.r t[@@deriving bin_io, sexp]
 end
 (* open Fs_origin_block *)
 

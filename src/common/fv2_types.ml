@@ -28,7 +28,6 @@ type 'fid file_id = { fid:'fid }
 
 type stat_times = Minifs_intf.times[@@deriving bin_io]
 
-module Usedlist = Usedlist_impl.Usedlist
 
 (*
 module Freelist = struct

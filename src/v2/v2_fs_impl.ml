@@ -23,7 +23,8 @@ type ('blk_id,'blk,'t,'fid,'dh) filesystem_factory = <
     barrier     : (unit -> (unit,'t)m) -> 
     sync        : (unit -> (unit,'t)m) -> 
     <
-      create: unit -> (('fid,'dh,'t)Minifs_intf.ops,'t)m;
+      (* create: unit -> (('fid,'dh,'t)Minifs_intf.ops,'t)m; *)
+      create: unit -> (unit,'t)m;
       (** Create a new filesystem, using block 0 for the origin *)
           
       restore: unit -> (('fid,'dh,'t)Minifs_intf.ops,'t)m;
@@ -50,9 +51,14 @@ module Example = struct
 
   let read_origin ~blk_dev_ops ~blk_id = 
     blk_dev_ops.read ~blk_id >>= fun blk -> 
-    Ba.unmarshal blk |> return
+    Ba.unmarshal blk |> fun origin -> 
+    Printf.printf "%s: read_origin: %s\n%!" __FILE__ 
+      (origin |> Fs_origin_block.sexp_of_t' |> Sexplib.Sexp.to_string_hum);
+    return origin
 
   let write_origin ~blk_dev_ops ~blk_id ~origin = 
+    Printf.printf "%s: write_origin: %s\n%!" __FILE__ 
+      (origin |> Fs_origin_block.sexp_of_t' |> Sexplib.Sexp.to_string_hum);
     origin |> Ba.marshal |> fun blk -> 
     blk_dev_ops.write ~blk_id ~blk  
 
@@ -74,8 +80,10 @@ module Example = struct
       (* create the three components, write the origin at blk0, and
          return the Minifs ops *)
 
-      (* Freelist, with origin at block fl_origin, empty list at blk
-         fl_origin+1, and frees from fl_origin+2 *)
+      Printf.printf "%s: about to create freelist\n%!" __FILE__;
+
+      (* Freelist, with origin at block 1, empty list at blk 2, and
+         frees from blk 3 *)
       let fl_origin = B.of_int 1 in
       let origin = fl_origin in
       fl_factory'#initialize ~origin 
@@ -83,12 +91,16 @@ module Example = struct
         ~min_free:(Some (B.of_int 3)) >>= fun () ->
       fl_factory'#restore ~autosync:true ~origin >>= fun x -> 
       return x#freelist_ops >>= fun fl_ops ->
+      let fl_ops = Util.add_tracing_to_freelist ~freelist_ops:fl_ops in
       
-      (* Counter at fl_origin -1 *)
+      (* Counter *)
+      Printf.printf "%s: about to create counter\n%!" __FILE__;
       fl_ops.alloc () >>= fun counter_origin -> 
+      assert(counter_origin = B.of_int 3);
       counter_factory'#create ~blk_id:counter_origin ~min_free:1 >>= fun _counter_ops -> 
       
       (* GOM *)
+      Printf.printf "%s: about to create GOM\n%!" __FILE__;
       let gom_factory' = gom_factory#with_ ~blk_dev_ops ~barrier ~sync ~freelist_ops:fl_ops in
       gom_factory'#create () >>= fun x -> 
       x#gom_ops |> fun gom_ops -> 
@@ -104,16 +116,30 @@ module Example = struct
           ~sync
           ~freelist_ops:fl_ops
       in
-      V1.mk_stat_times () >>= fun times -> 
-      Printf.printf "%s: about to create root dir\n%!" __FILE__;
+      V1.mk_stat_times () >>= fun _times -> 
+      (* For debugging, we want the root dir to have the same stat each time *)
+      let times = Times.{atim=0.0;mtim=0.0} in
+      Printf.printf "%s: about to create root dir...\n%!" __FILE__;
       dir_factory'#create_root_dir ~root_did ~times >>= fun blk_id ->
+      Printf.printf "%s: ...created...\n%!" __FILE__;
       gom_ops.V2_gom.Gom_ops.insert (Dir_impl.Dir_entry.Did root_did) blk_id >>= fun () -> 
+      Printf.printf "%s: ...inserted into GOM\n%!" __FILE__;
+
+
+      (* Wait for the freelist to finish going to disk *)
+      With_lwt.(sleep 0.1 |> from_lwt) >>= fun () ->
 
       (* Origin *)
       let origin : _ fs_origin = Fs_origin_block.{ fl_origin; gom_origin; counter_origin } in
+      Printf.printf "%s: writing fs_origin\n%!" __FILE__;
       write_origin ~blk_dev_ops ~blk_id:b0 ~origin >>= fun () -> 
-
+      
+(*      
+      (* FIXME do we need the following? *)
+      Printf.printf "%s: calling V2.make\n%!" __FILE__;
       V2.make ~blk_dev_ops ~fs_origin:origin ~fl_params:Fl.fl_examples#fl_params_1 
+*)
+      return ()
     in
 
     let restore () = 

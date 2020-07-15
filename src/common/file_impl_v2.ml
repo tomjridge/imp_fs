@@ -66,7 +66,7 @@ module File_origin_block = struct
   
 
 end
-module Fo = File_origin_block
+(* module Fo = File_origin_block *)
 
 
 (** State we hold in memory for a particular file *)
@@ -298,7 +298,7 @@ module Make_v1(S:S) (* : T with module S = S*) = struct
     assert( (buf_ops.buf_size buf).size = (blk_dev_ops.blk_sz|>Blk_sz.to_int)); 
     blk_dev_ops.write ~blk_id ~blk:buf
     
-  let usedlist_origin (fo: _ Fo.t) = fo.usedlist_origin
+  let usedlist_origin (fo: _ File_origin_block.t) = fo.usedlist_origin
 
   (* module U = Usedlist_impl.Make_v2(S) *)
   (* let usedlist_factory = U.usedlist_factory *)

@@ -1,4 +1,4 @@
-(** A simple directory implementation.
+(** A simple directory implementation; NOTE this module safe to open.
 
 Directories are one of the main objects we deal with.
 
@@ -18,7 +18,6 @@ A directory is really a thin layer over a B-tree, interfacing with the
 
 *)
 
-module Usedlist = Fv2_types.Usedlist
 open Usedlist_impl
 
 type stat_times = Minifs_intf.times[@@deriving bin_io]
@@ -71,13 +70,13 @@ open Dir_im
 type ('blk_id,'blk,'de,'t,'did) dir_factory = <
   read_origin: 
     blk_dev_ops : ('blk_id,'blk,'t) blk_dev_ops -> 
-    blk_id : 'blk_id -> 
+    blk_id      : 'blk_id -> 
     (('blk_id,'did) Dir_origin.t,'t)m;
 
   write_origin:
     blk_dev_ops : ('blk_id,'blk,'t) blk_dev_ops -> 
-    blk_id : 'blk_id -> 
-    origin: ('blk_id,'did) Dir_origin.t -> 
+    blk_id      : 'blk_id -> 
+    origin      : ('blk_id,'did) Dir_origin.t -> 
     (unit,'t)m;
     
   with_: 
@@ -137,7 +136,7 @@ module type S = sig
   type did
   type t
   val monad_ops : t monad_ops
-  (* FIXME two different versions of buf_ops *)
+  (* $(FIXME("""two different types for buf_ops""")) *)
 
   val dir_origin_mshlr: (blk_id,did) Dir_origin.t ba_mshlr
 

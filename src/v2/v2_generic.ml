@@ -276,9 +276,10 @@ module Make(S0:S0) = struct
     let pread ~fd ~foff ~len ~buf ~boff = 
       files.find fd >>= fun file ->
       file.pread ~off:{off=foff} ~len:{len} >>=| fun buf' ->
-      assert(Bigstring.size buf' = len);
+      (* FIXME do we really assert this?
+      assert(Bigstring.size buf' = len); *)
       (* FIXME unnecessary blit between buffers *)
-      Bigstring.blit buf' 0 buf boff len;
+      Bigstring.blit buf' 0 buf boff (ba_buf_ops.len buf');
       return (Ok len)
 
     let pwrite ~fd ~foff ~len ~buf ~boff =

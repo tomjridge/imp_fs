@@ -6,14 +6,16 @@
    possibly flush/barrier/sync *)
 module Usedlist = struct
 
-  type 'blk_id origin = 'blk_id Plist_intf.Pl_origin.pl_origin[@@deriving bin_io]
+  type 'blk_id origin = 'blk_id Pl_origin.pl_origin[@@deriving bin_io]
 
   (* $(PIPE2SH("""sed -n '/usedlist_ops:[ ]/,/}/p' >GEN.usedlist_ops.ml_""")) *)
   (** usedlist_ops: The operations provided by the usedlist; in
      addition we need to integrate the freelist with the usedlist:
      alloc_via_usedlist
+      
+      $(ASSUME("""all object operations are routed to the same blkdev"""))
 
-      NOTE a sync is just a flush followed by a sync of the underlying
+     NOTE a sync is just a flush followed by a sync of the underlying
      blkdev, since we assume all object operations are routed to the
      same blkdev *)      
   type ('blk_id,'t) usedlist_ops = {
@@ -38,15 +40,16 @@ type ('blk_id,'blk,'t) usedlist_factory = <
   with_: 
     blk_dev_ops  : ('blk_id,'blk,'t) blk_dev_ops -> 
     barrier      : (unit -> (unit,'t)m) -> 
-    freelist_ops : ('blk_id,'blk_id,'t) Freelist_intf.freelist_ops -> 
+    freelist_ops : ('blk_id,'blk_id,'t) freelist_ops -> 
     <
-      usedlist_ops : 'blk_id Usedlist.origin -> (('blk_id,'t) Usedlist.ops,'t)m;
+      usedlist_ops : 
+        'blk_id Usedlist.origin -> (('blk_id,'t) Usedlist.ops,'t)m;
       
       alloc_via_usedlist : 
         ('blk_id,'t) Usedlist.ops ->         
-        ('blk_id,'t)blk_allocator_ops;
+        ('blk_id,'t) blk_allocator_ops;
       
-      create : unit -> (('blk_id,'t)Usedlist.ops,'t)m;
+      create : unit -> (('blk_id,'t) Usedlist.ops,'t)m;
       (** Create a new usedlist, without an origin (since the origin
          info is typically stored with the object's origin block);
          NOTE can get the ul origin info using the ops *)
@@ -65,7 +68,7 @@ module type S = sig
 
   (** For the usedlist *)
   type a = blk_id
-  val plist_factory : (a,blk_id,blk,buf,t) Plist_intf.plist_factory
+  val plist_factory : (a,blk_id,blk,buf,t) plist_factory
 
 end
 
@@ -91,7 +94,7 @@ module Make_v1(S:S) = struct
       val barrier      : (unit -> (unit,t)m)
       (* val sync         : (unit -> (unit,t)m) *)
       (* val freelist_ops : (blk_id,t) blk_allocator_ops *)
-      val freelist_ops : (blk_id,blk_id,t) Freelist_intf.freelist_ops
+      val freelist_ops : (blk_id,blk_id,t) freelist_ops
     end) 
   = 
   struct
@@ -111,7 +114,7 @@ module Make_v1(S:S) = struct
       let x = plist_factory' in
       x#init#from_endpts uo >>= fun pl -> 
       x#with_ref pl |> fun y -> 
-      x#with_state y#with_plist  |> fun (plist_ops:(_,_,_,_)Plist_intf.plist_ops) -> 
+      x#with_state y#with_plist  |> fun (plist_ops:(_,_,_,_)plist_ops) -> 
       let add r = 
         blk_allocator.blk_alloc () >>= fun nxt -> 
         plist_ops.add ~nxt ~elt:r >>= fun ropt ->
@@ -136,6 +139,7 @@ module Make_v1(S:S) = struct
         return blk_id
       in
       let blk_free _r = 
+        (* $(FIXME("""at some point, reclaim unused blks from live objects""")) *)
         Printf.printf "Free called on usedlist; currently this is a \
                        no-op; at some point we should reclaim blks \
                        from live objects (at the moment, we reclaim \
@@ -195,8 +199,8 @@ let usedlist_example =
     let monad_ops = Shared_ctxt.monad_ops
 
     type a = blk_id
-    let plist_factory : (a,blk_id,blk,buf,t) Plist_intf.plist_factory =
-      Tjr_plist.pl_examples#for_blk_id
+    let plist_factory : (a,blk_id,blk,buf,t) plist_factory =
+      pl_examples#for_blk_id
   end
   in
   let module X = Make_v2(S) in

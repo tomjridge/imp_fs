@@ -60,7 +60,7 @@ module Run() = struct
 
 
         (* Block device *)
-        blk_devs#with_ba_buf#from_filename ~fn ~create:true ~init:true >>= fun bd ->
+        blk_devs#with_ba_buf#from_filename ~fn ~create:false ~init:false >>= fun bd ->
         let blk_dev_ops = bd#blk_dev_ops in
         let barrier = fun () -> return () in
         let sync = fun () -> return () in
