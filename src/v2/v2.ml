@@ -13,7 +13,16 @@ open V2_gom
 
 module G = V2_generic
 
-
+let add_logging_to_blk_dev ~(read_msg:blk_id -> unit) ~(write_msg:blk_id -> unit) ~blk_dev_ops = 
+  let read ~blk_id = 
+    read_msg blk_id;
+    blk_dev_ops.read ~blk_id
+  in
+  let write ~blk_id ~blk = 
+    write_msg blk_id;
+    blk_dev_ops.write ~blk_id ~blk
+  in
+  { blk_dev_ops with read; write }
 
 (** {2 Setup the generic instance} *)
 
@@ -91,6 +100,9 @@ module Stage_1(S1:sig
   let counter_factory = V2_counter.example
 
   let counter_ops = 
+    let read_msg blk_id = Printf.printf "counter: read from %d\n%!" (B.to_int blk_id) in
+    let write_msg blk_id = Printf.printf "counter: write to %d\n%!" (B.to_int blk_id) in
+    let blk_dev_ops = add_logging_to_blk_dev ~read_msg ~write_msg ~blk_dev_ops in
     counter_factory#with_ ~blk_dev_ops ~sync |> fun o -> 
     o#init_from_disk fs_origin.counter_origin
 
@@ -111,6 +123,9 @@ module Stage_1(S1:sig
      an init functor? *)
   let freelist = 
     let fact = fl_examples#for_r in
+    let read_msg blk_id = Printf.printf "freelist: read from %d\n%!" (B.to_int blk_id) in
+    let write_msg blk_id = Printf.printf "freelist: write to %d\n%!" (B.to_int blk_id) in
+    let blk_dev_ops = add_logging_to_blk_dev ~read_msg ~write_msg ~blk_dev_ops in
     let with_ = 
       fact#with_
         ~blk_dev_ops
@@ -131,6 +146,9 @@ module Stage_1(S1:sig
 
   (* FIXME freelistops should have the same intf as blk_alloc? *)
   let gom_ops = fl_ops >>= fun fl_ops -> 
+    let read_msg blk_id = Printf.printf "gom: read from %d\n%!" (B.to_int blk_id) in
+    let write_msg blk_id = Printf.printf "gom: write to %d\n%!" (B.to_int blk_id) in
+    let blk_dev_ops = add_logging_to_blk_dev ~read_msg ~write_msg ~blk_dev_ops in
     V2_gom.gom_example#with_
       ~blk_dev_ops
       ~barrier

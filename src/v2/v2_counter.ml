@@ -12,12 +12,14 @@ type 't counter_ops = {
 (** On-disk state *)
 module Counter_origin = struct
   open Bin_prot.Std
+  open Sexplib.Std
+
   type counter_origin = {
     min_free: int
-  }[@@deriving bin_io]
+  }[@@deriving bin_io, sexp]
 
   module Bp = struct
-    type t = counter_origin[@@deriving bin_io]
+    type t = counter_origin[@@deriving bin_io, sexp]
     let max_sz = 9
   end
 
@@ -27,10 +29,13 @@ module Counter_origin = struct
       ~mshlr:bp_mshlr 
       ~buf_sz:(Shared_ctxt.blk_sz|>Blk_sz.to_int)
 
-  include (val ba_mshlr)  
+  include (val ba_mshlr) 
+
+  let to_string (o:counter_origin) = 
+    o |> sexp_of_counter_origin |> Sexplib.Sexp.to_string_hum
 end
-type counter_origin = Counter_origin.t
-type origin = counter_origin
+type counter_origin = Counter_origin.counter_origin[@@deriving sexp]
+type origin = counter_origin[@@deriving sexp]
 
 
 (** In-memory state; as well as min_free, we retain the
@@ -89,9 +94,13 @@ let example : _ counter_factory =
   let delta = 1000 in
   let read_origin ~blk_dev_ops ~blk_id =
     blk_dev_ops.read ~blk_id >>= fun blk -> 
-    Counter_origin.unmarshal blk|>return    
+    Counter_origin.unmarshal blk |> fun o -> 
+    Printf.printf "counter: read origin %d %s\n%!" (blk_id|>B.to_int) (o|>Counter_origin.to_string);    
+    return o
+ 
   in
   let write_origin ~blk_dev_ops ~blk_id ~origin =
+    Printf.printf "counter: write origin %d %s\n%!" (blk_id|>B.to_int) (origin|>Counter_origin.to_string);
     Counter_origin.marshal origin |> fun blk -> 
     blk_dev_ops.write ~blk_id ~blk
   in
@@ -99,11 +108,17 @@ let example : _ counter_factory =
       ~blk_dev_ops 
       ~sync
     =
-    let init ~blk_id ~min_free = 
+    let init ~blk_id ~min_free =       
+(*
       let last_persisted_min_free = min_free+delta in
       let origin = Counter_origin.{min_free=last_persisted_min_free} in
+      (* NOTE we could use a dirty flag to avoid updating the on-disk counter till we actually allocate *)
       write_origin ~blk_dev_ops ~blk_id ~origin >>= fun () ->
-      let counter_state : counter_state = {min_free;last_persisted_min_free} in
+*)
+      (* The above code automatically bumped last_persisted_min_free
+         and wrote to disk on restore; the below bumps on first
+         alloc *)
+      let counter_state : counter_state = {min_free;last_persisted_min_free=min_free} in
       let ref_ = ref counter_state in
       let with_state = with_imperative_ref ~monad_ops ref_ in
       let alloc () = 

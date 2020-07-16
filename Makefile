@@ -35,8 +35,9 @@ run_v1:
 
 run_v2_create:
 	test -d tmp || { echo "Missing ./tmp directory"; exit -1; }
-	./v2_main.exe create # create empty fs
-	shasum tmp/v2.store # to check if we always get the same result
+	-cp tmp/v2.store /tmp/v2.store.`date +'%F_%X'`
+	./v2_main.exe create  # create empty fs
+	./v2_main.exe restore # check we can restore
 
 run_v2_clean:
 	test -d tmp || { echo "Missing ./tmp directory"; exit -1; }

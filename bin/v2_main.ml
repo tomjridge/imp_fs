@@ -17,8 +17,9 @@ let line s = Printf.printf "Reached %s\n%!" s
 module Create() = struct  
 
   let m = 
-    (* Block device *)
-    blk_devs#with_ba_buf#from_filename ~fn ~create:true ~init:true >>= fun bd ->
+    (* Block device *)    
+    (* blk_devs#with_ba_buf#from_filename ~fn ~create:true ~init:true >>= fun bd -> *)
+    Test_blk_dev.make () |> fun bd -> 
     let blk_dev_ops = bd#blk_dev_ops in
     let barrier = fun () -> return () in
     let sync = fun () -> return () in
@@ -28,6 +29,26 @@ module Create() = struct
 
   let _ = Lwt_main.run (to_lwt m)
 end
+
+(** Restore, but don't mount *)
+module Restore() = struct
+
+  let _ = Printf.printf "%s: restoring\n%!" __FILE__
+
+  let _ = 
+    Lwt_main.run (to_lwt (
+        (* Block device *)
+        (* blk_devs#with_ba_buf#from_filename ~fn ~create:false ~init:false >>= fun bd -> *)
+        Test_blk_dev.restore () |> fun bd -> 
+        let blk_dev_ops = bd#blk_dev_ops in
+        let barrier = fun () -> return () in
+        let sync = fun () -> return () in
+        let with_ = V2_fs_impl.example#with_ ~blk_dev_ops ~barrier ~sync in
+        with_#restore () >>= fun ops -> 
+        return ops))
+
+end
+
 
 (** Mount the filesystem via FUSE *)
 module Run() = struct
@@ -72,12 +93,15 @@ module Run() = struct
       (non-Lwt) thread *)
   let () =
     Printf.printf "%s: running FUSE main loop\n%!" __FILE__;
+(* don't run for the time being
     let fuse_ops = 
       Fuse_.mk_fuse_ops 
         ~monad_ops ~ops 
         ~co_eta:Tjr_minifs.Lwt_util.co_eta 
     in
     Fuse.main Sys.argv fuse_ops
+*)
+    ()
 
 end (* Run *)
 
@@ -85,6 +109,9 @@ let _ =
   match argv with
   | ["create"] -> 
     let module X = Create() in
+    ()
+  | ["restore"] -> 
+    let module X = Restore() in
     ()
   | _ -> 
     (* default: run the filesystem *)

@@ -72,9 +72,20 @@ module Example = struct
 
   let gom_factory = V2_gom.gom_example
 
+  let add_logging_to_blk_dev = V2.add_logging_to_blk_dev
+
   let with_ ~blk_dev_ops ~barrier ~sync =    
-    let fl_factory' = fl_factory#with_ ~blk_dev_ops ~barrier ~sync ~params:Fl.fl_examples#fl_params_1 in
-    let counter_factory' = counter_factory#with_ ~blk_dev_ops ~sync in
+    let fl_factory' = 
+      let read_msg blk_id = Printf.printf "freelist: read from %d\n%!" (B.to_int blk_id) in
+      let write_msg blk_id = Printf.printf "freelist: write to %d\n%!" (B.to_int blk_id) in
+      let blk_dev_ops = add_logging_to_blk_dev ~read_msg ~write_msg ~blk_dev_ops in
+      fl_factory#with_ ~blk_dev_ops ~barrier ~sync ~params:Fl.fl_examples#fl_params_1 
+    in
+    let counter_factory' = 
+      let read_msg blk_id = Printf.printf "counter: read from %d\n%!" (B.to_int blk_id) in
+      let write_msg blk_id = Printf.printf "counter: write to %d\n%!" (B.to_int blk_id) in
+      let blk_dev_ops = add_logging_to_blk_dev ~read_msg ~write_msg ~blk_dev_ops in
+      counter_factory#with_ ~blk_dev_ops ~sync in
     let b0 = B.of_int 0 in
     let create () = 
       (* create the three components, write the origin at blk0, and
@@ -102,6 +113,9 @@ module Example = struct
       (* GOM *)
       Printf.printf "%s: about to create GOM\n%!" __FILE__;
       let gom_factory' = 
+        let read_msg blk_id = Printf.printf "gom: read from %d\n%!" (B.to_int blk_id) in
+        let write_msg blk_id = Printf.printf "gom: write to %d\n%!" (B.to_int blk_id) in
+        let blk_dev_ops = add_logging_to_blk_dev ~read_msg ~write_msg ~blk_dev_ops in
         gom_factory#with_ ~blk_dev_ops ~barrier ~sync ~freelist_ops:fl_ops in
       gom_factory'#create () >>= fun x -> 
       Printf.printf "%s: GOM created\n%!" __FILE__;
