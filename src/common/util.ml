@@ -1,5 +1,7 @@
 (** Various utils *)
 
+open Tjr_freelist
+
 open Shared_ctxt
 
 let add_tracing_to_freelist ~(freelist_ops:_ freelist_ops) = 

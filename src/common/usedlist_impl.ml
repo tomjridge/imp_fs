@@ -1,6 +1,9 @@
 (** A persistent list that keeps track of blocks that are allocated to
    a particular object. *)
 
+
+open Tjr_freelist
+
 (** NOTE the in-memory state of the usedlist is opaque to us; after
    operations, we check the origin to see if it has changed and then
    possibly flush/barrier/sync *)

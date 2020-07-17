@@ -1,0 +1,9 @@
+(env
+  (_ (flags (:standard -w -27 -open Tjr_lib -open Tjr_monad -open Tjr_fs_shared -open Tjr_plist))))
+
+(library
+  (public_name "tjr_impfs")
+  (preprocess (pps ppx_deriving_yojson ppx_jane))
+  (libraries tjr_plist)
+)
+

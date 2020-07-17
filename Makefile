@@ -25,6 +25,8 @@ update_generated_doc::
 	cd src/common && (ocamldoc_pyexpander file_impl_v2.ml)
 	cd src/common && (ocamldoc_pyexpander usedlist_impl.ml)
 	cd src/common && (ocamldoc_pyexpander dir_impl.ml)
+	cd src/freelist && (ocamldoc_pyexpander freelist_intf.ml)
+	cd src/freelist && (ocamldoc_pyexpander fl_summary.t.ml > fl_summary.ml)
 	cd src/v1 && (ocamldoc_pyexpander v1_generic.ml)
 	cd src && (ocamldoc_pyexpander summary.t.ml > summary.ml)
 

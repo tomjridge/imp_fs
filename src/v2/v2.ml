@@ -83,7 +83,7 @@ module Stage_1(S1:sig
     val blk_dev_ops : (r,blk,t)blk_dev_ops
     val fs_origin   : r Fs_origin_block.t
     (* FIXME replace with fl_examples#fl_params_1 *)
-    val fl_params   : Tjr_plist_freelist.Freelist_intf.params
+    val fl_params   : Tjr_freelist.Freelist_intf.params
   end) = struct
   open S1
 
@@ -122,7 +122,7 @@ module Stage_1(S1:sig
   (* FIXME we need to initialize the freelist at some point of course;
      an init functor? *)
   let freelist = 
-    let fact = fl_examples#for_r in
+    let fact = Tjr_freelist.fl_examples#for_r in
     let read_msg blk_id = Printf.printf "freelist: read from %d\n%!" (B.to_int blk_id) in
     let write_msg blk_id = Printf.printf "freelist: write to %d\n%!" (B.to_int blk_id) in
     let blk_dev_ops = add_logging_to_blk_dev ~read_msg ~write_msg ~blk_dev_ops in

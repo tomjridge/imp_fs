@@ -1,0 +1,20 @@
+(env
+  (_ (flags (:standard 
+              -open Tjr_lib -open Tjr_monad -open Tjr_fs_shared -open Tjr_plist
+              -open Tjr_impfs -open Tjr_impfs.Tjr_freelist
+))))
+
+;; (executable
+;;  (public_name "plist_test")
+;;  (package tjr_plist_examples)
+;;  (modules Plist_test)
+;;  (libraries tjr_plist_examples)
+;; )
+
+(executable
+ (public_name "freelist_test")
+ (package tjr_impfs)
+ (modules Freelist_test Freelist_example_1 Freelist_example_2)
+ (libraries tjr_impfs)
+)
+

@@ -63,7 +63,7 @@ module Example = struct
     blk_dev_ops.write ~blk_id ~blk  
 
   
-  module Fl = Tjr_plist_freelist
+  module Fl = Tjr_freelist
 
   let fl_factory = Fl.fl_examples#for_r
 
