@@ -227,6 +227,9 @@ module Stage_1(S1:sig
 
     let dir_impl = Dir_impl.dir_example
     let dir_impl' =             
+      let read_msg blk_id = Printf.printf "dir_impl: read from %d\n%!" (B.to_int blk_id) in
+      let write_msg blk_id = Printf.printf "dir_impl: write to %d\n%!" (B.to_int blk_id) in
+      let blk_dev_ops = add_logging_to_blk_dev ~read_msg ~write_msg ~blk_dev_ops in
       dir_impl#with_
         ~blk_dev_ops
         ~barrier
@@ -258,6 +261,9 @@ module Stage_1(S1:sig
 
     let file_impl = File_impl_v2.file_examples#example_1
     let file_impl' = 
+      let read_msg blk_id = Printf.printf "file_impl: read from %d\n%!" (B.to_int blk_id) in
+      let write_msg blk_id = Printf.printf "file_impl: write to %d\n%!" (B.to_int blk_id) in
+      let blk_dev_ops = add_logging_to_blk_dev ~read_msg ~write_msg ~blk_dev_ops in
       file_impl#with_
         ~blk_dev_ops
         ~barrier
@@ -266,6 +272,9 @@ module Stage_1(S1:sig
 
     let symlink_impl = Symlink_impl.example
     let symlink_impl' =
+      let read_msg blk_id = Printf.printf "symlink_impl: read from %d\n%!" (B.to_int blk_id) in
+      let write_msg blk_id = Printf.printf "symlink_impl: write to %d\n%!" (B.to_int blk_id) in
+      let blk_dev_ops = add_logging_to_blk_dev ~read_msg ~write_msg ~blk_dev_ops in
       symlink_impl#with_
         ~blk_dev_ops
         ~freelist_ops:fl_ops

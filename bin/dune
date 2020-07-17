@@ -6,6 +6,6 @@
 
 
 (executables
-  (names v1_main v2_main)
+  (names v1_main v2_main util_main)
   (libraries tjr_impfs)
 )

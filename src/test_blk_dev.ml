@@ -105,3 +105,18 @@ let restore () =
   trace#t0.dirty <- true;
   trace
   
+let print_trace ~dirname =
+  let fn = dirname^"/trace.marshal" in
+  let s = Tjr_file.read_file fn in
+  let x : trace = Marshal.from_string s 0 in
+  Printf.printf "File %s, writes in order: \n%!" fn;
+  let ws = List.rev x.writes in
+  (ws,0) |> iter_k (fun ~k (ws,n) -> 
+      match ws with
+      | [] -> ()
+      | (blk_id,blk)::ws -> 
+        Printf.printf "Step %d, write to blk %d, data: %s\n\n%!" n (B.to_int blk_id) (Sexplib.Sexp.(to_string_hum (Atom blk)));
+        k  (ws,n+1))
+
+  
+  

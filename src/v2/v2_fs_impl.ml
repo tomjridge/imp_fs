@@ -126,6 +126,9 @@ module Example = struct
       let root_did = (* Dir_impl.Dir_entry.Did *) 0 in
       let dir_factory = Dir_impl.dir_example in
       let dir_factory' = 
+        let read_msg blk_id = Printf.printf "dir_factory: read from %d\n%!" (B.to_int blk_id) in
+        let write_msg blk_id = Printf.printf "dir_factory: write to %d\n%!" (B.to_int blk_id) in
+        let blk_dev_ops = add_logging_to_blk_dev ~read_msg ~write_msg ~blk_dev_ops in
         dir_factory#with_
           ~blk_dev_ops
           ~barrier
@@ -152,6 +155,9 @@ module Example = struct
       (* Origin *)
       let origin : _ fs_origin = Fs_origin_block.{ fl_origin; gom_origin; counter_origin } in
       Printf.printf "%s: writing fs_origin\n%!" __FILE__;
+      let read_msg blk_id = Printf.printf "fs_origin: read from %d\n%!" (B.to_int blk_id) in
+      let write_msg blk_id = Printf.printf "fs_origin: write to %d\n%!" (B.to_int blk_id) in
+      let blk_dev_ops = add_logging_to_blk_dev ~read_msg ~write_msg ~blk_dev_ops in
       write_origin ~blk_dev_ops ~blk_id:b0 ~origin >>= fun () -> 
       
 (*      

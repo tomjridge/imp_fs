@@ -5,8 +5,10 @@ default: all
 all:: 
 	$(DUNE) build bin/v1_main.exe
 	$(DUNE) build bin/v2_main.exe
+	$(DUNE) build bin/util_main.exe
 	cp _build/default/bin/v1_main.exe .
 	cp _build/default/bin/v2_main.exe .
+	cp _build/default/bin/util_main.exe .
 
 # find _build -name "v2_main.exe" -exec cp \{\} . \;
 
@@ -25,8 +27,6 @@ update_generated_doc::
 	cd src/common && (ocamldoc_pyexpander dir_impl.ml)
 	cd src/v1 && (ocamldoc_pyexpander v1_generic.ml)
 	cd src && (ocamldoc_pyexpander summary.t.ml > summary.ml)
-
-
 
 run_v1:
 	test -d tmp || { echo "Missing ./tmp directory"; exit -1; }
