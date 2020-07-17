@@ -1,3 +1,5 @@
+(* FIXME resurrect this
+
 (** V1 - implement directories and file metadata, with file data
    passed through to an underlying filesystem.
 
@@ -181,29 +183,26 @@ module Gom = struct
 end
 (* open Gom *)
 
-module Gom_btree = Tjr_btree.Pvt.Make_5.Make(Gom)
+module Gom_btree = Tjr_btree.Make_6.Make_v1(Gom)
 
-let gom_factory = lazy (
-  Gom_btree.btree_factory 
-    ~blk_dev_ops:(Lazy.force blk_dev_ops)
-    ~blk_allocator_ops:(Lazy.force blk_alloc)
-    ~blk_sz:Shared_ctxt.blk_sz)
-
-(* FIXME move bt_1 etc to a top-level module *)
-let (* gom_empty_leaf_as_blk,*) (gom_btree : (Gom.k,Gom.v,_,_,t) Tjr_btree.Pvt.Make_5.Btree_factory.bt_1 Lazy.t) = 
-  lazy(
-    (Lazy.force gom_factory)#make_uncached (Lazy.force root_ops))
-
-let _ = gom_btree
+let gom_factory = Gom_btree.btree_factory 
 
 
 (** {2 Definitions after the GOM has been initialized} *)
 
 (** NOTE Instantiate this after gom_btree has been initialized *)
 module With_gom() = struct
+
+
   let blk_dev_ops = Lazy.force blk_dev_ops 
   let blk_alloc = Lazy.force blk_alloc
-  let gom_btree = (Lazy.force gom_btree)#map_ops_with_ls
+
+
+  let gom_btree =     
+    gom_factory#uncached
+      ~blk_dev_ops
+      ~blk_alloc
+      ~init_btree_root:(!root_ops_ref |> dest_Some)
 
   let gom_find_opt = gom_btree.find
 
@@ -557,3 +556,4 @@ module With_gom() = struct
   module The_filesystem = Make_2(X)
 
 end
+*)

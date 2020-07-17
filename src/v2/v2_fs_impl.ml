@@ -35,6 +35,10 @@ type ('blk_id,'blk,'t,'fid,'dh) filesystem_factory = <
 
 open Shared_ctxt
 
+let mk_stat_times () = 
+  Unix.time () |> fun t -> (* 1s resolution? FIXME *)
+  return Times.{ atim=t; mtim=t }
+
 module Example = struct
 
   module Bp = struct
@@ -135,7 +139,7 @@ module Example = struct
           ~sync
           ~freelist_ops:fl_ops
       in
-      V1.mk_stat_times () >>= fun _times -> 
+      mk_stat_times () >>= fun _times -> 
       (* For debugging, we want the root dir to have the same stat each time *)
       let times = Times.{atim=0.0;mtim=0.0} in
       Printf.printf "%s: about to create root dir...\n%!" __FILE__;

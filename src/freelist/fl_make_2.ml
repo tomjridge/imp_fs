@@ -122,6 +122,7 @@ module Fl_example_1 = struct
       let with_locked_ref = fun fl ->
         let freelist_ref = ref fl in
         let with_state' = With_lwt.with_locked_ref freelist_ref in
+        (* FIXME the following is broken wrt to locking
         (* Add some debugging *)
         let with_state'' = 
           let with_state = with_state'.with_state in
@@ -131,7 +132,8 @@ module Fl_example_1 = struct
                     Printf.printf "%s: freelist set_state called: %s\n" __FILE__ (Pvt_debug.to_string s);
                     set_state s)) }
         in
-        let freelist_ops = with_state with_state'' in
+        *)
+        let freelist_ops = with_state with_state' in
         object
           method freelist_ops=freelist_ops
           method freelist_ref=freelist_ref

@@ -1,3 +1,4 @@
+(* FIXME resurrect
 (** Run the v1 example, using a (somewhat hairy) combination of FUSE
    and Lwt *)
 
@@ -80,3 +81,4 @@ let () =
   Fuse.main Sys.argv fuse_ops
     
       
+*)
