@@ -20,8 +20,7 @@ let run_example ~params () =
       
     let run_a () = 
       Printf.printf "%s: initializing file\n%!" __FILE__;
-      blk_devs#with_ba_buf#from_filename ~fn ~create:true ~init:true >>= fun bd ->
-
+      blk_devs#lwt_open_file ~fn ~create:true ~trunc:true >>= fun bd ->
       let module B = struct
         
         let blk_dev_ops = bd#blk_dev_ops

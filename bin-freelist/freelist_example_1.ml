@@ -25,7 +25,9 @@ let run_example ~params () =
     let fn = params#filename
 
     let run_a () = 
-      blk_devs#with_ba_buf#from_filename ~fn ~create:true ~init:true >>= fun bd ->
+      lwt_file_ops#open_file ~fn ~create:true ~trunc:true >>= fun fd ->
+      blk_devs#lwt#with_ ~blk_sz |> fun o -> 
+      o#from_fd fd |> fun bd ->
       let module B = struct
 
         let blk_dev_ops = bd#blk_dev_ops

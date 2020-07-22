@@ -18,7 +18,7 @@ module Create() = struct
 
   let m = 
     (* Block device *)    
-    blk_devs#with_ba_buf#from_filename ~fn ~create:true ~init:true >>= fun bd ->
+    blk_devs#lwt_open_file ~fn ~create:true ~trunc:true >>= fun bd ->
     (* Test_blk_dev.make () |> fun bd ->  *)
     let blk_dev_ops = bd#blk_dev_ops in
     let barrier = fun () -> return () in
@@ -38,7 +38,7 @@ module Restore() = struct
   let _ = 
     Lwt_main.run (to_lwt (
         (* Block device *)
-        blk_devs#with_ba_buf#from_filename ~fn ~create:false ~init:false >>= fun bd ->
+        blk_devs#lwt_open_file ~fn ~create:false ~trunc:false >>= fun bd ->
         (* Test_blk_dev.restore () |> fun bd ->  *)
         let blk_dev_ops = bd#blk_dev_ops in
         let barrier = fun () -> return () in
@@ -81,7 +81,7 @@ module Run() = struct
 
 
         (* Block device *)
-        blk_devs#with_ba_buf#from_filename ~fn ~create:false ~init:false >>= fun bd ->
+        blk_devs#lwt_open_file ~fn ~create:false ~trunc:false >>= fun bd ->
         let blk_dev_ops = bd#blk_dev_ops in
         let barrier = fun () -> return () in
         let sync = fun () -> return () in
