@@ -43,7 +43,7 @@ TODO:
 *)
 
 open Int_like
-open Buffers_from_btree
+(* open Buffers_from_btree *)
 
 type 'fid file_id = { fid:'fid }
 
@@ -178,14 +178,14 @@ let pread_check =
 
 
 (** Check arguments to pwrite *)
-let pwrite_check ~buf_ops =
+let pwrite_check ~(buf_ops: _ buf_ops) =
   let module A = struct
     let pwrite_check_1 : src:'buf -> src_off:offset -> src_len:len -> dst_off:offset -> _ = 
       fun ~src ~src_off:{off=src_off} ~src_len:{len=src_len} ~dst_off:{off=dst_off} ->
         match () with
         | _ when src_off < 0 -> `Err `Src_off_neg
         | _ when dst_off < 0 -> `Err `Dst_off_neg
-        | _ when src_off+src_len > (buf_ops.buf_size src).size -> `Err `Einval
+        | _ when src_off+src_len > buf_ops.buf_length src -> `Err `Einval
         | _ -> `Ok
 
     let pwrite_check ~src ~src_off ~src_len ~dst_off = 
@@ -196,6 +196,10 @@ let pwrite_check ~buf_ops =
       | `Ok -> Ok ()
   end
   in A.pwrite_check
+
+
+(* FIXME update for blk buf blitting see fv2_iter_block_blit
+
 
 (** Abstract model of blitting from blks to buffer.
 
@@ -239,7 +243,7 @@ module Iter_block_blit = struct
   let make (type buf blk_id blk i t) 
         ~monad_ops 
         ~(buf_ops              : buf buf_ops)
-        ~(blk_ops              : blk blk_ops)
+        ~(blk_ops              : (blk,buf) blk_ops)
         ~(int_index_iso        : (int,i)iso)
         ~(read_blk             : i index_ -> (blk_id*blk,t)m)  (* blk_id is used only when rewriting *)
         ~(alloc_and_write_blk  : i index_ -> blk -> (unit,t)m)
@@ -694,3 +698,4 @@ let test () =
   end
   in
   ()
+*)

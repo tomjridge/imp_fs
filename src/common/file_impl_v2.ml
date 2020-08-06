@@ -129,7 +129,7 @@ type ('blk_id,'buf,'t) file_ops = {
 }
 
 
-open Buffers_from_btree (* FIXME combine with the other buf_ops *)
+(* open Buffers_from_btree (\* FIXME combine with the other buf_ops *\) *)
 open Usedlist_impl
 open Fv2_types
 
@@ -295,7 +295,7 @@ module Make_v1(S:S) (* : T with module S = S*) = struct
 
   let write_origin ~blk_dev_ops ~blk_id ~origin =
     origin |> File_origin_mshlr.marshal |> fun buf -> 
-    assert( (buf_ops.buf_size buf).size = (blk_dev_ops.blk_sz|>Blk_sz.to_int)); 
+    assert( buf_ops.buf_length buf = (blk_dev_ops.blk_sz|>Blk_sz.to_int)); 
     blk_dev_ops.write ~blk_id ~blk:buf
     
   let usedlist_origin (fo: _ File_origin_block.t) = fo.usedlist_origin
@@ -427,22 +427,13 @@ module Make_v1(S:S) (* : T with module S = S*) = struct
             return state.file_size)
 
       (* FIXME wrap this up in a functor, with a private type in result *)
-      let make_ba_blk_ops ~blk_sz = { 
+      let make_ba_ba_blk_ops ~blk_sz = Blk_ops.{ 
         blk_sz;
-        of_string=(fun s ->
-            assert(String.length s <= Blk_sz.to_int blk_sz);        
-            let buf = Bigstring.create (Blk_sz.to_int blk_sz) in
-            Bigstring.blit_of_string s 0 buf 0 (String.length s);
-            buf);
-        to_string=(fun ba -> Bigstring.to_string ba);
-        of_bytes=(fun bs ->
-            assert(Bytes.length bs = Blk_sz.to_int blk_sz);
-            Bigstring.of_bytes bs);
-        to_bytes=(fun ba -> 
-            Bigstring.to_bytes ba)
+        blk_to_buf=(fun x -> x);
+        buf_to_blk=(fun x -> x);
       }
 
-      let blk_ops = make_ba_blk_ops ~blk_sz:blk_dev_ops.blk_sz
+      let blk_ops = make_ba_ba_blk_ops ~blk_sz:blk_dev_ops.blk_sz
 
       let _ = assert (
         let b = blk_ops.blk_sz = blk_dev_ops.blk_sz in
@@ -451,8 +442,14 @@ module Make_v1(S:S) (* : T with module S = S*) = struct
             __FILE__ (blk_dev_ops.blk_sz |> Blk_sz.to_int) (blk_ops.blk_sz |> Blk_sz.to_int);
            false))
         
-      let truncate_blk ~blk ~blk_off = 
-        blk |> blk_ops.to_string |> fun blk -> String.sub blk 0 blk_off |> blk_ops.of_string
+      let zero_blk = Bigstring.make blk_sz chr0
+      (* this fills the blk with 0 from blk_off *)
+      (* let truncate_blk ~blk ~blk_off =  *)
+
+      let clear_blk ~blk ~(blk_off:int) = 
+        blk |> blk_ops.blk_to_buf |> fun blk -> 
+        buf_ops.blit ~src:zero_blk ~src_off:{off=blk_off} ~src_len:{len=blk_sz-blk_off} ~dst:blk ~dst_off:{off=blk_off}
+        |> blk_ops.buf_to_blk 
   
       let truncate ~(size:int) : (unit,'t)m = 
         (* FIXME the following code is rather hacky, to say the least *)
@@ -480,7 +477,7 @@ module Make_v1(S:S) (* : T with module S = S*) = struct
                     | None -> return ()
                     | Some blk_id -> 
                       dev.read ~blk_id >>= fun blk ->
-                      truncate_blk ~blk ~blk_off |> fun blk ->
+                      clear_blk ~blk ~blk_off |> fun blk ->
                       (* FIXME we need a rewrite here *)
                       dev.write ~blk_id ~blk)
                 | false -> return ()
@@ -700,8 +697,7 @@ let file_examples =
       type t = Shared_ctxt.t
       let monad_ops = Shared_ctxt.monad_ops
 
-      let buf_ops : _ Buffers_from_btree.buf_ops = 
-        Buffers_from_btree.Unsafe__ba_buf.buf_ops
+      let buf_ops = Buf_ops.buf_ops#ba
 
       let usedlist_factory = Usedlist_impl.usedlist_example
 
@@ -931,7 +927,8 @@ module Test() = struct
 
     let { pread; pwrite; _ } = file_ops
 
-    let buf_ops = Buffers_from_btree.Unsafe__ba_buf.buf_ops
+    (* let buf_ops = Buffers_from_btree.Unsafe__ba_buf.buf_ops *)
+    let buf_ops = Buf_ops.buf_ops#ba
 
     let run () = 
       Printf.printf "%s: tests starting...\n" __MODULE__;

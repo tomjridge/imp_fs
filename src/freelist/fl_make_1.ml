@@ -61,7 +61,7 @@ module Make_v1(S:S) = struct
 
   let { ev_create; ev_wait; ev_signal } = event_ops 
 
-  let {add; _ } = plist_ops 
+  let Plist_ops.{add; _ } = plist_ops 
 
   (* redefine add to use alloc if available *)
   let version = match version with

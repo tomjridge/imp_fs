@@ -192,7 +192,7 @@ module Make_v1(S:S) = struct
   
   let write_origin ~blk_dev_ops ~blk_id ~origin =
     origin |> Dir_origin_mshlr.marshal |> fun buf -> 
-    assert( (buf_ops.len buf) = (blk_dev_ops.blk_sz|>Blk_sz.to_int)); 
+    assert( (buf_ops.buf_length buf) = (blk_dev_ops.blk_sz|>Blk_sz.to_int)); 
     blk_dev_ops.write ~blk_id ~blk:buf
 
   module With(S2:sig

@@ -279,7 +279,7 @@ module Make(S0:S0) = struct
       (* FIXME do we really assert this?
       assert(Bigstring.size buf' = len); *)
       (* FIXME unnecessary blit between buffers *)
-      Bigstring.blit buf' 0 buf boff (ba_buf_ops.len buf');
+      Bigstring.blit buf' 0 buf boff (ba_buf_ops.buf_length buf');
       return (Ok len)
 
     let pwrite ~fd ~foff ~len ~buf ~boff =
