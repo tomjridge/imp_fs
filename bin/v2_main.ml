@@ -93,14 +93,12 @@ module Run() = struct
       (non-Lwt) thread *)
   let () =
     Printf.printf "%s: running FUSE main loop\n%!" __FILE__;
-(* don't run for the time being
     let fuse_ops = 
       Fuse_.mk_fuse_ops 
         ~monad_ops ~ops 
         ~co_eta:Tjr_minifs.Lwt_util.co_eta 
     in
-    Fuse.main Sys.argv fuse_ops
-*)
+    Fuse.main Sys.argv fuse_ops;
     ()
 
 end (* Run *)

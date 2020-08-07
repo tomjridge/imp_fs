@@ -8,7 +8,11 @@ NOTE this is responsible for handling its own synchronization
 FIXME this should use allocation via a usedlist
 
 *)
+
 open V2_intf
+open Imp_util
+
+let dont_log = false
 
 module Usedlist = Usedlist_impl.Usedlist
 
@@ -91,6 +95,7 @@ module Make(S:sig
     type blk = ba_buf
     type t = lwt
     type dir_entry
+    val dir_entry_deriving_sexp : dir_entry deriving_sexp
 
     type nonrec gom_ops = (dir_entry,blk_id,blk_id,t)gom_ops
 
@@ -110,6 +115,12 @@ module Make(S:sig
   open S
 
   open Tjr_monad.With_lwt
+
+  
+  let entry_to_string  = 
+    let module A = (val dir_entry_deriving_sexp) in
+    fun (de:dir_entry) ->
+      de |> A.sexp_of_t |> Sexplib.Sexp.to_string_hum
 
   let note_type_abbrev: gom_ops -> (dir_entry,r,r,t)Gom_ops.t -> unit = 
     fun x y -> 
@@ -194,7 +205,9 @@ module Make(S:sig
         write_origin ~blk_dev_ops ~blk_id ~origin
       in
       let gom_ops = Gom_ops.{
-          find=(fun k -> find ~k); 
+          find=(fun k -> 
+              assert(dont_log || (Printf.printf "GOM find %s\n%!" (entry_to_string k); true));
+              find ~k); 
           insert=(fun k v -> insert ~k ~v); 
           delete=(fun k -> delete ~k); 
           get_root=btree#get_btree_root;
@@ -275,7 +288,8 @@ end
   
 module Dir_entry = struct
   open Bin_prot.Std
-  type t = (int,int,int) dir_entry'[@@deriving bin_io]
+  open Sexplib.Std
+  type t = (int,int,int) dir_entry'[@@deriving bin_io, sexp]
   let max_sz = 9
 end
 
@@ -290,6 +304,7 @@ module Pvt = struct
     type blk = ba_buf
     type nonrec t = t
     type dir_entry = Dir_entry.t
+    let dir_entry_deriving_sexp : Dir_entry.t deriving_sexp = (module Dir_entry)
 
     type nonrec gom_ops = (dir_entry,blk_id,blk_id,t)gom_ops
 

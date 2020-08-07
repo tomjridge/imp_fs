@@ -154,6 +154,7 @@ module type S = sig
     blk_alloc       : (r, t) blk_allocator_ops -> 
     init_btree_root : r -> 
     <
+      with_state      : (r,t)with_state;
       get_btree_root  : unit -> (r,t) m;
       map_ops_with_ls : (str_256,dir_entry,r,ls,t) Tjr_btree.Btree_intf.map_ops_with_ls
     >
@@ -443,14 +444,15 @@ end
 
 module Dir_entry = struct
   open Bin_prot.Std
-  type fid = int[@@deriving bin_io]
-  type did = int[@@deriving bin_io]
-  type sid = int[@@deriving bin_io] 
+  open Sexplib.Std
+  type fid = int[@@deriving bin_io, sexp]
+  type did = int[@@deriving bin_io, sexp]
+  type sid = int[@@deriving bin_io, sexp] 
 
   type ('fid,'did,'sid) dir_entry' = 
-      Fid of 'fid | Did of 'did | Sid of 'sid[@@deriving bin_io]
-  type dir_entry = (fid,did,sid)dir_entry'[@@deriving bin_io]                  
-  type t = dir_entry[@@deriving bin_io]
+      Fid of 'fid | Did of 'did | Sid of 'sid[@@deriving bin_io, sexp]
+  type dir_entry = (fid,did,sid)dir_entry'[@@deriving bin_io,sexp]                  
+  type t = dir_entry[@@deriving bin_io,sexp]
 
   let dir_entry_to_int = function
     | Did did -> did

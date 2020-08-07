@@ -27,6 +27,9 @@ TODO:
 
 *)
 
+(* $(CONFIG("file_impl_v2 dont_log")) *)
+let dont_log = false
+
 
 (** {2 File types} *)
 
@@ -73,8 +76,8 @@ end
 module File_im = struct
 
   type t = {
-    file_size: int;
-    times : stat_times
+    file_size : int;
+    times     : stat_times
   }
   (** The usedlist and blk-idx map are fixed for the lifetime of the
      file, so should be parameters on creation. Other than that, we
@@ -255,6 +258,7 @@ module type S = sig
     blk_alloc       : (r, t) blk_allocator_ops -> 
     init_btree_root : r -> 
     <
+      with_state      : (r,t)with_state;
       get_btree_root  : unit -> (r,t) m;
       map_ops_with_ls : (int,r,r,_ls,t) Tjr_btree.Btree_intf.map_ops_with_ls
     >
@@ -379,8 +383,43 @@ module Make_v1(S:S) (* : T with module S = S*) = struct
         find         =(fun k -> find ~k);
         insert       =(fun k v -> insert ~k ~v);
         delete       =(fun k -> delete ~k);
-        delete_after =(fun _k -> failwith "FIXME delete_after"); 
-        (* $(FIXME("bt delete_after")) *)
+        delete_after =(fun k -> 
+            Printf.printf "%s: attempt to call delete_after with k=%d\n%!" __FILE__ k;
+            (* $(FIXME("""blk_idx_map: delete_after, case k=0 or k>0,
+               should probably do something more intelligent (need to
+               add delete_after to Isabelle B-tree code?)""")) *)
+            (* if k=0, then we can just drop the entire blk_idx and
+               start from a new one; otherwise, is there anything
+               better than just listing the keys >= k and deleting
+               them? probably not without looking more carefully at
+               B-tree code; if k is small we can copy to a new B-tree of course *)
+            match k=0 with
+            | true -> 
+              freelist_ops.alloc () >>= fun r -> 
+              S.write_empty_leaf ~blk_dev_ops ~blk_id:r >>= fun () ->
+              uncached#with_state.with_state (fun ~state:_ ~set_state ->
+                  set_state r)
+            | false -> (
+                (* we need to get the entire list of idxs, filter,and
+                   delete them one by one :( *)
+                let ls_ops = ops.leaf_stream_ops in
+                let Isa_btree.Isa_btree_intf.{make_leaf_stream;ls_step;ls_kvs} = ls_ops in
+                uncached#with_state.with_state (fun ~state:r ~set_state:_ -> 
+                    make_leaf_stream r >>= fun ls ->
+                    ([],ls) |> iter_k (fun ~k:kont1 (idxs,ls) -> 
+                        let new_ : (int*_) list = ls_kvs ls in
+                        let new_ = List.map fst new_ in
+                        let new_ = List.filter (fun idx -> idx > k) new_ in
+                        ls_step ls >>= function
+                        | None -> return (List.concat (new_::idxs))
+                        | Some ls -> kont1 (new_::idxs,ls)))
+                >>= fun idxs ->
+                (* now delete; FIXME check that the file lock is taken at this pt *)
+                idxs |> iter_k (fun ~k idxs -> 
+                    match idxs with
+                    | [] -> return ()
+                    | idx::idxs -> delete ~k:idx >>= fun () -> k idxs)
+              ));
         flush        =(fun () -> return ()); 
         (* NOTE we are using uncached B-tree currently, so nothing to
            flush *)
@@ -407,7 +446,6 @@ module Make_v1(S:S) (* : T with module S = S*) = struct
       let empty_blk () = buf_ops.of_string (String.make blk_sz (Char.chr 0))
       (* assumes functional blk impl ?; FIXME blk_ops pads string automatically? *)
 
-      let bind = blk_idx_map
       let dev = blk_dev_ops
 
       let alloc = alloc_via_usedlist
@@ -448,16 +486,20 @@ module Make_v1(S:S) (* : T with module S = S*) = struct
 
       let clear_blk ~blk ~(blk_off:int) = 
         blk |> blk_ops.blk_to_buf |> fun blk -> 
-        buf_ops.blit ~src:zero_blk ~src_off:{off=blk_off} ~src_len:{len=blk_sz-blk_off} ~dst:blk ~dst_off:{off=blk_off}
+        buf_ops.blit 
+          ~src:zero_blk ~src_off:{off=blk_off} ~src_len:{len=blk_sz-blk_off} 
+          ~dst:blk ~dst_off:{off=blk_off}
         |> blk_ops.buf_to_blk 
   
       let truncate ~(size:int) : (unit,'t)m = 
+        assert(dont_log || (Printf.printf "truncate called with size %d\n%!" size; true));
         (* FIXME the following code is rather hacky, to say the least *)
         with_fim (fun ~state ~set_state -> 
             match size >= state.file_size with
             | true -> 
               (* no need to drop blocks *)              
-              set_state {file_size=size;times=new_times()} (* FIXME check time updates are correct *)
+              set_state {file_size=size;times=new_times()}
+            (* FIXME check time updates are correct *)                
             | false -> 
               (* FIXME check the maths of this - if size is 0 we may
                  want to have no entries in blk_index *)
@@ -468,12 +510,11 @@ module Make_v1(S:S) (* : T with module S = S*) = struct
               (* also need to zero out the bytes in the final block
                  beyond size.size *)
               let i,blk_off = size / blk_sz, size mod blk_sz in
-              bind.delete_after i >>= fun () ->
-              (
-                match blk_off > 0 with
+              blk_idx_map.delete_after i >>= fun () -> 
+              begin match blk_off > 0 with
                 | true -> (
                     (* read blk and zero out suffix, then rewrite *)
-                    bind.find i >>= function
+                    blk_idx_map.find i >>= function
                     | None -> return ()
                     | Some blk_id -> 
                       dev.read ~blk_id >>= fun blk ->
@@ -481,13 +522,13 @@ module Make_v1(S:S) (* : T with module S = S*) = struct
                       (* FIXME we need a rewrite here *)
                       dev.write ~blk_id ~blk)
                 | false -> return ()
-              ) >>= fun () -> 
+              end >>= fun () -> 
               set_state {file_size=size;times=new_times () })
 
       (* NOTE the following are setting up the Iter_block_blit module *)
       
       let read_blk (i:int) =
-        bind.find i >>= function
+        blk_idx_map.find i >>= function
         | None -> (
             alloc () >>= fun r -> 
             let blk : blk = empty_blk () in
@@ -496,7 +537,7 @@ module Make_v1(S:S) (* : T with module S = S*) = struct
                testing code? FIXME why assume this? *)
             dev.write ~blk_id:r ~blk >>= fun () ->
             (* NOTE need to add to index map *)
-            bind.insert i r >>= fun () ->
+            blk_idx_map.insert i r >>= fun () ->
             return (r,blk))
         | Some blk_id -> 
           dev.read ~blk_id >>= fun blk ->
@@ -507,7 +548,7 @@ module Make_v1(S:S) (* : T with module S = S*) = struct
       let alloc_and_write_blk i blk = 
         alloc () >>= fun blk_id -> 
         dev.write ~blk_id ~blk >>= fun () ->
-        bind.insert i blk_id 
+        blk_idx_map.insert i blk_id 
 
       (* NOTE at the moment, we do not CoW the blk_dev, so this always
          succeeds in rewriting the block *)
@@ -533,18 +574,27 @@ module Make_v1(S:S) (* : T with module S = S*) = struct
       
       let pwrite ~src ~src_off ~src_len ~dst_off =
         with_fim (fun ~state ~set_state ->
+            assert(dont_log || (Printf.printf "pwrite called\n%!"; true));
             let size = state.file_size in
             pwrite_check ~buf_ops ~src ~src_off ~src_len ~dst_off |> function
             | Error s -> return (Error `Error_other) (* FIXME really EINVAL *)
             | Ok () -> pwrite ~src ~src_off ~src_len ~dst_off >>= fun x -> 
+              assert(dont_log || (Printf.printf "pwrite wrote %d\n%!" x.size; true));
               (* now may need to adjust the size of the file *)
               begin
                 let size' = dst_off.off+src_len.len in
+                assert(dont_log || (Printf.printf "size' is %d\n%!" size'; true));
+                (* FIXME following could be cleaner *)
                 match size' > size with
-                | true -> set_state {file_size=size';times=new_times()}
-                | false -> return ()
-              end >>= fun () ->
-              return (Ok x.size) )
+                | true -> 
+                  assert(dont_log || (
+                      Printf.printf "updating file size from %d to is %d\n%!" size size'; true));
+                  set_state {file_size=size';times=new_times()} >>= fun () ->
+                  return (Ok size')
+                | false -> 
+                  set_state {file_size=size;times=new_times()} >>= fun () ->
+                  return (Ok size)
+              end)
 
           
       let get_times () =
@@ -710,6 +760,7 @@ let file_examples =
         blk_alloc       : (r, t) blk_allocator_ops -> 
         init_btree_root : r -> 
         <
+          with_state      : (r,t) with_state;
           get_btree_root  : unit -> (r,t) m;
           map_ops_with_ls : (int,r,r,_ls,t) Tjr_btree.Btree_intf.map_ops_with_ls
         >

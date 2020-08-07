@@ -281,10 +281,18 @@ module Stage_1(S1:sig
 
     let _ = Printf.printf "%s: Stage_2 files\n%!" __FILE__
 
+
     let files : files_ops = 
+      (* FIXME remove this cache, and replace with an lru *)
+      let file_cache = Hashtbl.create 100 in
       let find fid = 
-        gom_find (Fid fid) >>= fun blk_id -> 
-        file_impl'#file_from_origin blk_id
+        match Hashtbl.find_opt file_cache fid with
+        | Some x -> return x
+        | None -> 
+          gom_find (Fid fid) >>= fun blk_id -> 
+          file_impl'#file_from_origin blk_id >>= fun ops ->
+          Hashtbl.replace file_cache fid ops;
+          return ops
       in
       let create_file ~parent ~name ~times = 
         new_fid () >>= fun fid ->
