@@ -2,6 +2,67 @@
    path resolution, times and a few other things; assumes create_dir
    and create_file. *)
 
+
+(** $(INDEX("time,times,timestamps"))
+
+Short note on times:
+
+POSIX has an informal spec. SibylFS has a formal spec of timestamps,
+but here I want a very short description of atime, mtime and ctime,
+suitable for a rough implementation of times.
+
+Sources:
+
+- https://www.howtogeek.com/517098/linux-file-timestamps-explained-atime-mtime-and-ctime/
+- https://www.unixtutorial.org/atime-ctime-mtime-in-unix-filesystems/
+
+atime: last access time (read? or read/write? what is the meaning of
+"access"? probably "read of file data") for file or directory; often
+disabled (since updating causes a disk write)
+
+ctime: last (metadata) change (ownership, access perms, ...); also
+updated if contents change; probably doesn't affect us since we don't
+currently have ownership or access perms
+
+mtime: last change to file contents; does not change when eg
+ownership/perms change
+
+Since "file size" is typically counted as metadata (!), it is clear
+that parts of metadata are considered differently from others (ctime
+identifies some subset of file metadata... ctime doesn't change when
+file size changes I expect).
+
+Personally, I would consider file data (and the related file size) as
+independent of anything else about the file (ownership, permissions,
+timestamp). Then it makes sense to talk about when the file data (not
+the metadata!) was last read, and when it was last written. So, for
+us, let's define atime as "last read time", ignore ctime (identify
+with mtime), and mtime as the time the data was last modified
+(including truncate of course).
+
+Since atime is usually ignored/disabled anyway, we end up with just
+mtime. For files, this likely changes on pwrite and truncate
+(set_times confusingly doesn't itself automatically update mtime,
+since the purpose of set_times is precisely to allow updating the
+mtime to some specific value).
+
+For directories, we should update mtime on insert and delete. The
+slight issue is that we may want a cross-directory rename to appear to
+happen at a single time. For a cross directory rename, we should call
+"set_times" on both the source and destination directory, with the
+same timestamp, AFTER the rename has inserted and deleted.
+
+Should files/directories be responsible for updating their own
+timestamps? As above, this makes sense, except in cases like rename
+where we may want the src and target dirs to have identical
+mtimes. (And even in this case, does anyone program applications to
+work only if this behaviour is implemented by the filesystem?). So we
+DON'T explicitly update times in this generic code (unless eg for
+rename case)
+
+*)
+
+
 type exn_ = Tjr_minifs.Minifs_intf.exn_
 
 type stat_times = Minifs_intf.times
@@ -44,18 +105,6 @@ module S1(S0:S0) = struct
   (* NOTE since dh is supposed to not change whilst we traverse the
      directory, we can't just identify dh with ls *)
 
-(*
-  type dir_ops = {
-    find      : str_256 -> (dir_entry option,t)m;
-    insert    : str_256 -> dir_entry -> (unit,t)m;
-    delete    : str_256 -> (unit,t)m;
-    ls_create : unit -> (dh,t)m;
-    set_parent: did -> (unit,t)m;
-    get_parent: unit -> (did,t)m;
-    set_times : stat_times -> (unit,t)m;
-    get_times : unit -> (stat_times,t)m;
-  }
-*)
   (* In the generic development, this is the only place where blk_id
      appears; arguably it is part of the internal interface; however,
      I am reluctant to remove the get_origin field from the dir_ops
@@ -225,8 +274,10 @@ module Make(S0:S0) = struct
         let name = Str_256.make name in
         dir_ops.delete name >>= fun () ->
         ok ()
+    (* NOTE dir_ops.delete automatically updates times *)
+    
 
-    (* FIXME meta changes for parent and child *)
+    (* FIXME meta changes for parent and child should occur via create_dir? *)
     let mkdir path : ((unit,'e5)result,'t) m = 
       resolve_path ~follow_last_symlink:`If_trailing_slash path >>=| fun rpath ->
       let { parent_id=parent; comp=name; result; trailing_slash=_ } = rpath in
@@ -236,10 +287,13 @@ module Make(S0:S0) = struct
         (* perhaps adjust resolve so that it returns a str_256 name? no *)
         let name = Str_256.make name in
         create_dir ~parent ~name ~times >>= fun () ->
+        (* FIXME should create_dir alter the parent timestamp? or
+           should be explicitly alter it here? probably we should at
+           least allow a flag arg for create_dir to update_parent_times *)
         ok ()
       | _ -> err `Error_exists
 
-    (* FIXME update atim *)
+    (* FIXME update atim? or just ignore atim? *)
     let opendir path = 
       resolve_dir_path path >>=| fun did ->
       dirs.find did >>= fun dir ->
@@ -252,7 +306,7 @@ module Make(S0:S0) = struct
       (* FIXME move finished to fs_shared *)
       let kvs = List.map (fun ( (k:str_256),_v) -> (k :> string) ) kvs in 
       dh#ls_step () >>= fun {finished} ->
-      ok (kvs,Tjr_minifs.Minifs_intf.{finished}) (* FIXME move to fs_shared *)
+      ok (kvs,Tjr_minifs.Minifs_intf.{finished}) (* FIXME move to fs_shared? *)
 
     let closedir _ = ok ()
     (* FIXME should we record which dh are valid? ie not closed *)
@@ -263,6 +317,8 @@ module Make(S0:S0) = struct
       match result with 
       | Missing ->
         mk_stat_times () >>= fun times -> 
+        (* FIXME create_file should perhaps alter the timestamp for
+           the parent *)
         create_file ~parent ~name:(Str_256.make name) ~times >>= fun () ->
         ok ()
       | _ -> err `Error_exists
@@ -282,6 +338,7 @@ module Make(S0:S0) = struct
       Bigstring.blit buf' 0 buf boff (ba_buf_ops.buf_length buf');
       return (Ok len)
 
+    (* NOTE file.pwrite should automatically update the timestamps *)
     let pwrite ~fd ~foff ~len ~buf ~boff =
       files.find fd >>= fun file ->
       (* file.pwrite ~foff ~len ~buf ~boff *)
@@ -291,6 +348,8 @@ module Make(S0:S0) = struct
 
     (* FIXME ddir and sdir may be the same, so we need to be careful to
        always use indirection via did *)
+    (* NOTE times are handled explicitly, to ensure that the src and
+       dst directories appear to be modified at the same time *)
     let rename spath dpath = begin
       let follow_last_symlink = `Always in
       resolve_path ~follow_last_symlink spath >>=| fun spath ->
@@ -367,12 +426,13 @@ module Make(S0:S0) = struct
 
 
     (* FIXME truncate parent name; FIXME also stat *)
+    (* NOTE file.truncate automatically updates times *)
     let truncate path length = 
       resolve_file_path path >>=| fun fid ->
       files.find fid >>= fun file ->
       file.truncate ~size:length >>= fun () ->
-      mk_stat_times () >>= fun times -> 
-      file.set_times times >>= fun () ->
+(*      mk_stat_times () >>= fun times -> 
+      file.set_times times >>= fun () -> *)
       ok ()
 
 

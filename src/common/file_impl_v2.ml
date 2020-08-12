@@ -41,7 +41,27 @@ module Times = Minifs_intf.Times
 type stat_times = Times.times[@@deriving bin_io]
 
 (* NOTE now() is currently not modelled monadically *)
+(* NOTE times, accuracy, precision and granularity
+   https://stackoverflow.com/questions/16740014/computing-time-on-linux-granularity-and-precision/16740505#16740505
+   *)
+(* $(FIXME("""We are worried about two different calls to now()
+   returning the same time, since we use "last modified time" and
+   "last synced time" to determine if a file needs syncing. So we
+   implement a hack to detect the bad case and throw an error; if this
+   situation is actually possible, then we need to implement an
+   alternative eg a timestamp is a pair of a float and a
+   mono-strict-increase counter.""")) *)
 let now () = Unix.gettimeofday ()
+let now = 
+  let last : float ref = ref 0.0 in
+  fun () ->
+    let result = now () in
+    match result <> !last with
+    | true -> begin last:=result; result end
+    | false -> 
+      failwith (Printf.sprintf "%s: now attempted to return twice with \
+                                the same value\n%!" __FILE__)
+
 let update_atim = Times.update_atim (now())
 let update_mtim = Times.update_mtim (now())
 let new_times () = now() |> fun tim -> Times.{atim=tim;mtim=tim}
@@ -76,13 +96,16 @@ end
 module File_im = struct
 
   type t = {
-    file_size : int;
-    times     : stat_times
+    file_size   : int;
+    times       : stat_times;
+    last_synced : float;
   }
   (** The usedlist and blk-idx map are fixed for the lifetime of the
      file, so should be parameters on creation. Other than that, we
      just have a field for file size and a field for the location of
-     the origin blk. *)
+     the origin blk. The [last_synced] field is used in conjunction
+     with the last modified field to determine if the file needs
+     syncing. *)
 
 end
 
@@ -114,6 +137,10 @@ NOTE origin/flush/sync behaviour: flush forces changes (including
    sync; otherwise, changes that affect the origin should be
    accompanied by a barrier -> origin-write -> barrier posthook FIXME
    are they?
+
+NOTE file times should be automatically updated by file_ops where
+   possible (and this is possible in all cases?), rather than in
+   v2_generic.ml
 
 *)
 type ('blk_id,'buf,'t) file_ops = {
@@ -451,7 +478,11 @@ module Make_v1(S:S) (* : T with module S = S*) = struct
       let alloc = alloc_via_usedlist
 
       module Pvt = struct
-        let fim = File_im.{ file_size=init_file_size; times=init_times }
+        let fim = File_im.{ 
+            file_size=init_file_size; 
+            times=init_times; 
+            last_synced=init_times.mtim 
+          }
         let fim_ref = ref fim
         let with_fim = with_imperative_ref ~monad_ops fim_ref
         let with_fim = with_fim.with_state
@@ -498,7 +529,9 @@ module Make_v1(S:S) (* : T with module S = S*) = struct
             match size >= state.file_size with
             | true -> 
               (* no need to drop blocks *)              
-              set_state {file_size=size;times=new_times()}
+              (* $(FIXME("""we need to distinguish mtim and atim, not
+                 just update them together each time""")) *)
+              set_state {state with file_size=size;times=new_times()}
             (* FIXME check time updates are correct *)                
             | false -> 
               (* FIXME check the maths of this - if size is 0 we may
@@ -523,7 +556,7 @@ module Make_v1(S:S) (* : T with module S = S*) = struct
                       dev.write ~blk_id ~blk)
                 | false -> return ()
               end >>= fun () -> 
-              set_state {file_size=size;times=new_times () })
+              set_state {state with file_size=size;times=new_times () })
 
       (* NOTE the following are setting up the Iter_block_blit module *)
       
@@ -589,10 +622,10 @@ module Make_v1(S:S) (* : T with module S = S*) = struct
                 | true -> 
                   assert(dont_log || (
                       Printf.printf "updating file size from %d to is %d\n%!" size size'; true));
-                  set_state {file_size=size';times=new_times()} >>= fun () ->
+                  set_state {state with file_size=size';times=new_times()} >>= fun () ->
                   return (Ok size')
                 | false -> 
-                  set_state {file_size=size;times=new_times()} >>= fun () ->
+                  set_state {state with file_size=size;times=new_times()} >>= fun () ->
                   return (Ok size)
               end)
 
@@ -633,7 +666,10 @@ module Make_v1(S:S) (* : T with module S = S*) = struct
         write_origin ~blk_dev_ops ~blk_id:file_origin ~origin >>= fun () ->
         S2.barrier()
         
-      let sync () = 
+      (* $(FIXME("do we need to worry about atomicity here?")) *)
+      let sync () =         
+        with_fim (fun ~state ~set_state -> 
+            set_state {state with last_synced=now ()}) >>= fun () ->
         flush () >>= fun () ->
         S2.sync()
 
