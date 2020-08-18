@@ -59,9 +59,10 @@ let now =
     match result <> !last with
     | true -> begin last:=result; result end
     | false -> 
-      failwith (Printf.sprintf "%s: now attempted to return twice with \
-                                the same value\n%!" __FILE__)
-
+      Printf.printf "%s: now attempted to return twice with the same value\n%!" __FILE__;
+      (* $(FIXME("""we return anyway, but this is likely an error case""")) *)
+      result
+        
 let update_atim = Times.update_atim (now())
 let update_mtim = Times.update_mtim (now())
 let new_times () = now() |> fun tim -> Times.{atim=tim;mtim=tim}

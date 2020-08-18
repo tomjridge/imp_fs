@@ -17,7 +17,11 @@ type ('k,'v,'c,'t) factory = <
     <
       find_opt: 'k -> ('v option,'t)m;
       (** Look up in cache, then in lower map; possibly adjust cache
-         and return *)
+          and return *)
+
+      to_list : unit -> (('k*'v)list,'t)m;
+      (** Used to periodically scan entries and eg sync them if they
+         are file objects and they haven't been synced for a while *)
     >
 >
 (** NOTE lower_acquire is used to look up k in the lower map;
@@ -32,7 +36,15 @@ module type S = sig
   val monad_ops: t monad_ops
 end
 
-module Make(S:S) = struct
+module type T = sig
+  module S:S
+  open S
+  type c
+  val factory : (k,v,c,t) factory
+end
+
+(** With full sig *)
+module Make_v1(S:S) = struct
   module S=S
   open S
 
@@ -90,8 +102,13 @@ module Make(S:S) = struct
             s |> L.promote k |> fun s -> set_state s >>= fun () -> 
             return (Some v))
 
+    let to_list () = 
+      with_locked_state.with_state (fun ~state:s ~set_state:_ -> 
+          L.to_list s |> return)
+
     let obj = object
       method find_opt=find_opt
+      method to_list=to_list
     end            
   end (* With_ *)
 
@@ -105,13 +122,19 @@ module Make(S:S) = struct
     let module B = With_(A) in
     B.obj
 
-  let obj : _ factory = object
+  let factory : _ factory = object
     method empty=empty
     method with_=with_
   end
 
 end
 
+(** Version with restricted sig *)
+module Make_v2(S:S) : T with module S=S = struct
+  include Make_v1(S)
+end
+
+module Make = Make_v2
 
 module Examples = struct
   
@@ -124,11 +147,11 @@ module Examples = struct
       let monad_ops = lwt_monad_ops
     end
     module Make' = Make(S)
-    let obj = Make'.obj
+    let factory = Make'.factory
   end
 
 end
 
 let examples = object
-  method for_int_int=Examples.Int_int.obj
+  method for_int_int=Examples.Int_int.factory
 end

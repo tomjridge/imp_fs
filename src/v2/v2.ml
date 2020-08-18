@@ -239,12 +239,88 @@ module Stage_1(S1:sig
 
     let _ = Printf.printf "%s: Stage_2 dirs\n%!" __FILE__
 
+    (** Cache of live directories; see also {!Live_f} *)
+    module Live_d : sig
+(*
+      val start_thread : unit -> (unit, t)m
+      (** Start a thread that periodically attempts to sync dirty dirs *)
+*)
+      val find         : did -> (dir_ops,t)m
+    end = struct
+      module A = struct
+        type k = did
+        let cmp_k = Int_.compare
+        type v = dir_ops
+        type nonrec t = t
+        let monad_ops = monad_ops
+      end
+      module L = Live_object_cache.Make(A)
+      
+      (** $(CONFIG("params: capacity of the live_f cache")) *)
+      let capacity = 20
+        
+      let empty = L.factory#empty ~capacity
+
+      (** Resurrect file_ops from disk *)
+      let lower_acquire did = 
+        gom_find (Did did) >>= fun blk_id -> 
+        dir_impl'#dir_from_origin blk_id >>= fun ops ->
+        return (Some ops)
+        
+      (** When we evict from cache, we take care to call sync (this is
+         blocking... possible performance issue... see
+         {!Live_object_cache}. *)
+      let lower_release (_fid, (dir_ops:dir_ops)) = 
+        dir_ops.sync ()        
+
+      let ref_ = ref empty
+
+      let with_locked_state = Tjr_monad.With_lwt.with_locked_ref ref_
+
+      let live_d = L.factory#with_ ~lower_acquire ~lower_release ~with_locked_state
+
+      let _ : 
+        < find_opt : fd -> (dir_ops option, S0.t) Tjr_monad.m;
+          to_list : unit -> ((did * dir_ops) list, S0.t) Tjr_monad.m > 
+        = live_d
+
+      let find : did -> (dir_ops,t)m = fun did -> 
+        live_d#find_opt did >>= function
+        | None -> 
+          (* $(FIXME("""make sure this case actually is impossible""")) *)
+          failwith "impossible: attempted to find did, but did was not found"
+        | Some d_ops -> return d_ops
+
+      (** A file in the cache may be dirty; we want the file to be
+         flushed periodically; so we set up a thread that just scans
+         the cache periodically and issues a sync on those files that
+         need it *)
+      let rec live_d_thread () = 
+        (* Sleep for a bit *)
+        With_lwt.(from_lwt (sleep 1.0)) >>= fun () -> 
+        (* $(FIXME("""need to add sleep and yield to the monad_ops; also
+           With_lwt should have sleep and yield using our monad, not
+           lwt's""")) *)
+
+        (* At this point, we might want to sync/flush dirty
+           directories; however, currently, there is nothing to flush
+           because directories are implemented using a raw
+           B-tree... and each dir origin should be updated
+           automatically *)
+
+        (* And repeat *)
+        live_d_thread ()
+        
+      let start_thread () = 
+        async live_d_thread
+
+      let _ = start_thread
+    end 
+
+    
+
     let dirs : dirs_ops = 
-      let find = (fun did -> 
-          gom_find (Did did) >>= fun blk_id ->
-          dir_impl'#dir_from_origin blk_id
-        )
-      in
+      let find = Live_d.find in
       {
         find;
         delete = (fun did -> gom_delete (Did did));
@@ -281,9 +357,96 @@ module Stage_1(S1:sig
 
     let _ = Printf.printf "%s: Stage_2 files\n%!" __FILE__
 
+       
+    (** A cache of live files; see also {!Live_d} *)
+    module Live_f : sig
+      val start_thread : unit -> (unit, t)m
+      (** Start a thread that periodically attempts to sync dirty files *)
 
+      val find         : fid -> (file_ops,t)m
+    end = struct
+      module A = struct
+        type k = fid
+        let cmp_k = Int_.compare
+        type v = file_ops
+        type nonrec t = t
+        let monad_ops = monad_ops
+      end
+      module L = Live_object_cache.Make(A)
+      
+      (** $(CONFIG("params: capacity of the live_f cache")) *)
+      let capacity = 20
+        
+      let empty = L.factory#empty ~capacity
+
+      (** Resurrect file_ops from disk *)
+      let lower_acquire fid = 
+        gom_find (Fid fid) >>= fun blk_id -> 
+        file_impl'#file_from_origin blk_id >>= fun ops ->
+        return (Some ops)
+        
+      (** When we evict from cache, we take care to call sync (this is
+         blocking... possible performance issue... see
+         {!Live_object_cache}. *)
+      let lower_release (_fid, (file_ops:file_ops)) = 
+        file_ops.sync ()        
+
+      let ref_ = ref empty
+
+      let with_locked_state = Tjr_monad.With_lwt.with_locked_ref ref_
+
+      let live_f = L.factory#with_ ~lower_acquire ~lower_release ~with_locked_state
+
+      let _ : 
+        < find_opt : fd -> (file_ops option, S0.t) Tjr_monad.m;
+          to_list : unit -> ((fd * file_ops) list, S0.t) Tjr_monad.m > 
+        = live_f
+
+      let find : fid -> (file_ops,t)m = fun fid -> 
+        live_f#find_opt fid >>= function
+        | None -> 
+          (* $(FIXME("""make sure this case actually is impossible""")) *)
+          failwith "impossible: attempted to find fid, but fid was not found"
+        | Some f_ops -> return f_ops
+
+      (** A file in the cache may be dirty; we want the file to be
+         flushed periodically; so we set up a thread that just scans
+         the cache periodically and issues a sync on those files that
+         need it *)
+      let rec live_f_thread () = 
+        (* Sleep for a bit *)
+        With_lwt.(from_lwt (sleep 1.0)) >>= fun () -> 
+        (* $(FIXME("""need to add sleep and yield to the monad_ops; also
+           With_lwt should have sleep and yield using our monad, not
+           lwt's""")) *)
+
+        (* Get the files in the cache *)
+        live_f#to_list () >>= fun xs -> 
+        xs |> iter_k (fun ~k xs -> 
+            match xs with
+            | [] -> return ()
+            | (fid,(f_ops:file_ops))::xs -> 
+              (* $(FIXME("""we should be cleverer here... only sync if
+                 the last synced time is more than a second or so
+                 older than the last modified time""")) *)
+              Printf.printf "%s: live_f thread syncing file %d\n%!" __FILE__ fid;
+              f_ops.sync () >>= fun () -> 
+              k xs) >>= fun () -> 
+
+        (* And repeat *)
+        live_f_thread ()
+        
+      let start_thread () = 
+        async live_f_thread
+
+      let _ = start_thread
+    end 
+
+    (* FIXME should this be here? what is the alternative? *)
+    let _ = Live_f.start_thread ()
+        
     let files : files_ops = 
-      (* FIXME remove this cache, and replace with an lru *)
+(*
       let file_cache = Hashtbl.create 100 in
       let find fid = 
         match Hashtbl.find_opt file_cache fid with
@@ -294,6 +457,8 @@ module Stage_1(S1:sig
           Hashtbl.replace file_cache fid ops;
           return ops
       in
+*)
+      let find fid = Live_f.find fid in
       let create_file ~parent ~name ~times = 
         new_fid () >>= fun fid ->
         file_impl'#create_file times >>= fun blk_id ->
