@@ -624,10 +624,10 @@ module Make_v1(S:S) (* : T with module S = S*) = struct
                   assert(dont_log || (
                       Printf.printf "updating file size from %d to is %d\n%!" size size'; true));
                   set_state {state with file_size=size';times=new_times()} >>= fun () ->
-                  return (Ok size')
+                  return (Ok src_len.len)
                 | false -> 
                   set_state {state with file_size=size;times=new_times()} >>= fun () ->
-                  return (Ok size)
+                  return (Ok src_len.len)
               end)
 
           
