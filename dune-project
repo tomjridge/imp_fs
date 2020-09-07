@@ -6,7 +6,7 @@
 (maintainers          "Tom Ridge <tom.j.ridge@googlemail.com>")
 (source               (github tomjridge/imp_fs))
 (homepage             https://github.com/tomjridge/imp_fs)
-(documentation        https://tomjridge.github.io/imp_fs)
+(documentation        https://tomjridge.github.io/ocamldocs)
 (generate_opam_files  true)
 
 

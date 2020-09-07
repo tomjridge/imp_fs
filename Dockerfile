@@ -11,6 +11,7 @@ RUN sudo apt-get install -y unzip m4
 RUN sudo apt-get install -y time
 RUN sudo apt-get install -y rsync bubblewrap
 
+RUN echo FIXME
 RUN opam update
 
 # install some common packages, so they are cached in future docker builds

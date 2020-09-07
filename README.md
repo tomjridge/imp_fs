@@ -7,13 +7,22 @@ ImpFS is a novel filesystem with some interesting features.
 
 <img src="https://docs.google.com/drawings/d/e/2PACX-1vSqzipIxfOtcWhtSEqcBUpEKPVp1ALtHYyVVBldz7WNP3idcaQTY0iHoLBMf9n4vNMUjDvoIi_gr2gE/pub?w=1034&amp;h=520">
 
+## Quick links
 
-## src-mini
+* OCamldocs at <https://tomjridge.github.io/ocamldocs/>
+* Webpage, with demo and OCaml'20 talk: <http://www.tom-ridge.com/filesystems.html>
 
-This contains a prototype filesystem to test the design etc.
 
 
-## src-v1
+## Build
+
+To build with docker, just run `docker build .`
+
+To build from command line, consult the Dockerfile (you need to install all the pre-reqs first).
+
+
+
+## src/v1
 
 This version implements directories, and file metadata (not file
 data); file data is passed through to some underlying
@@ -30,3 +39,10 @@ least, a partial filesystem).
 
 To run, type `make run_v1`. See the MiniFS documentation for more
 details on the FUSE flags.
+
+
+
+## src/v2
+
+This is the current version of ImpFS.
+
