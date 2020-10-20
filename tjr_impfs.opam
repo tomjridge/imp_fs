@@ -4,7 +4,7 @@ synopsis: "ImpFS, a new filesystem"
 maintainer: ["Tom Ridge <tom.j.ridge@googlemail.com>"]
 authors: ["Tom Ridge <tom.j.ridge@googlemail.com>"]
 homepage: "https://github.com/tomjridge/imp_fs"
-doc: "https://tomjridge.github.io/imp_fs"
+doc: "https://tomjridge.github.io/ocamldocs"
 bug-reports: "https://github.com/tomjridge/imp_fs/issues"
 depends: [
   "dune" {>= "2.0"}
