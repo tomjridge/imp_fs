@@ -191,7 +191,7 @@ module Make(S:sig
       usedlist_ops origin.usedlist_origin >>= fun usedlist_ops ->
       let blk_alloc = alloc_via_usedlist usedlist_ops in
       let btree = 
-        btree_factory#uncached ~blk_dev_ops ~blk_alloc ~init_btree_root:origin.gom_root in
+        btree_factory#uncached ~blk_dev_ops ~blk_alloc ~btree_root:(`A origin.gom_root) in
       let Tjr_btree.Btree_intf.Map_ops_with_ls.{ find; insert; delete; _ } = 
         btree#map_ops_with_ls in
       let get_origin () =

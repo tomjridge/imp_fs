@@ -284,7 +284,7 @@ module type S = sig
   val uncached : 
     blk_dev_ops     : (r, blk, t) blk_dev_ops -> 
     blk_alloc       : (r, t) blk_allocator_ops -> 
-    init_btree_root : r -> 
+    btree_root      : [ `A of r | `B of (r,t)with_state ] -> 
     <
       with_state      : (r,t)with_state;
       get_btree_root  : unit -> (r,t) m;
@@ -400,7 +400,7 @@ module Make_v1(S:S) (* : T with module S = S*) = struct
       let uncached = S.uncached
           ~blk_dev_ops
           ~blk_alloc
-          ~init_btree_root:btree_root
+          ~btree_root:(`A btree_root)
       in
       let ops (* map_ops_with_ls *) = uncached#map_ops_with_ls in
       let get_root = uncached#get_btree_root in
@@ -795,7 +795,7 @@ let file_examples =
       let uncached : 
         blk_dev_ops     : (r, blk, t) blk_dev_ops -> 
         blk_alloc       : (r, t) blk_allocator_ops -> 
-        init_btree_root : r -> 
+        btree_root      : [ `A of r | `B of (r,t)with_state ] -> 
         <
           with_state      : (r,t) with_state;
           get_btree_root  : unit -> (r,t) m;

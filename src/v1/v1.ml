@@ -1,5 +1,3 @@
-(* FIXME resurrect this
-
 (** V1 - implement directories and file metadata, with file data
    passed through to an underlying filesystem.
 
@@ -101,13 +99,13 @@ let blk_alloc : (_,_)blk_allocator_ops Lazy.t = lazy (
   | None -> failwith __LOC__
   | Some x -> x)
 
-
+(*
 let root_ops_ref = ref None
 let root_ops : (_,_)with_state Lazy.t = lazy (
   match !root_ops_ref with
   | None -> failwith __LOC__
   | Some x -> x)
-
+*)
 
 (** We use mutually exclusive subsets of int for identifiers; NOTE 0
    is reserved for the root directory *)
@@ -202,9 +200,9 @@ module With_gom() = struct
     gom_factory#uncached
       ~blk_dev_ops
       ~blk_alloc
-      ~init_btree_root:(!root_ops_ref |> dest_Some)
+      ~btree_root:(failwith "FIXME" (*!root_ops_ref |> dest_Some*))
 
-  let gom_find_opt = gom_btree.find
+  let gom_find_opt = gom_btree#map_ops_with_ls.find
 
   let gom_find k = gom_find_opt ~k >>= function
     | Some r -> return r
@@ -212,9 +210,9 @@ module With_gom() = struct
       Printf.printf "Error: gom key %d not found\n%!" (id_to_int k);
       failwith "gom: id did not map to an entry"
     
-  let gom_insert = gom_btree.insert
+  let gom_insert = gom_btree#map_ops_with_ls.insert
 
-  let gom_delete = gom_btree.delete
+  let gom_delete = gom_btree#map_ops_with_ls.delete
 
 
   (** In order to incorporate path resolution, we need to be able to
@@ -270,15 +268,15 @@ module With_gom() = struct
     end
     include S
 
-    module Dir_btree = Tjr_btree.Pvt.Make_5.Make(S)
+    module Dir_btree = Tjr_btree.Make_6.Make_v2(S)
 
     let dir_factory = 
       Dir_btree.btree_factory
-        ~blk_dev_ops
+(*        ~blk_dev_ops
         ~blk_allocator_ops:blk_alloc
-        ~blk_sz:Shared_ctxt.blk_sz
+        ~blk_sz:Shared_ctxt.blk_sz*)
 
-    let dir_map_ops ~root_ops = (dir_factory#make_uncached root_ops)#map_ops_with_ls
+    let dir_map_ops ~btree_root (*~root_ops *) = (dir_factory#uncached ~blk_dev_ops ~blk_alloc ~btree_root)#map_ops_with_ls
 
     let _ = gom_find
 
@@ -295,8 +293,8 @@ module With_gom() = struct
       let r = ref rb.map_root in
       (* FIXME this shares code with dirs below; here, we don't expect
          set_state to be called on root_ops *)
-      let root_ops = with_ref r in
-      let dir_map_ops = dir_map_ops ~root_ops in
+      let btree_root = with_ref r in
+      let dir_map_ops = dir_map_ops ~btree_root:(`B btree_root) in
       dir_map_ops.find ~k:comp >>= fun vopt ->
       match vopt with
       | None -> return RC_missing
@@ -325,7 +323,8 @@ module With_gom() = struct
       = resolve
 
     let write_empty_leaf ~blk_id =
-      blk_dev_ops.write ~blk_id ~blk:(dir_factory#empty_leaf_as_blk)
+      dir_factory#write_empty_leaf ~blk_dev_ops ~blk_id
+      (* blk_dev_ops.write ~blk_id ~blk:(dir_factory#empty_leaf_as_blk) *)
 
   end
   let resolve_path = Dir.resolve
@@ -346,7 +345,7 @@ module With_gom() = struct
           in
           {with_state}
         in
-        let dir_map_ops = Dir.dir_map_ops ~root_ops in
+        let dir_map_ops = Dir.dir_map_ops ~btree_root:(`B root_ops) in
         let set_parent did = 
           rb:={!rb with parent=did};
           write_rb()
@@ -400,7 +399,7 @@ module With_gom() = struct
 
     let pread ~fid ~foff ~len ~buf ~boff = 
       get_fd ~fid ~foff >>= fun fd ->
-      let bs = Bytes.create (buf_ops.len buf - boff) in
+      let bs = Bytes.create (buf_ops.buf_length buf - boff) in
       (from_lwt Lwt_unix.(read fd bs boff len)) >>= fun (n:int) ->
       Bigstring.blit_of_bytes bs 0 buf boff n;
       close fd >>= fun () ->
@@ -556,4 +555,3 @@ module With_gom() = struct
   module The_filesystem = Make_2(X)
 
 end
-*)
