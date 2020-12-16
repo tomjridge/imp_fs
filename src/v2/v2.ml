@@ -79,6 +79,9 @@ let dir_entry_mshlr : dir_entry bp_mshlr =
 
 [@@@warning "-32"]
 
+
+(** {2 Stage 1: we assume blk_dev and origin blkid known} *)
+
 module Stage_1(S1:sig
     val blk_dev_ops : (r,blk,t)blk_dev_ops
     val fs_origin   : r Fs_origin_block.t
@@ -161,7 +164,8 @@ module Stage_1(S1:sig
   let _ = Printf.printf "%s: Stage_1 post GOM\n%!" __FILE__
 
 
-  (** Stage_2: we assume freelist_ops, gom_ops and counter_ops are available *)
+  (** {2 Stage_2: we assume freelist_ops, gom_ops and counter_ops are available} *)
+
   module Stage_2(S2:sig 
       val fl_ops      : (r,r,t)Freelist_intf.freelist_ops 
       val gom_ops     : (dir_entry,blk_id,blk_id,t) Gom_ops.t
