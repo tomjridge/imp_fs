@@ -73,7 +73,8 @@ module Per_object_data = struct
 
   type lock = mutex
 
-  (* how do we want to record which parts of the state need to be synced? with bools, or by comparing? *)
+  (* how do we want to record which parts of the state need to be
+     synced? with bools, or by comparing? *)
 
   type 'a maybe_dirty = 'a * bool
 
@@ -102,7 +103,8 @@ module Per_object_data = struct
 
   type entry = unlocked_entry * lock
     
-  (* really we want to do this generically, with a "finalize" for trimming an old obj *)
+  (* really we want to do this generically, with a "finalize" for
+     trimming an old obj *)
 
   type t = {
     entries: entry Map_oid.t;
