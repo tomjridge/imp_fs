@@ -108,7 +108,8 @@ module S1(S0:S0) = struct
   (* In the generic development, this is the only place where blk_id
      appears; arguably it is part of the internal interface; however,
      I am reluctant to remove the get_origin field from the dir_ops
-     type *)
+     type FIXME just have another type which omits the get_origin
+     field, surely? *)
   type blk_id' = Shared_ctxt.r
   type dir_ops = (str_256,dir_entry,blk_id',t,did) Dir_impl.Dir_ops.t
 

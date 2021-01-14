@@ -131,6 +131,7 @@ module Example = struct
       let root_did = (* Dir_impl.Dir_entry.Did *) 0 in
       let dir_factory = Dir_impl.dir_example in
       let dir_factory' = 
+        (* FIXME this is a bit horrible *)
         let read_msg blk_id = Printf.printf "dir_factory: read from %d\n%!" (B.to_int blk_id) in
         let write_msg blk_id = Printf.printf "dir_factory: write to %d\n%!" (B.to_int blk_id) in
         let blk_dev_ops = add_logging_to_blk_dev ~read_msg ~write_msg ~blk_dev_ops in
@@ -152,14 +153,16 @@ module Example = struct
       (* Make sure everything is flushed *)
       gom_ops.sync () >>= fun _ -> 
       counter_ops.sync () >>= fun _ ->
-      (* Wait for the freelist to finish going to disk *)
+      (* Wait for the freelist to finish going to disk FIXME horrible *)
       With_lwt.(sleep 1.0 |> from_lwt) >>= fun () ->
       fl_ops.sync () >>= fun _ -> 
       
 
-      (* Origin *)
+      (* Origin FIXME this should make use of a simple "object in a
+         block" abstraction with flush and sync *)
       let origin : _ fs_origin = Fs_origin_block.{ fl_origin; gom_origin; counter_origin } in
       Printf.printf "%s: writing fs_origin\n%!" __FILE__;
+      (* FIXME prefer an example blk_dev with optional logging *)
       let read_msg blk_id = Printf.printf "fs_origin: read from %d\n%!" (B.to_int blk_id) in
       let write_msg blk_id = Printf.printf "fs_origin: write to %d\n%!" (B.to_int blk_id) in
       let blk_dev_ops = add_logging_to_blk_dev ~read_msg ~write_msg ~blk_dev_ops in
