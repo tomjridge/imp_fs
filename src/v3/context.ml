@@ -142,7 +142,7 @@ module Lower_layer = struct
 
   type ('k,'v,'t) gom_ops = ('k,'v,'t)map_ops_small
 
-  type ('k,'v,'t) file_ops = 
+  type ('k,'v,'t) file_ops = unit
     (* { pread; pwrite; truncate; get_sz; set_times; get_times }, but
        we want to cache on the block data block layer; so the
        implementation of file at cache layer should use a lower laye

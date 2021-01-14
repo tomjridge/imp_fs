@@ -29,8 +29,11 @@ module Flag = struct
   let clean = false
 end
 
-type 'a maybe_dirty = 'a * bool
-let is_dirty (_v,b) = (b=Flag.dirty)
+module Maybe_dirty = struct
+  type 'a maybe_dirty = 'a * bool
+  let is_dirty (_v,b) = (b=Flag.dirty)
+end
+open Maybe_dirty
 
 type ('k,'v,'cache) cache_ops = ('k,'v,'cache) wbc_ops
   
@@ -501,7 +504,7 @@ module With_lwt = struct
         with_cache:((blk, cache) f_cache, lwt) with_state ->
         (blk, lwt) file_ops >
 
-  let _ : file_factory = (file_factory :> file_factory)
+  let file_factory : file_factory = (file_factory :> file_factory)
       
 end
 
