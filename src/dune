@@ -9,7 +9,7 @@
 (library
   (public_name "tjr_impfs")
   (preprocess (pps ppx_deriving_yojson ppx_jane -allow-unannotated-ignores))
-  (libraries ppx_jane ppx_deriving_yojson tjr_kv tjr_minifs tjr_plist lru)
+  (libraries ppx_jane ppx_deriving_yojson tjr_kv tjr_minifs tjr_plist lru sqlite3)
 )
 
 (include_subdirs unqualified)

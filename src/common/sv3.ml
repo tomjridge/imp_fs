@@ -75,7 +75,7 @@ end
 (** {2 common instance} *)
 
 module With_lwt = struct
-  open Shared_ctxt
+  (* open Shared_ctxt *)
       
   let make_symlink_cache ~contents : s_cache = { contents }
 
