@@ -56,6 +56,9 @@ run_tests:
 	$(DUNE) build src-test/test.exe
 	$(DUNE) exec src-test/test.exe
 
+test_sqlite_dir: 
+	./util_main.exe test sqlite_dir
+
 # for auto-completion of Makefile target
 clean::
 	rm -f *.exe

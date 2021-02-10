@@ -455,7 +455,7 @@ module Ls = struct
 
     is_finished: unit -> (bool,'t)m;
 
-    close: unit -> (unit,'t)m;
+    (* close: unit -> (unit,'t)m; for explicit freeing of resources? *)
   }
 
 end
@@ -732,12 +732,12 @@ option 1.
       | _ -> ls.step ()
     in
     let is_finished () = if !stage > 0 then ls.is_finished () else return false in
-    let close () = ls.close () in
+    (* let close () = ls.close () in *)
     return Ls.{
       kvs;
       step;
       is_finished;
-      close;
+      (* close; *)
     }
 
   let dir_ops = { 
