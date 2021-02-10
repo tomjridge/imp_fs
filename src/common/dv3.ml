@@ -101,6 +101,7 @@ type 'a cache_entry = Some_ of 'a | Deleted | Not_present
 
 type ('k,'v,'cache) cache_ops = ('k,'v,'cache) wbc_ops
 
+(*
 (** Make v1 - assumes lower layer alo implements dir_ops *)
 module Make_v1(S:sig
     type t
@@ -421,14 +422,14 @@ end) = struct
   let dir_factory : dir_factory = dir_factory
 
 end
-
+*)
 
 
 (** {2 Make_v2 - assumes lower layer implements batch operations} *)
 
 
 module Op = struct
-  type ('k,'v,'t,'did) op' =
+  type ('k,'v,'did) op' =
     | Insert of 'k*'v
     | Delete of 'k
     | Set_parent of 'did
@@ -439,7 +440,7 @@ module Op = struct
      caching here FIXME perhaps we want this just with_sync *)
   type exec_type = Spill | With_sync
 
-  type ('k,'v,'t,'did) exec_ops = exec_type * ('k,'v,'t,'did) op' list
+  type ('k,'v,'t,'did) exec_ops = exec_type * ('k,'v,'did) op' list
   
 end
 open Op
