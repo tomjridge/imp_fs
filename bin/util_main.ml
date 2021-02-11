@@ -7,5 +7,8 @@ let _ =
   | ["test";"sqlite_dir"] -> 
     let module X = Sqlite_dir.Test() in
     Lwt_main.run (X.test_program |> Tjr_monad.With_lwt.to_lwt)
+  | ["test";"sqlite_gom"] -> 
+    let module X = Sqlite_gom.Test() in
+    Lwt_main.run (X.test_program |> Tjr_monad.With_lwt.to_lwt)
   | _ -> failwith "Unrecognized argv"
 

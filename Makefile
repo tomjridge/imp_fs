@@ -59,6 +59,9 @@ run_tests:
 test_sqlite_dir: 
 	./util_main.exe test sqlite_dir
 
+test_sqlite_gom: 
+	./util_main.exe test sqlite_gom
+
 # for auto-completion of Makefile target
 clean::
 	rm -f *.exe
