@@ -1,9 +1,0 @@
-(env
-  (_ (flags (:standard -w -8-39-26 -open Tjr_lib -open Tjr_monad -open Tjr_profile -open Tjr_fs_shared -open Tjr_impfs ))))
-
-(executables
-  (names test)
-  (modules Test)
-  (libraries tjr_impfs))
-
-
