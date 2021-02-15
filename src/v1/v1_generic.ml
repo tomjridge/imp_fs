@@ -15,6 +15,22 @@ type stat_record = Minifs_intf.stat_record
 }
 *)
 
+module File_ops = struct
+  open Call_specific_errors
+
+  type 't file_ops = {
+    pread: foff:int -> len:int -> buf:buf -> boff:int -> 
+      ((int,pread_err)result, 't) m;
+    pwrite: foff:int -> len:int -> buf:buf -> boff:int -> 
+      ((int,pwrite_err)result, 't) m;
+    truncate: int -> (unit,'t)m;
+    get_sz: unit -> (int,'t)m;
+    set_times: stat_times -> (unit,'t)m;
+    get_times: unit -> (stat_times,'t)m;
+  }
+end
+include File_ops
+
 (* $(PIPE2SH("""sed -n '/Very[ ]basic types/,/end/p' >GEN.S0.ml_""")) *)
 (** Very basic types *)
 module type S0 = sig
@@ -71,20 +87,7 @@ module S1(S0:S0) = struct
 
   type buf = ba_buf
 
-  (* FIXME open minifs automatically? or at least some of the
-     submodules within minifs_intf? *)
-  open Call_specific_errors
-
-  type file_ops = {
-    pread: foff:int -> len:int -> buf:buf -> boff:int -> 
-      ((int,pread_err)result, t) m;
-    pwrite: foff:int -> len:int -> buf:buf -> boff:int -> 
-      ((int,pwrite_err)result, t) m;
-    truncate: int -> (unit,t)m;
-    get_sz: unit -> (int,t)m;
-    set_times: stat_times -> (unit,t)m;
-    get_times: unit -> (stat_times,t)m;
-  }
+  type nonrec file_ops = t file_ops
 
   type files_ops = {
     find: fid -> (file_ops,t)m;

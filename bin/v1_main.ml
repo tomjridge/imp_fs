@@ -38,6 +38,8 @@ let sys_root_blk = B.of_int 0
 let gom_root_blk = B.of_int 1
 let min_free_blk = B.of_int 2 
 
+module V1s = V1.V1_specific
+
 (** Initialize filesystem operations *)
 let ops : (_,_,_) Minifs_intf.ops = 
   Printf.printf "%s: initializing ops\n%!" __FILE__;
@@ -54,10 +56,10 @@ let ops : (_,_,_) Minifs_intf.ops =
       
       (* GOM root *)
       line __LOC__;
-      V1.gom_factory#write_empty_leaf ~blk_dev_ops ~blk_id:gom_root_blk >>= fun () ->
+      V1s.gom_factory#write_empty_leaf ~blk_dev_ops ~blk_id:gom_root_blk >>= fun () ->
       line __LOC__;
       (* FIXME we also need to sync the root to disk *)
-      let module With_gom = V1.Stage_1(struct
+      let module With_gom = V1s.Stage_1(struct
         let blk_dev_ops = blk_dev_ops
         let blk_alloc = blk_alloc
         let min_free_id = 1 (* 0 is root dir *)
@@ -67,7 +69,7 @@ let ops : (_,_,_) Minifs_intf.ops =
       let module The_filesystem = With_gom.The_filesystem in
 
       (* Create root directory *)
-      V1.mk_stat_times () >>= fun times -> 
+      V1s.mk_stat_times () >>= fun times -> 
       Printf.printf "%s: about to create root dir\n%!" __FILE__;
       With_gom.create_root_dir ~times >>= fun () ->
       let ops : (_,_,_) Minifs_intf.ops = The_filesystem.ops in

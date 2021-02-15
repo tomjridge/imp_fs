@@ -3,23 +3,19 @@
 [@@@warning "-33"]
 
 open Printf
+open Sqlite3
+open Tjr_monad.With_lwt
 open Gom_v3
-
-let tbl = "gom"
-
-(* SQL commands to create a db; dir_entries and dir_meta *)
-let create_db_stmt = sprintf {|
+open Gom_v3.Op
+    
+let create_db_stmt ~tbl = sprintf {|
   DROP TABLE IF EXISTS '%s';
   CREATE TABLE '%s' (id INTEGER, value BLOB, PRIMARY KEY (id));
 |} tbl tbl
 
-open Sqlite3
-open Tjr_monad.With_lwt
-
 let assert_ok rc = assert(rc = Rc.OK)
 
-open Gom_v3.Op
-
+(* As Gom_v3.lower_ops, but with an extra debug field *)
 type ('k,'v,'t) lower_ops = {
   get_max: unit -> 'k;
   (** for debugging *)
@@ -33,27 +29,42 @@ type ('k,'v,'t) lower_ops = {
   (** exec is assumed synchronous - all caching done in the layer above *)
 }
 
+(** Drop the get_max debug field *)
+let lower_ops_to_gom_v3 ops = 
+  let {get_max=_;alloc_n;find;exec} = ops in
+  Gom_v3.{alloc_n;find;exec}
+
+
 module Make(S:sig
     type k = int[@@warning "-34"]
     type v
 
     val v_to_string: v -> string
     val string_to_v: string -> v
+
   end) = struct
   open S
 
-  (** Statements *)
-
-
   let make ~db ~tbl = 
-    let find = prepare db @@ sprintf {| SELECT id,value from '%s' WHERE id = ? |} tbl in
-    let insert = prepare db @@ sprintf {| INSERT OR REPLACE INTO '%s' VALUES (?,?) |} tbl in
-    let delete = prepare db @@ sprintf {| DELETE FROM '%s' WHERE id = ? |} tbl in
+    let open struct
+      (** Statements *)
 
-    (* if the table is empty, max returns null; so we use coalesce to
-       provide a default value *)
-    let get_max = prepare db @@ sprintf {| SELECT coalesce(max(id),0) FROM '%s' |} tbl in
-    
+      (* SQL commands to create a db; dir_entries and dir_meta *)
+
+      let find    = sprintf {| SELECT id,value from '%s' WHERE id = ? |} tbl
+      let insert  = sprintf {| INSERT OR REPLACE INTO '%s' VALUES (?,?) |} tbl
+      let delete  = sprintf {| DELETE FROM '%s' WHERE id = ? |} tbl
+
+      (* if the table is empty, max returns null; so we use coalesce to
+         provide a default value *)
+      let get_max = sprintf {| SELECT coalesce(max(id),0) FROM '%s' |} tbl 
+    end
+    in
+    let find = prepare db find in
+    let insert = prepare db insert in
+    let delete = prepare db delete in
+    let get_max = prepare db get_max in
+
     let get_max () = 
       let stmt = get_max in
       assert_ok (reset stmt);    
@@ -134,8 +145,10 @@ module Test() = struct
 
   let db = db_open "sqlite_gom_test.db"
 
+  let tbl = "gom"
+
   let _ = 
-    assert_ok (exec db create_db_stmt)
+    assert_ok (exec db (create_db_stmt ~tbl))
 
   let gom_ops = make ~db ~tbl
 

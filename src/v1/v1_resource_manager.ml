@@ -1,10 +1,10 @@
 (** This code takes care of the various resources that need to be
-   correctly locked in a concurrent setting. *)
+   correctly locked in a concurrent setting. Superseded by Ownership_map? *)
 
 (* This is a rough implementation using imperative state. *)
 
 
-open V1_util
+(* open Util *)
 open Shared_ctxt
 
 (* thread id *)
@@ -133,7 +133,7 @@ let resource_ops =
       let compare_b = compare_oid
     end
 
-    module Ownership_map = Ownership_map(S)
+    module Ownership_map = Ownership_map.Make(S)
     module O = Ownership_map
   end)
   in

@@ -1,4 +1,6 @@
-(** The GOM for v3 is similar to a dir: a map backed by sqlite. *)
+(** The GOM for v3 is similar to a dir: a map backed by sqlite. If we
+   are using fixed mutable origin blocks, then the GOM values don't
+   change after creation until the GOM entry is deleted. *)
 
 module Flag = Fv3.Flag
 (* open Fv3.Maybe_dirty *)

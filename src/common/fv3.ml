@@ -22,6 +22,9 @@ tjr_fs_shared/.../write_back_cache_v3.ml
 
 let dont_log = false
 
+
+(** {2 Types} *)
+
 type blk_off = int
 
 module Flag = struct
@@ -53,6 +56,8 @@ type ('blk,'t) lower_ops = {
   (* flush - needed? *)
   sync           : unit -> (unit,'t)m;
 }
+
+(* FIXME maybe we want a better name than pre-file *)
 
 (* based file_impl_v2; read and write blocks at block offsets *)
 type ('blk,'t) pre_file_ops = {
@@ -150,7 +155,8 @@ let pwrite_check ~(buf_ops: _ buf_ops) =
 
 
 
-(** V1 - with pre_file_ops *)
+(** {2 Make_v1 - user lower_ops; implement cached pre_file_ops} *)
+
 module Make_v1(S: sig
     type t
     val monad_ops: t monad_ops
@@ -285,7 +291,8 @@ end
 (* FIXME should probably do some testing *)
 
 
-(** V2 - pread/pwrite using iterated block read/write *)
+(** {2 Make_v2 - use pre_file_ops; implement pread/pwrite using iterated block read/write} *)
+
 module Make_v2(S: sig
     type t
     val monad_ops: t monad_ops
@@ -440,7 +447,7 @@ module Make_v2(S: sig
 end
 
 
-(** {2 common instance} *)
+(** {2 Lwt instance} *)
 
 module With_lwt = struct
   open Shared_ctxt
