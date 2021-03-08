@@ -92,9 +92,9 @@ module type S0 = sig
   type did  [@@deriving bin_io]
   type sid  [@@deriving bin_io] (** symlink id *)
 
-  type dh [@@deriving bin_io] (** dir handle *)
+  type dh [@@deriving bin_io] (** dir handle FIXME bin_io? *)
 
-  type tid [@@deriving bin_io] (** thread id *)
+  type tid [@@deriving bin_io] (** thread id FIXME do we need bin_io? *)
 end
 
 
@@ -209,9 +209,6 @@ module S1(S0:S0) = struct
     create_symlink:
       parent:did -> name:str_256 -> times:times -> contents:str_256 -> (unit,t)m
   }
-  (** NOTE create just creates a new file in the gom; it doesn't link
-      it into a parent etc, so nlink is 0 *)
-
 
 
   (** {2 Path resolution types} *)
