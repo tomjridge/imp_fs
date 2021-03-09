@@ -4,6 +4,8 @@
 
 *)
 
+[@@@warning "-33"]
+
 open V3_abstract
 
 module S0 : S0 = struct
@@ -31,6 +33,7 @@ module S2 = V3_abstract.S2(S0)
 (** What we have to implement *)
 module type T2 = S2.T2
 
+(* FIXME todo 
 module T2 : T2 = struct
 
   let root_did = 0
@@ -57,3 +60,4 @@ module T2 : T2 = struct
     in
 
 end
+*)

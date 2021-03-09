@@ -101,7 +101,8 @@ type 'a cache_entry = Some_ of 'a | Deleted | Not_present
 
 (* type ('k,'v,'cache) cache_ops = ('k,'v,'cache) wbc_ops *)
 
-(* based on wbc_ops, from write_back_cache_v3; we need to bridge this to the lru2gen *)
+(* based on wbc_ops, from write_back_cache_v3; we need to bridge this
+   to the lru2gen; the interface below is pure, but lru is monadic *)
 type ('k,'v,'t) cache_ops = {
   find       : 'k -> 't -> ('v * bool) option * 't;
   insert     : 'k -> 'v * bool -> 't -> 't;
@@ -109,6 +110,7 @@ type ('k,'v,'t) cache_ops = {
   needs_trim : 't -> bool;
   trim       : 't -> ('k * 'v) list * 't;
   clean      : 't -> ('k * 'v) list * 't;
+  bindings   : 't -> ('k * ('v*bool)) list
 }
 
 (* Make_v1 in OLD *)
