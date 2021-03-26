@@ -38,6 +38,9 @@ FIXME what is the distinction between flush and sync at the lower layer? since t
 
  *)
 
+(* FIXME do we need db locked for concurrent stmts? *)
+
+
 [@@@warning "-33"]
 
 open Printf
@@ -49,25 +52,49 @@ module List = struct
   let hd_opt xs = if xs = [] then None else Some (List.hd xs)
 end
 
-include struct
-  open Dv3
-  open Op
-  type ('k,'v,'t,'did) dir_ops = ('k,'v,'t,'did) lower_ops = {
-    get_meta  : unit -> ('did * times,'t)m;
 
-    find      : 'k -> ('v option,'t) m;
+module Ls = struct
+  type ('k,'v,'t) ops = {
+    kvs: unit -> (('k*'v) list,'t)m; 
+    (** NOTE if we return [], then we are not necessarily finished! *)
 
-    exec      : ('k,'v,'t,'did) exec_ops -> (unit,'t)m;
+    step: unit -> (unit,'t)m; 
 
-    opendir   : unit -> (('k,'v,'t)Ls.ops,'t)m;
-
+    is_finished: unit -> (bool,'t)m;
+    (* close: unit -> (unit,'t)m; for explicit freeing of resources? *)
   }
 end
 
+
+module Op = struct
+  (* From Dv3.Op *)
+  type ('k,'v,'did) op = 
+    | Insert of 'did*'k*'v
+    | Delete of 'did*'k
+    | Set_parent of 'did(*child*) * 'did(*parent*)
+    | Set_times of 'did * times 
+    (** NOTE: create is not a separate operation: we just start working with a new did, initialized via set_times *)
+
+end
+open Op
+
+
+type ('k,'v,'t,'did) dir_ops = {
+  get_meta  : did:'did -> ('did * times,'t)m;
+  find      : did:'did -> 'k -> ('v option,'t) m;
+  exec      : ('k,'v,'did) op list -> (unit,'t)m;
+  opendir   : did:'did -> (('k,'v,'t)Ls.ops,'t)m;
+  max_did   : unit -> 'did; 
+  (** NOTE this is blocking, but is intended to be used once at
+     startup, so potentially only results in slightly slower startup
+     than would be possible if this was in the monad *)
+
+  pre_create: new_did:'did -> parent:'did -> times:times -> unit; 
+  (** pre-create does not touch the parent directory - that needs to
+     be done with a separate insert *)
+}
+
 type times = Times.times
-
-
-type 'a cached_update = Some_ of 'a | Deleted
 
 type db = Sqlite3.db
 
@@ -97,7 +124,6 @@ let readdir_limit = 1000
 let _ = assert(readdir_limit > 0)
 
 
-
 module Make(S:sig
     type did
 
@@ -112,13 +138,11 @@ module Make(S:sig
   end) = struct
   open S
 
-  (* FIXME we need to be sure where we are caching, and if the caching
-     is worth it; at the moment, we already have generic directory
-     caching in the layer above this one 
+  let pending_creates : (did*did*times)list ref = ref []
 
-     We expect that the generic caching will call 
-  *)
-  let make_dir_ops ~db ~did = 
+  let pre_create ~new_did ~parent ~times = pending_creates:=(new_did,parent,times)::!pending_creates
+
+  let make_dir_ops ~db = 
 
     (* statements *)
     let get_meta = prepare db {| SELECT parent,atim,mtim FROM dir_meta WHERE did=? |} in
@@ -141,8 +165,23 @@ module Make(S:sig
     ORDER BY name 
     LIMIT ? |}
     in
-    let did = did_to_int did in
-    let get_meta () = 
+    
+    (* create ~parent ~name ~times; *)
+    (* let create = prepare db {| INSERT INTO dir_meta (parent,atim,mtim) VALUES (?,?,?) |} in *)
+    let max_did = prepare db {| SELECT MAX(did) FROM dir_meta |} in
+
+    (* max_did *)
+    let max_did () = 
+      let stmt = max_did in
+      assert_ok (reset stmt);    
+      step stmt |> fun rc -> 
+      assert(rc=Rc.DONE || (print_endline (Rc.to_string rc); false));
+      (* NOTE bind starts from 1, cols from 0 *)
+      (column_int stmt 0 |> int_to_did)
+    in      
+
+    let get_meta ~did = 
+      let did = did_to_int did in
       let stmt = get_meta in
       assert_ok (reset stmt);    
       assert_ok (bind_int stmt 1 did);
@@ -152,7 +191,8 @@ module Make(S:sig
       (column_int stmt 0 |> int_to_did, Times.{atim=column_double stmt 1;mtim=column_double stmt 2})
       |> return
     in
-    let find k : (dir_entry option,_)m = 
+    let find ~did k : (dir_entry option,_)m = 
+      let did = did_to_int did in
       let stmt = find in
       assert_ok (reset stmt);    
       assert_ok (bind_int stmt 1 did);
@@ -170,14 +210,23 @@ module Make(S:sig
         Some (de |> string_to_dir_entry)
         |> return
     in
-    let exec (eops: _ Dv3.Op.exec_ops) = 
-      let (tag,ops) = eops in
-      assert(tag=With_sync); (* FIXME remove alternative *)
+    let exec (ops: _ op list) = 
       assert_ok (exec db "BEGIN TRANSACTION");
+      (* deal with pending_creates first *)
+      let ops = 
+        let xs = !pending_creates in
+        pending_creates:=[];
+        let xs = xs |> List.concat_map (fun (did,parent,times) -> 
+            [ Set_parent (did,parent);Set_times(did,times) ] )
+        in
+        xs@ops  (* NOTE creates must happen before other ops, in case
+                   one of the ops involves the newly created objs *)
+      in
       begin
         ops |> List.iter (fun op -> 
             match op with 
-            | Dv3.Op.Insert(k,v) ->
+            | Insert(did,k,v) ->
+              let did = did_to_int did in
               let stmt = insert in
               assert_ok (reset stmt);
               assert_ok (bind_int stmt 1 did);
@@ -186,7 +235,8 @@ module Make(S:sig
               step stmt |> fun rc -> 
               assert(rc=Rc.DONE);
               ()
-            | Delete k -> 
+            | Delete (did,k) -> 
+              let did = did_to_int did in
               let stmt = delete in
               assert_ok (reset stmt);
               assert_ok (bind_int stmt 1 did);
@@ -194,17 +244,19 @@ module Make(S:sig
               step stmt |> fun rc -> 
               assert(rc=Rc.DONE);
               ()          
-            | Set_parent p -> 
+            | Set_parent (did,p) -> 
+              let did = did_to_int did in
               let stmt = set_parent in
               assert_ok (reset stmt);
               assert_ok (bind_int stmt 1 (p|>did_to_int));
               assert_ok (bind_int stmt 2 did);
               step stmt |> fun rc -> 
               assert(rc=Rc.DONE);
-            | Set_times times -> 
+            | Set_times (did,times) -> 
+              let did = did_to_int did in
               let stmt = set_times in
               assert_ok (reset stmt);
-              assert_ok (bind_double stmt 1 times.atim);
+              assert_ok (bind_double stmt 1 times.Times.atim);
               assert_ok (bind_double stmt 2 times.mtim);
               assert_ok (bind_int stmt 3 did);
               step stmt |> fun rc -> 
@@ -215,7 +267,7 @@ module Make(S:sig
     in
 
     (* read entries after (not including) from_name; return results in reverse name order *)
-    let readdir ~from_name = 
+    let readdir ~did ~from_name = 
       let stmt = opendir_2 in
       assert_ok (reset stmt);
       assert_ok (bind_int stmt 1 did);
@@ -234,7 +286,8 @@ module Make(S:sig
       rows (* in reverse order *)
     in    
 
-    let opendir () = 
+    let opendir ~did = 
+      let did = did_to_int did in
       let stmt = opendir_1 in
       assert_ok (reset stmt);
       assert_ok (bind_int stmt 1 did);
@@ -260,7 +313,7 @@ module Make(S:sig
         | false -> 
           assert(!current_max_name <> None);
           let from_name = dest_Some(!current_max_name) in
-          readdir ~from_name |> fun rows -> 
+          readdir ~did ~from_name |> fun rows -> 
           match rows with
           | [] -> (
               current_max_name := None; 
@@ -272,11 +325,28 @@ module Make(S:sig
               return ())
       in
       (* let close () = return () in *)
-      let ops = Dv3.Ls.{kvs;step;is_finished=(fun () -> return (finished()))} in
+      let ops = Ls.{kvs;step;is_finished=(fun () -> return (finished()))} in
       return ops
     in
 
-    { get_meta; find; exec; opendir }
+    (* this interface forces to go to the db on dir create, but we should prefer to get max id on startup *)
+(*
+    let create ~parent ~(name:str_256) ~times =
+      let parent' = did_to_int parent in
+      let stmt = create in
+      (* create the directory *)
+      assert_ok (reset stmt);
+      assert_ok (bind_int stmt 1 parent');
+      assert_ok (bind_double stmt 2 times.Times.atim);
+      assert_ok (bind_double stmt 2 times.Times.mtim);
+      assert_ok (step stmt); (* get last_row_id *)
+      Sqlite3.last_insert_rowid db |> fun id -> 
+      (* insert into parent *)
+      exec ~did:parent [`Insert ( (name:>string),xxx)] (* FIXME nlinks *)
+    in
+*)
+    { get_meta; find; exec; opendir; max_did; pre_create }
+
 
 end
 
@@ -302,14 +372,13 @@ module Test() = struct
 
   let db = db_open "sqlite_dir_test.db"
 
-  let _ = 
-    assert_ok (exec db create_db_stmt)
+  let _ = assert_ok (exec db create_db_stmt)
 
-  let dir_ops = make_dir_ops ~db ~did:1
+  let dir_ops = make_dir_ops ~db 
 
-  let { get_meta; find; exec; opendir } = dir_ops
+  let { get_meta; find; exec; opendir;_ } = dir_ops
 
-  open Dv3.Op
+  let did = 1
 
   let test_program = 
     (* NOTE if we don't batch delta ops, but submit individually, this is very slow *)
@@ -319,13 +388,13 @@ module Test() = struct
         | true -> return ()
         | false -> 
           let xs = List_.mk_range ~min:i ~max:(i+delta) ~step:1 in
-          let xs = xs |> List.map (fun i -> Insert("filename"^(string_of_int i),"FIXME")) in
-          exec (With_sync,xs) >>= fun () -> 
+          let xs = xs |> List.map (fun i -> Insert(did,"filename"^(string_of_int i),"FIXME")) in
+          exec xs >>= fun () -> 
           k (i+delta))
     >>= fun () -> 
     (* now print out the results *)
     let total = ref 0 in
-    opendir () >>= fun ops -> 
+    opendir ~did >>= fun ops -> 
     () |> iter_k (fun ~k () -> 
         ops.is_finished () >>= function
         | true -> return ()
@@ -339,6 +408,3 @@ module Test() = struct
     return ()
   
 end
-
-
-

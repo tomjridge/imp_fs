@@ -130,6 +130,7 @@ module Op = struct
      caching here FIXME perhaps we want this just with_sync *)
   type exec_type = Spill | With_sync
 
+  (* FIXME 't not used *)
   type ('k,'v,'t,'did) exec_ops = exec_type * ('k,'v,'did) op' list
   
 end

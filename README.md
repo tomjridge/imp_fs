@@ -9,7 +9,7 @@ ImpFS is a novel filesystem with some interesting features.
 
 ## Quick links
 
-* OCamldocs at <https://tomjridge.github.io/ocamldocs/>
+* OCamldocs at <https://tomjridge.github.io/ocamldocs/> (includes main management page)
 * Webpage, with demo and OCaml'20 talk: <http://www.tom-ridge.com/filesystems.html>
 
 
