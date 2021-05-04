@@ -152,6 +152,23 @@ module Ls = struct
 
 end
 
+(** A list interface with mutability *)
+module Ls_mut = struct
+
+  (** ['d] is a descriptor; we avoid the monad where possible: the
+     intended implementation is that the "current" kvs is kept in a
+     reference and updated on step. In this case, opendir should
+     return not an ops but a 'd. *)
+  type ('k,'v,'d,'t) ops = {
+    kvs         : 'd -> ('k*'v) list;
+    (** NOTE if we return [], then we are not necessarily finished! *)
+    step        : 'd -> (unit,'t)m; 
+    is_finished : 'd -> bool;
+    close       : 'd -> unit;
+  }
+  
+end
+
 
 
 module Dir = struct
@@ -165,7 +182,7 @@ module Dir = struct
     get_parent : unit -> ('did,'t)m;
     set_times  : times -> (unit,'t)m;
     get_times  : unit -> (times,'t)m;    
-
+ 
     flush      : unit -> (unit,'t)m;
     sync       : unit -> (unit,'t)m;    
   }

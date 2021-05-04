@@ -376,6 +376,7 @@ module Make(S0:S0) = struct
 
     let closedir dh = dir_handles.closedir dh >>= fun () -> ok ()
 
+    (* FIXME need to lock and validate the entry is nonexist *)
     let create path =
       resolve_path ~follow_last_symlink:`If_trailing_slash path >>=| fun rpath ->
       let { parent_id=parent; comp=name; result; trailing_slash=_ } = rpath in
