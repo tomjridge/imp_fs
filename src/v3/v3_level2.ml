@@ -24,7 +24,6 @@ open Tjr_monad.With_lwt
 
 module R = V3_intf.Refs_with_dirty_flags 
 
-
 module S0 (* : S0 *) = struct
   open Bin_prot.Std
 
@@ -82,8 +81,6 @@ end
 
 module Live_dirs = V3_live_object_cache.Make(S2)
 
-(* NOTE following two args needed *)
-let make_live_dirs ~resurrect ~finalise = Live_dirs.make_cache_ops ~resurrect ~finalise
 
 type config = {
   entries_cache_capacity   : int;
@@ -100,6 +97,14 @@ end
 
 module Stage2(Stage1:STAGE1) = struct
   open Stage1
+
+  let new_did = 
+    let x = ref @@ sql_dir_ops.max_did () in
+    incr x;
+    fun () -> 
+      let y = !x in
+      incr x;
+      y
 
   let resurrect did =
     sql_dir_ops.get_meta ~did >>= fun (parent,times) -> 
@@ -134,27 +139,36 @@ module Stage2(Stage1:STAGE1) = struct
      dirty meta; FIXME add a "dirties" call to the lru, to return ops
      that we can then sync with the dirty meta *)
   let finalise (xs:(did*per_dir) list) =
+    let module Op = Sqlite_dir.Op in
     let ops (did,x) = 
       let dirty_meta = R.[
-          if is_dirty x.parent then Some (Sqlite_dir.Op.Set_parent(did,!(x.parent))) else None;
-          if is_dirty x.times then Some (Sqlite_dir.Op.Set_times(did,!(x.times))) else None;
+          if is_dirty x.parent then Some (Op.Set_parent(did,!(x.parent))) else None;
+          if is_dirty x.times then Some (Op.Set_times(did,!(x.times))) else None;
         ] |> List.filter_map (fun x -> x) in
       let dirty_entries = 
         entries_cache_ops.unsafe_clean x.entries_cache |> List.map (function
-            | `Insert (k,v) -> Sqlite_dir.Op.Insert(did,k,v)
-            | `Delete k -> Sqlite_dir.Op.Delete(did,k))
+            | `Insert (k,v) -> Op.Insert(did,k,v)
+            | `Delete k -> Op.Delete(did,k))
       in
       dirty_meta@dirty_entries
     in
     xs |> List.map ops |> List.concat |> sql_dir_ops.exec
 
-  let live_dirs_ops = make_live_dirs ~resurrect ~finalise 
+  let live_dirs_ops = Live_dirs.make_cache_ops ~resurrect ~finalise
   let live_dirs = 
     live_dirs_ops.create 
       ~config:V3_live_object_cache.{
           cache_size=config.live_dirs_capacity; trim_delta=config.live_dirs_trim_delta}
 
   let ensure_dir_is_live did = live_dirs_ops.get did live_dirs
+
+  let sync_dir_when_lock_held did = 
+    let ops = live_dirs_ops in
+    ensure_dir_is_live did >>= fun kref -> 
+    ops.kref_to_obj kref |> fun per_dir -> 
+    finalise [(did,per_dir)] >>= fun () -> 
+    ops.put kref;
+    return ()
 
   let dir : dir_ops = 
     let ops = live_dirs_ops in
@@ -213,12 +227,36 @@ module Stage2(Stage1:STAGE1) = struct
       return ()
     in
     { find;insert;delete;set_times;get_times;get_parent;sync }
-      
+
   let dirs = 
     let delete did = return () in
     (* FIXME at the moment, we don't actually delete directories from the db *)
 
-    let create ~parent_locked:() ~parent ~name ~times =
+    let create_and_add_to_parent ~parent_locked:() ~parent ~name ~times =
+      (* make new dir, sync; add to parent; sync parent *)
+      (* FIXME since parent is locked, we know it is in the cache, so
+         this is unnecessary *)
+      let new_did = new_did () in
+      let _ = 
+        sql_dir_ops.pre_create 
+          ~note_does_not_touch_parent:()
+          ~new_did ~parent ~times
+      in
+      dir.insert ~did:parent name (Did new_did) >>= fun () -> 
+      (* FIXME probably not necessary to sync the parent here *)
+      sync_dir_when_lock_held parent >>= fun () -> 
+      return ()
+    in
+
+    let rename ~locks_held:() rename_case =
+      (* FIXME implement these in sqlite_dir *)
+      failwith "FIXME"
+    in
+    { delete; create_and_add_to_parent; rename }
+
+  
+  
+      
       
 
 

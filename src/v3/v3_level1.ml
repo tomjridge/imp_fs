@@ -117,7 +117,7 @@ module Make(S0:S0) = struct
                persistent on disk before returning.... or else ensure
                that if the parent flushes, the child is flushed first
                *)
-            dirs.create ~parent_locked:() ~parent ~name ~times >>= fun () ->
+            dirs.create_and_add_to_parent ~parent_locked:() ~parent ~name ~times >>= fun () ->
             locks.unlock ~tid ~objs >>= fun () ->
             ok ()
           | _ -> 

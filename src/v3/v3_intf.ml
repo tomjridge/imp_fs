@@ -66,12 +66,14 @@ module Path_resolution = struct
 end
 
 module Lock_ops = struct
+(*
   (** Use raw ops to implement the per-object locks *)
   type ('tid,'lck,'t) raw_lock_ops = {
     create : unit -> ('lck,'t)m;
     lock   : tid:'tid -> lck:'lck -> (unit,'t)m;
     unlock : tid:'tid -> lck:'lck -> (unit,'t)m;
   }
+*)
 
   type ('tid,'id,'t) lock_ops = {
     lock       : tid:'tid -> objs:'id list -> (unit,'t)m;
@@ -155,7 +157,7 @@ module S1(S0:S0) = struct
     (* find   : did -> (dir_ops,t)m; *)
     delete : did -> (unit,t)m;
 
-    create : 
+    create_and_add_to_parent : 
       parent_locked:unit -> 
       parent:did -> name:str_256 -> times:times -> (unit,t)m; (* was create_dir *)
 

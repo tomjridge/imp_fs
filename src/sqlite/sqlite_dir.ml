@@ -91,7 +91,9 @@ type ('k,'v,'t,'did) dir_ops = {
      startup, so potentially only results in slightly slower startup
      than would be possible if this was in the monad *)
 
-  pre_create: new_did:'did -> parent:'did -> times:times -> unit; 
+  pre_create: 
+    note_does_not_touch_parent: unit -> 
+    new_did:'did -> parent:'did -> times:times -> unit; 
   (** pre-create does not touch the parent directory - that needs to
      be done with a separate insert *)
 }
@@ -142,7 +144,7 @@ module Make(S:sig
 
   let pending_creates : (did*did*times)list ref = ref []
 
-  let pre_create ~new_did ~parent ~times = pending_creates:=(new_did,parent,times)::!pending_creates
+  let pre_create ~note_does_not_touch_parent:() ~new_did ~parent ~times = pending_creates:=(new_did,parent,times)::!pending_creates
 
   let make_dir_ops ~db = 
 
