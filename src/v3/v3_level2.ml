@@ -22,8 +22,6 @@ open V3_intf
 open V3_level1
 open Tjr_monad.With_lwt
 
-module Lru = Lru_two_gen
-
 module R = V3_intf.Refs_with_dirty_flags 
 
 
@@ -88,66 +86,144 @@ module Live_dirs = V3_live_object_cache.Make(S2)
 let make_live_dirs ~resurrect ~finalise = Live_dirs.make_cache_ops ~resurrect ~finalise
 
 type config = {
-  entries_cache_capacity: int;
-  entries_cache_trim_delta: int;
+  entries_cache_capacity   : int;
+  entries_cache_trim_delta : int;
+  live_dirs_capacity       : int;
+  live_dirs_trim_delta     : int
 }
 
-let resurrect ~config ~(sql_dir_ops:sql_dir_ops) did =
-  sql_dir_ops.get_meta ~did >>= fun (parent,times) -> 
-  let bot = () in
-  let bot_ops : _ Lru.Bot.ops = {
-    find_opt = (fun () k -> sql_dir_ops.find ~did k);
-    sync = (fun () -> return ()); 
-    (* sqlite should sync automatically with every transaction *)
-    exec = (fun () ~sync ops -> 
-        assert(sync); (* We assume the sync flag is always true FIXME remove this flag *)
-        sql_dir_ops.exec (ops |> List.map (function
-            | `Delete k -> Sqlite_dir.Op.Delete(did,k)
-            | `Insert (k,v) -> Sqlite_dir.Op.Insert(did,k,v))))
-  }
-  in 
-  let entries_cache = 
-    entries_cache_ops.initial_cache_state 
-      ~cap:config.entries_cache_capacity 
-      ~trim_delta:config.entries_cache_trim_delta 
-      ~bot
-      ~bot_ops
-  in
-  return 
-    { lock=Lwt_mutex_ops.create_mutex(); 
-      parent=R.ref parent;
-      times=R.ref times;
-      entries_cache;
+
+module type STAGE1 = sig
+  val config : config
+  val sql_dir_ops : sql_dir_ops
+end
+
+module Stage2(Stage1:STAGE1) = struct
+  open Stage1
+
+  let resurrect did =
+    sql_dir_ops.get_meta ~did >>= fun (parent,times) -> 
+    let bot = () in
+    let bot_ops : _ Lru.Bot.ops = {
+      find_opt = (fun () k -> sql_dir_ops.find ~did k);
+      sync = (fun () -> return ()); 
+      (* sqlite should sync automatically with every transaction *)
+      exec = (fun () ~sync ops -> 
+          assert(sync); (* We assume the sync flag is always true FIXME remove this flag *)
+          sql_dir_ops.exec (ops |> List.map (function
+              | `Delete k -> Sqlite_dir.Op.Delete(did,k)
+              | `Insert (k,v) -> Sqlite_dir.Op.Insert(did,k,v))))
     }
-
-(* NOTE entries_cache_ops has a sync oepration which will sync as a
-   batch to the underlying db, but this is separate to the sync of the
-   dirty meta; FIXME add a "dirties" call to the lru, to return ops
-   that we can then sync with the dirty meta *)
-let finalise ~(sql_dir_ops:sql_dir_ops) (xs:(did*per_dir) list) =
-  let ops (did,x) = 
-    let dirty_meta = R.[
-      if is_dirty x.parent then Some (Sqlite_dir.Op.Set_parent(did,!(x.parent))) else None;
-      if is_dirty x.times then Some (Sqlite_dir.Op.Set_times(did,!(x.times))) else None;
-    ] |> List.filter_map (fun x -> x) in
-    let dirty_entries = 
-      entries_cache_ops.unsafe_clean x.entries_cache |> List.map (function
-      | `Insert (k,v) -> Sqlite_dir.Op.Insert(did,k,v)
-      | `Delete k -> Sqlite_dir.Op.Delete(did,k))
+    in 
+    let entries_cache = 
+      entries_cache_ops.initial_cache_state 
+        ~cap:config.entries_cache_capacity 
+        ~trim_delta:config.entries_cache_trim_delta 
+        ~bot
+        ~bot_ops
     in
-    dirty_meta@dirty_entries
-  in
-  xs |> List.map ops |> List.concat |> sql_dir_ops.exec
-          
-let make_live_dirs ~config ~sql_dir_ops = 
-  make_live_dirs 
-    ~resurrect:(resurrect ~config ~sql_dir_ops)
-    ~finalise:(finalise ~sql_dir_ops)
+    return 
+      { lock=Lwt_mutex_ops.create_mutex(); 
+        parent=R.ref parent;
+        times=R.ref times;
+        entries_cache;
+      }
 
-(* All dirs *)
-type dirs = {
-  sql_dir_ops: sql_dir_ops;
-}
+  (* NOTE entries_cache_ops has a sync operation which will sync as a
+     batch to the underlying db, but this is separate to the sync of the
+     dirty meta; FIXME add a "dirties" call to the lru, to return ops
+     that we can then sync with the dirty meta *)
+  let finalise (xs:(did*per_dir) list) =
+    let ops (did,x) = 
+      let dirty_meta = R.[
+          if is_dirty x.parent then Some (Sqlite_dir.Op.Set_parent(did,!(x.parent))) else None;
+          if is_dirty x.times then Some (Sqlite_dir.Op.Set_times(did,!(x.times))) else None;
+        ] |> List.filter_map (fun x -> x) in
+      let dirty_entries = 
+        entries_cache_ops.unsafe_clean x.entries_cache |> List.map (function
+            | `Insert (k,v) -> Sqlite_dir.Op.Insert(did,k,v)
+            | `Delete k -> Sqlite_dir.Op.Delete(did,k))
+      in
+      dirty_meta@dirty_entries
+    in
+    xs |> List.map ops |> List.concat |> sql_dir_ops.exec
+
+  let live_dirs_ops = make_live_dirs ~resurrect ~finalise 
+  let live_dirs = 
+    live_dirs_ops.create 
+      ~config:V3_live_object_cache.{
+          cache_size=config.live_dirs_capacity; trim_delta=config.live_dirs_trim_delta}
+
+  let ensure_dir_is_live did = live_dirs_ops.get did live_dirs
+
+  let dir : dir_ops = 
+    let ops = live_dirs_ops in
+    let find ~did k = 
+      ensure_dir_is_live did >>= fun kref -> 
+      ops.kref_to_obj kref |> fun per_dir -> 
+      entries_cache_ops.find_opt per_dir.entries_cache k >>= fun v -> 
+      ops.put kref;
+      return v
+    in
+    let insert ~did k v =
+      ensure_dir_is_live did >>= fun kref -> 
+      ops.kref_to_obj kref |> fun per_dir -> 
+      entries_cache_ops.insert per_dir.entries_cache k v >>= fun () -> 
+      ops.put kref;
+      return ()
+    in      
+    (* NOTE did_locked just means that the did is locked in the live
+       dirs; FIXME why do we need obj if the dir is locked? FIXME
+       reduce_obj_nlink? *)
+    let delete ~did_locked:() ~did ~name:k ~obj:dir_v ~reduce_obj_nlink:() = 
+      ensure_dir_is_live did >>= fun kref -> 
+      ops.kref_to_obj kref |> fun per_dir -> 
+      entries_cache_ops.delete per_dir.entries_cache k >>= fun () -> 
+      ops.put kref;
+      return ()
+    in
+    let set_times ~did times = 
+      ensure_dir_is_live did >>= fun kref -> 
+      ops.kref_to_obj kref |> fun per_dir -> 
+      R.(per_dir.times := times);
+      ops.put kref;
+      return ()
+    in
+    let get_times ~did = 
+      ensure_dir_is_live did >>= fun kref -> 
+      ops.kref_to_obj kref |> fun per_dir -> 
+      let times = R.(!(per_dir.times)) in
+      ops.put kref;
+      return times
+    in
+    let get_parent ~did =
+      ensure_dir_is_live did >>= fun kref -> 
+      ops.kref_to_obj kref |> fun per_dir -> 
+      let parent = R.(!(per_dir.parent)) in
+      ops.put kref;
+      return parent
+    in
+    let sync ~did = 
+      ensure_dir_is_live did >>= fun kref -> 
+      ops.kref_to_obj kref |> fun per_dir -> 
+      lwt_mutex_ops.lock per_dir.lock >>= fun () -> 
+      finalise [(did,per_dir)] >>= fun () -> 
+      lwt_mutex_ops.unlock per_dir.lock >>= fun () ->
+      ops.put kref;
+      return ()
+    in
+    { find;insert;delete;set_times;get_times;get_parent;sync }
+      
+  let dirs = 
+    let delete did = return () in
+    (* FIXME at the moment, we don't actually delete directories from the db *)
+
+    let create ~parent_locked:() ~parent ~name ~times =
+      
+
+
+end (* Stage2 *)
+
 
 (*
 
