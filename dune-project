@@ -14,6 +14,7 @@
  (name tjr_impfs)
  (synopsis "ImpFS, a new filesystem")
  (depends 
+   bigstringaf
    tjr_kv
    tjr_minifs))
 

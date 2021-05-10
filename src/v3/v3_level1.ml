@@ -156,7 +156,7 @@ module Make(S0:S0) = struct
         (* FIXME again we must make sure that if the link to the new
            file is persisted, then the new file is persisted
            beforehand, or "at the same time" *)
-        files.create ~parent ~name ~times >>= fun () ->
+        files.create_and_add_to_parent ~parent ~name ~times >>= fun () ->
         ok ()
       | _ -> err `Error_exists
 
@@ -343,7 +343,7 @@ module Make(S0:S0) = struct
       | Missing ->
         mk_stat_times () >>= fun times ->
         let contents = Str_256.make contents in
-        files.create_symlink ~parent ~name ~times ~contents >>= fun () ->
+        files.create_symlink_and_add_to_parent ~parent ~name ~times ~contents >>= fun () ->
         ok ()
       | _ -> err `Error_exists
 

@@ -168,7 +168,7 @@ module S1(S0:S0) = struct
 
   (** {2 Dir handles} *)
 
-  type dhs_ops = {
+  type dir_handle_ops = {
     opendir  : tid:tid -> did -> (dh,t)m;
     readdir  : dh -> (str_256 list,t) m;
     closedir : dh -> (unit,t)m;
@@ -194,7 +194,7 @@ module S1(S0:S0) = struct
     get_sz    : fid:fid -> (int,t)m;
     set_times : fid:fid -> times -> (unit,t)m;
     get_times : fid:fid -> (times,t)m;
-    get_nlink : fid:fid -> (int,t)m;
+    (* get_nlink : fid:fid -> (int,t)m; *)
     (* set_nlink : fid:fid -> int -> (unit,t)m;  (\** NOTE inter-object *\) *)
 
     sync      : fid:fid -> (unit,t)m;
@@ -205,10 +205,10 @@ module S1(S0:S0) = struct
   type files_ops = {
     (* delete: fid -> (unit,t)m; - use ref counting and impl at level 2 *)
 
-    create: parent:did -> name:str_256 -> times:times -> (unit,t)m;
+    create_and_add_to_parent: parent:did -> name:str_256 -> times:times -> (unit,t)m;
     (* NOTE files.create: parent is a dir, and we don't have nlinks for dirs *)
 
-    create_symlink:
+    create_symlink_and_add_to_parent:
       parent:did -> name:str_256 -> times:times -> contents:str_256 -> (unit,t)m
   }
 
@@ -250,7 +250,7 @@ module Level2_provides(S0:S0) = struct
 
     val files: files_ops
 
-    val dir_handles: dhs_ops
+    val dir_handles: dir_handle_ops
 
     val locks: (tid,dir_entry,t)lock_ops
 

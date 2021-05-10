@@ -8,6 +8,7 @@ doc: "https://tomjridge.github.io/ocamldocs"
 bug-reports: "https://github.com/tomjridge/imp_fs/issues"
 depends: [
   "dune" {>= "2.0"}
+  "bigstringaf"
   "tjr_kv"
   "tjr_minifs"
 ]
