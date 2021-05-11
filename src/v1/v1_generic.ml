@@ -97,7 +97,7 @@ module S1(S0:S0) = struct
   (** NOTE create just creates a new file in the gom; it doesn't link
       it into a parent etc *)
 
-  type resolved_path_or_err = (fid,did)Tjr_path_resolution.resolved_path_or_err
+  type resolved_path_or_err = (fid,did,sid)Tjr_path_resolution.resolved_path_or_err
 
   type path = string
 
@@ -374,7 +374,7 @@ module Make(S0:S0) = struct
         dirs.find did >>= fun dir ->
         dir.get_times() >>= fun times ->
         ok { sz=1; kind=`Dir; times }   (* sz for dir? FIXME size of dir *)
-      | Sym s -> 
+      | Sym (_sid,s) -> 
         ok {sz=String.length s; times=dummy_times; kind=`Symlink}
 
     let symlink contents path =
@@ -393,7 +393,7 @@ module Make(S0:S0) = struct
       resolve_path ~follow_last_symlink:`If_trailing_slash path >>=| fun rpath ->
       let { result; _ } = rpath in
       match result with
-      | Sym s -> ok s
+      | Sym (_sid,s) -> ok s
       | _ -> err `Error_not_symlink
 
     let reset () = return () (* FIXME? *)

@@ -486,7 +486,7 @@ module Stage_1(S1:sig
       symlink_impl#read_symlink ~blk_dev_ops ~blk_id
 
     open Tjr_path_resolution.Intf
-    let resolve_comp: did -> comp_ -> ((fid,did)resolved_comp,t)m = 
+    let resolve_comp: did -> comp_ -> ((fid,did,sid)resolved_comp,t)m = 
       fun did comp ->
       assert(String.length comp <= 256);
       let comp = Str_256.make comp in
@@ -500,7 +500,7 @@ module Stage_1(S1:sig
         | Did did -> RC_dir did |> return
         | Sid sid -> 
           read_symlink sid >>= fun s ->
-          RC_sym (s :> string) |> return
+          RC_sym (sid, (s :> string)) |> return
     (* FIXME perhaps we also need to identify a symlink by id
        during path res? *)
 
@@ -515,7 +515,7 @@ module Stage_1(S1:sig
     let _ :
       follow_last_symlink:follow_last_symlink ->
       string ->
-      ((fid, did) resolved_path_or_err,t)m 
+      ((fid, did,sid) resolved_path_or_err,t)m 
       = resolve
 
     let resolve_path = resolve

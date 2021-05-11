@@ -221,7 +221,7 @@ module Stage_1(R1: sig
         failwith "impossible: this is patched later")
 
     open Tjr_path_resolution.Intf
-    let resolve_comp: did -> comp_ -> ((fid,did)resolved_comp,t)m = 
+    let resolve_comp: did -> comp_ -> ((fid,did,sid)resolved_comp,t)m = 
       fun did comp ->
       assert(String.length comp <= 256);
       let comp = Str_256.make comp in
@@ -241,7 +241,7 @@ module Stage_1(R1: sig
         | Did did -> RC_dir did |> return
         | Sid sid -> 
           (!read_symlink) sid >>= fun s ->
-          RC_sym (s256_to_string s) |> return
+          RC_sym (sid,s256_to_string s) |> return
     (* FIXME perhaps we also need to identify a symlink by id
        during path res? *)
 
@@ -256,7 +256,7 @@ module Stage_1(R1: sig
     let _ :
       follow_last_symlink:follow_last_symlink ->
       string ->
-      ((fid, did) resolved_path_or_err,t)m 
+      ((fid, did,sid) resolved_path_or_err,t)m 
       = resolve
 
     let write_empty_leaf ~blk_id =

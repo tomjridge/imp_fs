@@ -205,7 +205,8 @@ module Make(S0:S0) = struct
               (* NOTE dirs.rename always takes place in a situation
                  where the relevant objects are locked *)
               (* FIXME dirs.rename should sync src and dst then do the update atomically *)
-              dirs.rename ~locks_held:() (Rename_file_missing {
+              dirs.rename_file (Rename_file_missing {
+                  locks_held=();
                   times;
                   src=(spath.parent_id,spath.comp,fid);
                   dst=(dpath.parent_id,dpath.comp)
@@ -233,7 +234,8 @@ module Make(S0:S0) = struct
                    presumably to keep this consistent we need to sync
                    the meta for the objs to disk *)
                 mk_stat_times () >>= fun times ->
-                dirs.rename ~locks_held:() (Rename_file_file {
+                dirs.rename_file (Rename_file_file {
+                    locks_held=();
                     times;
                     src=(spath.parent_id,spath.comp,fid1);
                     dst=(dpath.parent_id,dpath.comp,fid2)
@@ -243,44 +245,19 @@ module Make(S0:S0) = struct
           end
 
         | File _fid,Dir _did ->
-          extra.internal_err "FIXME rename f to d, d should be empty?"
+          extra.internal_err ~tid "FIXME rename f to d, d should be empty?"
 
         | Dir sdid,Missing -> begin
             (* check not root *)
             match sdid=root_did with
             | true -> err `Error_attempt_to_rename_root
             | false ->
-              (* FIXME krefs *)
-              (* FIXME locks, validate pathres *)
-              (* check not subdir *)
-              (* FIXME dirs.rename should sync src and dst then do the update atomically *)
-              (* NOTE if we have locked all objects and verified path
-                 resolution result hasn't changed, we should be able to
-                 answer this based on locked objects *)
-              extra.is_ancestor ~parent:sdid ~child:dpath.parent_id >>= (function
-                  | true -> err `Error_attempt_to_rename_to_subdir
-                  | false ->
-                    mk_stat_times () >>= fun times ->
-                    dirs.rename ~locks_held:() (Rename_dir_missing {
-                        times;
-                        src=(spath.parent_id,spath.comp,sdid);
-                        dst=(dpath.parent_id,dpath.comp)
-                      }) >>= fun () ->
-                    ok())
-
-(*
-                    (* FIXME other checks *)
-                    dirs.find sdid >>= fun sdir ->
-                    mk_stat_times () >>= fun times ->
-                    sdir.set_times times >>= fun () ->
-                    (* we want to call insert_and_remove, but we should
-                       remember to update the parent afterwards (and this
-                       really should happen atomically) FIXME *)
-                    (* new directory id *)
-                    insert_and_remove (Did sdid) >>= fun () ->
-                    sdir.set_parent dpath.parent_id >>= fun () ->
-                    ok ())
-*)
+              dirs.rename_dir (Rename_dir_missing {
+                  tid;
+                  locks_not_held=();
+                  needs_ancestor_check=();
+                  src=(spath.parent_id,spath.comp,sdid);
+                  dst=(dpath.parent_id,dpath.comp) })
           end
 
         | Dir _sdid,File _fid ->
@@ -288,7 +265,9 @@ module Make(S0:S0) = struct
         | Dir sdid,Dir ddid -> (
             match sdid=ddid with
             | true -> ok ()
-            | false -> extra.internal_err "FIXME rename d to d, dst should be empty?")
+            | false -> 
+              (* FIXME this is allowed if dest is empty *)
+              extra.internal_err ~tid "FIXME rename d to d, dst should be empty?")
         | Missing ,_ -> (
             Printf.printf "impossible %s\n%!" __LOC__;
             exit_1 "impossible")

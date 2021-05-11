@@ -37,22 +37,25 @@ end
 
 module Path_resolution = struct
 
-  (* FIXME we need path res to take account of symlink id (which can
-     just be the string contents of course, or unit *)
-  type ('fid,'did,'sid) resolved_component =
-      File of 'fid | Dir of 'did | Sym of 'sid*string | Missing
+  (* FIXME we need path res to take account of symlink id, which can
+     just be the string contents of course *)
+  type ('fid,'did,'sid) resolved_component 
+    = ('fid,'did,'sid) Tjr_path_resolution.Intf.simplified_result' 
+    = File of 'fid | Dir of 'did | Sym of 'sid*string | Missing
 
-  type ('fid,'did,'sid) resolved_path = {
+  type ('fid,'did,'sid) resolved_path 
+    (* = ('fid,'did,'sid) Tjr_path_resolution.Intf.simplified_result  *)
+    = {
     parent_id      : 'did;
-    comp           : str_256;
+    comp           : str_256; (* NOTE string in tjr_path_resolution *)
     result         : ('fid,'did,'sid) resolved_component;
     trailing_slash : bool
   }
 
-  type ('fid,'did) err = ('fid,'did) Tjr_path_resolution.Intf.resolved_err
+  type ('fid,'did) resolved_err = ('fid,'did) Tjr_path_resolution.Intf.resolved_err
 
   type ('fid,'did,'sid) resolved_path_or_err =
-    ( ('fid,'did,'sid) resolved_path, ('fid,'did) err) result
+    ( ('fid,'did,'sid) resolved_path, ('fid,'did) resolved_err) result
 
   type follow_last_symlink = Tjr_path_resolution.Intf.follow_last_symlink
 
@@ -129,8 +132,9 @@ module S1(S0:S0) = struct
      updated atomically ; NOTE no nlink for dirs, but POSIX probably
      requires it? *)
 
-  type rename_case =
+  type rename_file =
     | Rename_file_missing of {
+        locks_held: unit;
         times : times;
         src   : did*str_256*fid;
         dst   : did*str_256 }
@@ -140,16 +144,21 @@ module S1(S0:S0) = struct
         dst *)
 
     | Rename_file_file of {
+        locks_held: unit;
         times : times;
         src   : did*str_256*fid;
         dst   : did*str_256*fid }
       (** fid1<>fid2, so (did1,name1) <> (did2,name2) *)
 
+  type rename_dir_missing = 
     | Rename_dir_missing of {
-        times : times;
-        src   : did*str_256*did;
-        dst   : did*str_256 }
-      (** Assumes all locks held, ancestor check completed etc *)
+        tid : tid;
+        locks_not_held    : unit;
+        needs_ancestor_check : unit;
+        (* times             : times; *)
+        src               : did*str_256*did;
+        dst               : did*str_256 }
+    (** Implementation should incorporate ancestor check,locking etc etc *)
 
 
   (* NOTE lookup failures for did and fid are dealt with in the monad *)
@@ -161,8 +170,9 @@ module S1(S0:S0) = struct
       parent_locked:unit -> 
       parent:did -> name:str_256 -> times:times -> (unit,t)m; (* was create_dir *)
 
-    rename: locks_held:unit -> rename_case -> (unit,t)m;
-
+    rename_file : rename_file -> (unit,t)m;
+    rename_dir  : rename_dir_missing -> ((unit,Errors.exn_)result,t)m;
+    
   }
 
 
@@ -219,10 +229,14 @@ module S1(S0:S0) = struct
 
   type path = string
 
+  (* type 'a is_ancestor_rtype = { krefs:'a; locked_objs: dir_entry list } *)
+
   type extra_ops = {
-    internal_err : 'a. string -> ('a,t) m;
-    is_ancestor  : parent:did -> child:did -> (bool,t) m
+    internal_err : 'a. tid:tid -> string -> ('a,t) m;
+(*    is_ancestor  : tid:tid -> parent:did -> child:did -> 
+      ([ `True | `False of 'a is_ancestor_rtype],t) m *)
   }
+
 
   (* type id = dir_entry *)
 (*

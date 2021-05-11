@@ -55,7 +55,7 @@ module type T2 = Level2_provides.T2
 
 (* Dir entries cache: use Lru_with_slow_operations *)
 
-module Lru = Tjr_lib.Lru_with_slow_operations
+module Lru = Lru_with_slow_operations
 
 let lru : (str_256,dir_entry,unit) Lru.lru_module = Lru.make ()
 module Entries_cache = (val lru)
@@ -113,6 +113,8 @@ end
 
 module Stage2(Stage1:STAGE1) = struct
   open Stage1
+
+  let root_did = 0
 
   let new_did = 
     let x = ref @@ sql_dir_ops.max_did () in
@@ -244,6 +246,11 @@ module Stage2(Stage1:STAGE1) = struct
     in
     { find;insert;delete;set_times;get_times;get_parent;sync }
 
+
+  (* NOTE this is filled in later *)
+  let locks = 
+    ref Lock_ops.{ lock=(fun ~tid:_ -> failwith ""); unlock=(fun ~tid:_ -> failwith "") }
+
   let dirs = 
     let delete did = return () in
     (* FIXME at the moment, we don't actually delete directories from the db *)
@@ -264,12 +271,103 @@ module Stage2(Stage1:STAGE1) = struct
       return ()
     in
 
-    let rename ~locks_held:() rename_case =
-      (* FIXME implement these in sqlite_dir *)
-      failwith "FIXME"
+    let remove_entry_from_cache ~did name = 
+      ensure_dir_is_live did >>= fun kref -> 
+      live_dirs_ops.kref_to_obj kref |> fun per_dir -> 
+      entries_cache_ops.remove_clean_entry per_dir.entries_cache name;
+      live_dirs_ops.put kref;
+      return ()
     in
-    { delete; create_and_add_to_parent; rename }
 
+    let module Op = Sqlite_dir.Op in
+    let rename_file rename_case =
+      match rename_case with
+      | Rename_file_missing { locks_held; times; src; dst } -> 
+        let (sp,sn,sfid) = src in
+        let (dp,dn) = dst in
+        (* one implementation is to sync src and dst (maybe just the
+           relevant keys), clear the relevant cache entries (sn
+           dn... dn may be "deleted" but not flushed to db), and make
+           the change atomically in the db, then unlock and return *)
+        dir.sync ~did:sp >>= fun () -> 
+        dir.sync ~did:dp >>= fun () -> 
+        remove_entry_from_cache ~did:sp sn >>= fun () -> 
+        remove_entry_from_cache ~did:dp dn >>= fun () -> 
+        let ops = Sqlite_dir.Op.([Delete(sp,sn);Insert(dp,dn,Fid sfid)]) in
+        sql_dir_ops.exec ops
+        
+        
+      | Rename_file_file { locks_held; times; src; dst } -> 
+        let (sp,sn,sfid) = src in
+        let (dp,dn,dfid) = dst in
+        assert(sfid <> dfid);
+        assert( (sp,sn) <> (dp,dn) );
+        dir.sync ~did:sp >>= fun () -> 
+        dir.sync ~did:dp >>= fun () -> 
+        remove_entry_from_cache ~did:sp sn >>= fun () -> 
+        remove_entry_from_cache ~did:dp dn >>= fun () -> 
+        let ops = Sqlite_dir.Op.([Delete(sp,sn);Insert(dp,dn,Fid sfid)]) in
+        sql_dir_ops.exec ops        
+    in
+
+    let rename_dir = function
+      | Rename_dir_missing { tid; locks_not_held; needs_ancestor_check; src; dst } ->
+          (* We need to figure out which objs need locking; exit early
+             if ancestor; otherwise lock locks; re-validate the objs
+             are as before; exit early if concurrent mod; otherwise
+             sync src and dst; clear cache entries for the affected
+             dir entries; then atomically rename in the backend *)
+          let (sp,sn,sdid) = src in
+          let (dp,dn) = dst in
+          (dp,[]) |> iter_k (fun ~k (did,acc) -> 
+              ensure_dir_is_live did >>= fun kref -> 
+              live_dirs_ops.kref_to_obj kref |> fun per_dir ->
+              match did=sdid with 
+              | true -> 
+                (kref::List.map fst acc) |> List.iter live_dirs_ops.put;
+                return `Src_is_ancestor_of_dest
+              | false -> 
+                match did=root_did with
+                | true -> return @@ `Ok ((kref,did)::acc)
+                | false -> 
+                  dir.get_parent ~did >>= fun did' -> 
+                  k (did',(kref,did)::acc))
+          >>= function
+          | `Src_is_ancestor_of_dest -> return (Error `Error_attempt_to_rename_to_subdir)
+          | `Ok acc -> 
+            (* acquire locks *)
+            let objs = sdid::(List.map snd acc) |> List.map (fun did -> Did did) in
+            (!locks).lock ~tid ~objs >>= fun () -> 
+            (* revalidate the path to root *)
+            (List.map snd acc) |> fun dids -> 
+            dids |> iter_k (fun ~k dids -> 
+                match dids with
+                | [] -> failwith "impossible"
+                | [x] -> 
+                  assert(x=root_did && x=dp);
+                  return true
+                | d1::d2::rest -> 
+                  dir.get_parent ~did:d2 >>= fun did -> 
+                  match did = d1 with
+                  | false -> return false
+                  | true -> k (d2::rest)) >>= function
+            | false -> return (Error `Error_concurrent_modification)
+            | true -> 
+              (* OK, everything is fine, we can do the rename *)
+              dir.sync ~did:sp >>= fun () -> 
+              dir.sync ~did:dp >>= fun () -> 
+              remove_entry_from_cache ~did:sp sn >>= fun () -> 
+              remove_entry_from_cache ~did:dp dn >>= fun () -> 
+              let ops = Op.([Delete(sp,sn);Insert(dp,dn,Did sdid);Set_parent(sdid,dp)]) in
+              sql_dir_ops.exec ops >>= fun () -> 
+              (* now release all the locks and the krefs *)
+              (!locks).unlock ~tid ~objs >>= fun () -> 
+              (List.map fst acc) |> List.iter live_dirs_ops.put;
+              return (Ok ())
+    in
+    { delete; create_and_add_to_parent; rename_file; rename_dir }
+
+  (* FIXME prefer krefs.get/put rather than having abstract types *)
 
   let fid_to_path fid = config.file_data_path ^"/" ^(string_of_int fid)
 
@@ -390,8 +488,8 @@ module Stage2(Stage1:STAGE1) = struct
       dir.insert ~did:parent name (Fid fid)
     in
     let create_symlink_and_add_to_parent ~parent ~name ~times ~(contents:str_256) =
-      let fid = new_fid () in
-      let pth = fid_to_path fid in
+      let sid = new_fid () in
+      let pth = fid_to_path sid in
       assert(not @@ Tjr_file.file_exists pth);
       (* FIXME probably want to sync the config.file_data_path
          directory to ensure the file is actually created on disk *)
@@ -401,9 +499,65 @@ module Stage2(Stage1:STAGE1) = struct
           (* FIXME? NOTE lwt_unix doesn't have lutimes, so times are ignored for symlinks *)
           return ())) |> from_lwt >>= fun () -> 
       (* now add to parent *)
-      dir.insert ~did:parent name (Fid fid)
+      dir.insert ~did:parent name (Sid sid)
     in
     { create_and_add_to_parent; create_symlink_and_add_to_parent }
+
+  let read_symlink ~sid =
+    Lwt_unix.(readlink (sid|>sid_to_path)) |> from_lwt >>= fun s -> 
+    return (Str_256.make s)
+    
+
+
+  (** {2 locks} *)
+
+  type per_tid = { objs: dir_entry list; krefs:Live_dirs.kref list; locks: Lwt_mutex.t list }
+
+  let live_locks : (tid,per_tid) Hashtbl.t = Hashtbl.create 100
+
+  let locks' : (tid,dir_entry,t) Lock_ops.lock_ops = 
+    let lock ~tid ~objs:objs0 =       
+      let objs = List.sort_uniq Stdlib.compare objs0 in
+      (* The objs can be files or directories, not symlinks; files
+         only get locked during a rename currently; FIXME do we need
+         file locks at all, since another rename can't interfere
+         because the dirs are locked? Let's assume not for the time
+         being *)
+      let objs = objs |> List.filter_map (function | Did did -> Some did | _ -> None) in
+      ([],[],objs) |> iter_k (fun ~k (krefs,lcks,objs) -> 
+          match objs with 
+          | [] -> return (krefs,lcks)
+          | x::xs -> begin
+              ensure_dir_is_live x >>= fun kref -> 
+              live_dirs_ops.kref_to_obj kref |> fun per_dir -> 
+              lwt_mutex_ops.lock per_dir.lock >>= fun () -> 
+              k (kref::krefs, (per_dir.lock::lcks), xs)
+            end)
+      >>= fun (krefs,locks) -> 
+      assert(not @@ Hashtbl.mem live_locks tid);
+      Hashtbl.add live_locks tid {objs=objs0; krefs; locks};
+      return ()
+    in
+    let unlock ~tid ~objs:objs0 =
+      Hashtbl.find_opt live_locks tid |> function
+      | None -> assert(false)
+      | Some {objs;krefs;locks} -> 
+        assert(objs = objs0); 
+        (* threads can lock one set of objs at a time, and must release all at once *)
+        (krefs,locks) |> iter_k (fun ~k (krefs,lcks) -> 
+            match krefs,lcks with
+            | [],[] -> return ()
+            | x::xs,y::ys -> 
+              lwt_mutex_ops.unlock y >>= fun () -> 
+              live_dirs_ops.put x;
+              k (xs,ys)
+            | _ -> failwith "unlock: lists of differing lengths; impossible")
+    in
+    { lock; unlock }
+
+  let _ = locks := locks'
+
+  let locks = locks'
       
   
   (** {2 Dir handles} *)
@@ -444,56 +598,58 @@ module Stage2(Stage1:STAGE1) = struct
     in
     { opendir; readdir; closedir }
 
-  type per_tid = { objs: dir_entry list; krefs:Live_dirs.kref list; locks: Lwt_mutex.t list }
 
-  let live_locks : (tid,per_tid) Hashtbl.t = Hashtbl.create 100
+  (** {2 Path resolution} *)
 
-  let locks : (tid,dir_entry,t) Lock_ops.lock_ops = 
-    let lock ~tid ~objs:objs0 =       
-      let objs = List.sort_uniq Stdlib.compare objs0 in
-      (* The objs can be files or directories, not symlinks; files
-         only get locked during a rename currently; FIXME do we need
-         file locks at all, since another rename can't interfere
-         because the dirs are locked? Let's assume not for the time
-         being *)
-      let objs = objs |> List.filter_map (function | Did did -> Some did | _ -> None) in
-      ([],[],objs) |> iter_k (fun ~k (krefs,lcks,objs) -> 
-          match objs with 
-          | [] -> return (krefs,lcks)
-          | x::xs -> begin
-              ensure_dir_is_live x >>= fun kref -> 
-              live_dirs_ops.kref_to_obj kref |> fun per_dir -> 
-              lwt_mutex_ops.lock per_dir.lock >>= fun () -> 
-              k (kref::krefs, (per_dir.lock::lcks), xs)
-            end)
-      >>= fun (krefs,locks) -> 
-      assert(not @@ Hashtbl.mem live_locks tid);
-      Hashtbl.add live_locks tid {objs=objs0; krefs; locks};
-      return ()
-    in
-    let unlock ~tid ~objs:objs0 =
-      Hashtbl.find_opt live_locks tid |> function
-      | None -> assert(false)
-      | Some {objs;krefs;locks} -> 
-        assert(objs = objs0); 
-        (* threads can lock one set of objs at a time, and must release all at once *)
-        (krefs,locks) |> iter_k (fun ~k (krefs,lcks) -> 
-            match krefs,lcks with
-            | [],[] -> return ()
-            | x::xs,y::ys -> 
-              lwt_mutex_ops.unlock y >>= fun () -> 
-              live_dirs_ops.put x;
-              k (xs,ys)
-            | _ -> failwith "unlock: lists of differing lengths; impossible")
-    in
-    { lock; unlock }
+  (** NOTE copied from v1_specific.ml *)
 
-  let resolve_path = failwith "FIXME"
+  let resolve_comp: did -> comp_ -> ((fid,did,sid)resolved_comp,t)m = 
+    fun did comp ->
+    assert(String.length comp <= 256);
+    let comp = Str_256.make comp in
+    dir.find ~did comp >>= function
+    | None -> return RC_missing
+    | Some x -> 
+      match x with
+      | Fid fid -> RC_file fid |> return
+      | Did did -> RC_dir did |> return
+      | Sid sid -> 
+        read_symlink ~sid >>= fun s ->
+        RC_sym (sid,Str_256.to_string s) |> return
+        
+  let fs_ops = {
+    root=root_did;
+    resolve_comp
+  }
 
-  let mk_stat_times () = 
-    failwith "FIXME"
+  (* NOTE for fuse we always resolve absolute paths *)
+  let resolve = Tjr_path_resolution.resolve ~monad_ops ~fs_ops ~cwd:root_did
       
-  let extra = failwith "FIXME"
+  let _ : 
+    follow_last_symlink:follow_last_symlink ->
+    comp_ -> 
+    ((fid, did,sid) resolved_path_or_err, lwt) m = resolve
+    
+  let resolve_path : resolve_path = Path_resolution.{
+      resolve_path=fun ~follow_last_symlink comp_ ->         
+        resolve ~follow_last_symlink comp_ >>= function
+        | Error e -> return (Error e)
+        | Ok rp -> 
+          (* Need to convert comp_ component to str_256 *)
+          let Tjr_path_resolution.Intf.{ parent_id;comp;result;trailing_slash } = rp in
+          return (Ok Path_resolution.{parent_id;comp=Str_256.make comp;result;trailing_slash})
+    }
+      
+  let mk_stat_times () = 
+    let t = Sys.time () in
+    Times.{atim=t;mtim=t}
+      
+  let extra = 
+    let internal_err ~tid s = 
+      Printf.printf "INTERNAL ERROR THREAD %d!!! %s\n%!" tid s;
+      failwith s
+    in
+    { internal_err }
       
 end (* Stage2 *)
 
