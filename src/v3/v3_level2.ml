@@ -476,7 +476,7 @@ module Stage2(Stage1:STAGE1) = struct
     in
     let create_symlink_and_add_to_parent ~parent ~name ~times ~(contents:str_256) =
       let sid = new_fid () in
-      let pth = fid_to_path sid in
+      let pth = sid_to_path sid in
       assert(not @@ Tjr_file.file_exists pth);
       (* FIXME probably want to sync the config.file_data_path
          directory to ensure the file is actually created on disk *)
