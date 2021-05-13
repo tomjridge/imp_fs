@@ -24,20 +24,7 @@ open Tjr_monad.With_lwt
 
 module R = V3_intf.Refs_with_dirty_flags 
 
-module S0 (* : S0 *) = struct
-  open Bin_prot.Std
-
-  type t = lwt
-  let monad_ops = lwt_monad_ops
-
-  type fid = int[@@deriving bin_io]
-  type did = int[@@deriving bin_io]
-  type sid = int[@@deriving bin_io]
-
-  type dh  = int[@@deriving bin_io]
-
-  type tid = int[@@deriving bin_io]
-end
+module S0 (* : S0 *) = V3_base_types
 open S0
 
 module S1 = V3_intf.S1(S0)

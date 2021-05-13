@@ -77,9 +77,9 @@ module type S0 = sig
   type t
   val monad_ops: t monad_ops
 
-  type fid  [@@deriving bin_io]
-  type did  [@@deriving bin_io]
-  type sid  [@@deriving bin_io] (** symlink id *)
+  type fid  [@@deriving bin_io, yojson]
+  type did  [@@deriving bin_io, yojson]
+  type sid  [@@deriving bin_io, yojson] (** symlink id *)
 
   type dh [@@deriving bin_io] (** dir handle FIXME bin_io? *)
 
@@ -94,7 +94,7 @@ module S1(S0:S0) = struct
 
   (** {2 Directory types} *)
 
-  type dir_entry = Fid of fid | Did of did | Sid of sid[@@deriving bin_io]
+  type dir_entry = Fid of fid | Did of did | Sid of sid[@@deriving bin_io, yojson]
 
   type dir_k = str_256
 
@@ -247,7 +247,7 @@ module Level2_provides(S0:S0) = struct
 
     val resolve_path: resolve_path
 
-    val mk_stat_times: unit -> (times,t)m
+    val mk_stat_times: unit -> times
 
     val extra: extra_ops
   end

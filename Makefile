@@ -3,12 +3,14 @@ default: all
 -include Makefile.ocaml
 
 all:: 
-	$(DUNE) build bin/v1_main.exe
-	$(DUNE) build bin/v2_main.exe
-	$(DUNE) build bin/util_main.exe
-	cp _build/default/bin/v1_main.exe .
-	cp _build/default/bin/v2_main.exe .
-	cp _build/default/bin/util_main.exe .
+	$(DUNE) build bin/v3_main.exe
+	cp _build/default/bin/v3_main.exe .
+# 	$(DUNE) build bin/v1_main.exe
+# 	$(DUNE) build bin/v2_main.exe
+# 	$(DUNE) build bin/util_main.exe
+# 	cp _build/default/bin/v1_main.exe .
+# 	cp _build/default/bin/v2_main.exe .
+# 	cp _build/default/bin/util_main.exe .
 
 # find _build -name "v2_main.exe" -exec cp \{\} . \;
 
@@ -51,6 +53,15 @@ run_from_clean:
 run_from_existing:
 	test -d tmp || { echo "Missing ./tmp directory"; exit -1; }
 	OCAMLRUNPARAM=b ./v2_main.exe $(FUSE_OPTIONS) $(FUSE_MNT_PT)  2>&1
+
+
+# v3 -------------------------------------------------------------------
+run_v3:
+	test -d tmp || { echo "Missing ./tmp directory"; exit -1; }
+	test -f tmp/v3_database.db || { echo "Missing ./tmp/v3_database.db"; exit -1; }
+	test -d tmp/v3_data || { echo "Missing ./tmp/v3_data directory"; exit -1; }
+	OCAMLRUNPARAM=b ./v3_main.exe $(FUSE_OPTIONS) $(FUSE_MNT_PT)  2>&1
+
 
 run_tests:
 	$(DUNE) build src-test/test.exe

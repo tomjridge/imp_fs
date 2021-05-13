@@ -104,12 +104,12 @@ type db = Sqlite3.db
 
 (* NOTE no caching at this level *)
 
-(* SQL commands to create a db; dir_entries and dir_meta *)
+(* SQL commands to create a db; dir_entries and dir_meta; NOTE name is 256 length *)
 let create_db_stmt = {|
   DROP TABLE IF EXISTS 'dir_entries';
   DROP TABLE IF EXISTS 'dir_meta';
 
-  CREATE TABLE 'dir_entries' (did INTEGER, name VARCHAR(255), dir_entry BLOB, PRIMARY KEY (did,name));
+  CREATE TABLE 'dir_entries' (did INTEGER, name VARCHAR(256), dir_entry BLOB, PRIMARY KEY (did,name));
   /* CREATE UNIQUE INDEX 'index1' on 'dir_entries' (did,name); */
 
   CREATE TABLE 'dir_meta' (did INTEGER, parent INTEGER, atim DOUBLE, mtim DOUBLE, PRIMARY KEY (did));
@@ -196,6 +196,7 @@ module Make(S:sig
       |> return
     in
     let find ~did k : (dir_entry option,_)m = 
+      let k = Str_256.s256_to_string k in
       let did = did_to_int did in
       let stmt = find in
       assert_ok (reset stmt);    
@@ -230,6 +231,7 @@ module Make(S:sig
         ops |> List.iter (fun op -> 
             match op with 
             | Insert(did,k,v) ->
+              let k = Str_256.s256_to_string k in
               let did = did_to_int did in
               let stmt = insert in
               assert_ok (reset stmt);
@@ -240,6 +242,7 @@ module Make(S:sig
               assert(rc=Rc.DONE);
               ()
             | Delete (did,k) -> 
+              let k = Str_256.s256_to_string k in
               let did = did_to_int did in
               let stmt = delete in
               assert_ok (reset stmt);
@@ -271,7 +274,8 @@ module Make(S:sig
     in
 
     (* read entries after (not including) from_name; return results in reverse name order *)
-    let readdir ~did ~from_name = 
+    let readdir ~did ~(from_name:str_256) = 
+      let from_name = Str_256.to_string from_name in
       let stmt = opendir_2 in
       assert_ok (reset stmt);
       assert_ok (bind_int stmt 1 did);
@@ -283,7 +287,7 @@ module Make(S:sig
           match rc=Rc.DONE with
           | true -> xs
           | false -> 
-            let name = column_text stmt 1 in
+            let name = column_text stmt 1 |> Str_256.make in
             let de = column_blob stmt 2 in
             k ( (name,de|>string_to_dir_entry)::xs))
       |> fun rows -> 
@@ -302,12 +306,12 @@ module Make(S:sig
           match rc=Rc.DONE with
           | true -> xs
           | false -> 
-            let name = column_text stmt 1 in
+            let name = column_text stmt 1 |> Str_256.make in
             let de = column_blob stmt 2 in
             k ( (name,de|>string_to_dir_entry)::xs))
       |> fun rows -> 
       (* NOTE stateful interface *)
-      let current_max_name = ref (match rows with [] -> None | (name,de)::_ -> Some name) in
+      let current_max_name = ref (match rows with [] -> None | (name,de)::_ -> Some (name:str_256)) in
       let current_rows = ref (List.rev rows) in
       let finished () = !current_rows = [] in
       let kvs = fun () -> return !current_rows in
@@ -351,6 +355,9 @@ module Make(S:sig
 *)
     { get_meta; find; exec; opendir; max_did; pre_create }
 
+  (* FIXME want to use str_256 rather than string? *)
+  let _ : db:db -> (str_256, dir_entry, lwt, did) dir_ops = make_dir_ops
+
 
 end
 
@@ -392,7 +399,7 @@ module Test() = struct
         | true -> return ()
         | false -> 
           let xs = List_.mk_range ~min:i ~max:(i+delta) ~step:1 in
-          let xs = xs |> List.map (fun i -> Insert(did,"filename"^(string_of_int i),"FIXME")) in
+          let xs = xs |> List.map (fun i -> Insert(did,Str_256.make @@ "filename"^(string_of_int i),"FIXME")) in
           exec xs >>= fun () -> 
           k (i+delta))
     >>= fun () -> 

@@ -112,7 +112,7 @@ module Make(S0:S0) = struct
           locks.lock ~tid ~objs >>= fun () -> 
           dir.find ~did:parent name >>= function
           | None ->         
-            mk_stat_times () >>= fun times ->
+            mk_stat_times () |> fun times ->
             (* FIXME dirs.create needs to make sure the new dir is
                persistent on disk before returning.... or else ensure
                that if the parent flushes, the child is flushed first
@@ -154,7 +154,7 @@ module Make(S0:S0) = struct
       let { parent_id=parent; comp=name; result; trailing_slash=_ } = rpath in
       match result with
       | Missing ->
-        mk_stat_times () >>= fun times ->
+        mk_stat_times () |> fun times ->
         (* FIXME again we must make sure that if the link to the new
            file is persisted, then the new file is persisted
            beforehand, or "at the same time" *)
@@ -203,7 +203,7 @@ module Make(S0:S0) = struct
               locks.unlock ~tid ~objs >>= fun () ->
               err eRROR_CONCURRENT_MODIFICATION
             | true -> 
-              mk_stat_times () >>= fun times ->
+              mk_stat_times () |> fun times ->
               (* NOTE dirs.rename always takes place in a situation
                  where the relevant objects are locked *)
               (* FIXME dirs.rename should sync src and dst then do the update atomically *)
@@ -235,7 +235,7 @@ module Make(S0:S0) = struct
                 (* FIXME dirs.rename should update nlink etc; and
                    presumably to keep this consistent we need to sync
                    the meta for the objs to disk *)
-                mk_stat_times () >>= fun times ->
+                mk_stat_times () |> fun times ->
                 dirs.rename_file (Rename_file_file {
                     locks_held=();
                     times;
@@ -280,7 +280,7 @@ module Make(S0:S0) = struct
     let truncate ~tid:_ path length =
       resolve_file_path path >>=| fun fid ->
       (* let objs = [Fid fid] in *)
-      mk_stat_times () >>= fun times ->
+      mk_stat_times () |> fun times ->
       (* locks.lock ~tid ~objs >>= fun () ->  *)
       file.truncate ~fid length >>= fun () ->
       file.set_times ~fid times >>= fun () ->
@@ -323,7 +323,7 @@ module Make(S0:S0) = struct
       let { parent_id=parent; comp=name; result; trailing_slash=_ } = rpath in
       match result with
       | Missing ->
-        mk_stat_times () >>= fun times ->
+        mk_stat_times () |> fun times ->
         let contents = Str_256.make contents in
         files.create_symlink_and_add_to_parent ~parent ~name ~times ~contents >>= fun () ->
         ok ()
