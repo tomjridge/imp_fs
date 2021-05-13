@@ -351,7 +351,7 @@ module Stage2(Stage1:STAGE1) = struct
                   match did = d1 with
                   | false -> return false
                   | true -> k (d2::rest)) >>= function
-            | false -> return (Error `Error_concurrent_modification)
+            | false -> return (Error eRROR_CONCURRENT_MODIFICATION)
             | true -> 
               (* OK, everything is fine, we can do the rename *)
               dir.sync ~did:sp >>= fun () -> 
@@ -552,6 +552,7 @@ module Stage2(Stage1:STAGE1) = struct
               live_dirs_ops.put x;
               k (xs,ys)
             | _ -> failwith "unlock: lists of differing lengths; impossible")
+          (* FIXME just maintain a single list of pairs *)
     in
     { lock; unlock }
 
@@ -562,7 +563,9 @@ module Stage2(Stage1:STAGE1) = struct
   
   (** {2 Dir handles} *)
     
-  type per_dir_handle = { tid: tid; ls_ops: (dir_k,dir_v,lwt) Sqlite_dir.Ls.ops }
+  type per_dir_handle = { 
+    tid: tid; (* for debugging resource usage *)
+    ls_ops: (dir_k,dir_v,lwt) Sqlite_dir.Ls.ops }
 
   let live_dir_handles : (did,per_dir_handle)Hashtbl.t = Hashtbl.create 100
 
@@ -583,7 +586,7 @@ module Stage2(Stage1:STAGE1) = struct
       Hashtbl.add live_dir_handles dh per_dh;
       return dh
     in
-    let readdir dh = 
+    let readdir ~tid:_ dh = 
       Hashtbl.find live_dir_handles dh |> fun per_dir -> 
       per_dir.ls_ops.is_finished () >>= function
       | true -> return []
@@ -592,7 +595,7 @@ module Stage2(Stage1:STAGE1) = struct
         per_dir.ls_ops.step () >>= fun () -> 
         return (List.map fst kvs)
     in
-    let closedir dh = 
+    let closedir ~tid:_ dh = 
       Hashtbl.remove live_dir_handles dh;
       return ()
     in

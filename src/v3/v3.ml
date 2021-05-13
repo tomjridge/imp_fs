@@ -2,8 +2,11 @@ module Private = struct
 
   module V3_intf = V3_intf
 
+  module V3_level0 = V3_level0
+
   module V3_level1 = V3_level1
 
   module V3_level2 = V3_level2
 
 end
+

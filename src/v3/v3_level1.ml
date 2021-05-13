@@ -92,7 +92,7 @@ module Make(S0:S0) = struct
         | false -> 
           (* something changed... back out *)
           locks.unlock ~tid ~objs >>= fun () ->
-          err `Error_concurrent_modification
+          err eRROR_CONCURRENT_MODIFICATION
         | true ->           
           (* NOTE we don't hold a kref on obj here FIXME do we need
              to? Maybe if we need to reduce the nlinks ie touch the
@@ -123,7 +123,7 @@ module Make(S0:S0) = struct
           | _ -> 
             (* concurrent modification *)
             locks.unlock ~tid ~objs >>= fun () ->
-            err `Error_concurrent_modification
+            err eRROR_CONCURRENT_MODIFICATION
         end
       | _ -> err `Error_exists
 
@@ -142,12 +142,14 @@ module Make(S0:S0) = struct
        is bad since it may be for ever; so as an alternative readdir
        must obtain a kref afresh each time; but then the directory may
        not exist the next time it is accessed via dh *)
-    let readdir (dh:dh) = dir_handles.readdir dh >>= fun xs -> ok xs
+    let readdir ~tid (dh:dh) = 
+      dir_handles.readdir ~tid dh >>= fun xs -> 
+      ok (List.map Str_256.to_string xs)
 
-    let closedir dh = dir_handles.closedir dh >>= fun () -> ok ()
+    let closedir ~tid dh = dir_handles.closedir ~tid dh >>= fun () -> ok ()
 
-    (* FIXME need to lock and validate the entry is nonexist *)
-    let create path =
+    (* FIXME create: need to lock and validate the entry is nonexist *)
+    let create ~tid:_ path =
       resolve_path ~follow_last_symlink:`If_trailing_slash path >>=| fun rpath ->
       let { parent_id=parent; comp=name; result; trailing_slash=_ } = rpath in
       match result with
@@ -160,8 +162,8 @@ module Make(S0:S0) = struct
         ok ()
       | _ -> err `Error_exists
 
-    (* FIXME atim *)
-    let open_ path =
+    (* tid is used to allow tracking open fds FIXME atim *)
+    let open_ ~tid:_ path =
       resolve_file_path path >>=| fun fid ->
       ok fid
 
@@ -173,7 +175,7 @@ module Make(S0:S0) = struct
       (* NOTE no locks *)
       file.pwrite ~fid:fd ~foff ~len ~buf ~boff 
 
-    let close _fd = ok ()  (* FIXME record which are open? *)
+    let close ~tid:_ _fd = ok ()  (* FIXME record which are open? *)
 
     (* FIXME ddir and sdir may be the same, so we need to be careful to
        always use indirection via did *)
@@ -199,7 +201,7 @@ module Make(S0:S0) = struct
             match (r1 = Some (Fid fid)) && (r2 = None) with
             | false -> 
               locks.unlock ~tid ~objs >>= fun () ->
-              err `Error_concurrent_modification
+              err eRROR_CONCURRENT_MODIFICATION
             | true -> 
               mk_stat_times () >>= fun times ->
               (* NOTE dirs.rename always takes place in a situation
@@ -226,7 +228,7 @@ module Make(S0:S0) = struct
               match (r1 = Some (Fid fid1)) && (r2 = Some (Fid fid2)) with
               | false -> 
                 locks.unlock ~tid ~objs >>= fun () ->
-                err `Error_concurrent_modification
+                err eRROR_CONCURRENT_MODIFICATION
               | true -> 
 
                 (* FIXME dirs.rename should sync src and dst then do the update atomically *)
@@ -274,7 +276,7 @@ module Make(S0:S0) = struct
     end (* rename *)
 
 
-    (* FIXME truncate parent name; FIXME also stat *)
+    (* FIXME truncate parent name; FIXME also stat; FIXME lock and validate pathres? *)
     let truncate ~tid:_ path length =
       resolve_file_path path >>=| fun fid ->
       (* let objs = [Fid fid] in *)
@@ -290,7 +292,7 @@ module Make(S0:S0) = struct
     let dummy_times = Times.{ atim=0.0; mtim=0.0 }
 
     (* FIXME here and elsewhere atim is not really dealt with *)
-    let stat path =
+    let stat ~tid:_ path =
       resolve_path ~follow_last_symlink:`If_trailing_slash path >>=| fun rpath ->
       let { parent_id=_pid; comp=_name; result; trailing_slash=_ } = rpath in
       let open Stat_record in
@@ -315,7 +317,8 @@ module Make(S0:S0) = struct
       | Sym (_sid,contents) ->
         ok {sz=String.length contents; times=dummy_times; kind=`Symlink}
 
-    let symlink contents path =
+    (* FIXME lock and validate path *)
+    let symlink ~tid:_ contents path =
       resolve_path ~follow_last_symlink:`If_trailing_slash path >>=| fun rpath ->
       let { parent_id=parent; comp=name; result; trailing_slash=_ } = rpath in
       match result with
@@ -326,7 +329,7 @@ module Make(S0:S0) = struct
         ok ()
       | _ -> err `Error_exists
 
-    let readlink path =
+    let readlink ~tid:_ path =
       resolve_path ~follow_last_symlink:`If_trailing_slash path >>=| fun rpath ->
       let { result; _ } = rpath in
       match result with
@@ -337,14 +340,13 @@ module Make(S0:S0) = struct
 
     (* FIXME what about sync_dir, sync_file ? *)
 
-(*
     (** Export the filesystem operations as a single value *)
-    let ops : (_,_,_) Minifs_intf.ops = {
+    let ops : _ Level1_provides.ops = {
       root;
       unlink;
       mkdir;
       opendir;
-      readdir=failwith "";  (* FIXME readdir should just return a list surely *)
+      readdir;  
       closedir;
       create;
       open_;
@@ -359,42 +361,7 @@ module Make(S0:S0) = struct
       reset
     }
 
-    let _ : (fd,dh,S0.t) Tjr_minifs.Minifs_intf.Ops_type.ops = ops
-*)
-    (* include these types to allow Make_3 below *)
-    type nonrec t = t
-    type nonrec dh = dh
-    type nonrec fd = fd
   end
 
-  (** Make_2, but with a restriction on result sig *)
-  (* module Make_3(X:T2): T = Make_2(X:T2) *)
 end
 
-module X = Make
-
-
-        (* let scomp = spath.comp in  *)
-        (* dirs.find dpath.parent_id >>= fun ddir -> *)
-        (* NOTE ddir is the container of the dpath component *)
-        (* let dcomp = dpath.comp in *)
-(*
-        (* this looks like it should be an atomic operation, since it affects two objects *)
-        let insert_and_remove id =
-          (* this is the "default" behaviour *)
-          match spath.parent_id = dpath.parent_id with
-          | true ->
-            assert(scomp != dcomp);
-            ddir.insert dcomp id >>= fun () ->
-            ddir.unsafe_delete scomp >>= fun () ->
-            (* update meta on ddir (and sdir!) *)
-            mk_stat_times () >>= fun times ->
-            ddir.set_times times
-          | false ->
-            ddir.insert dcomp id >>= fun () ->
-            mk_stat_times () >>= fun times ->
-            ddir.set_times times >>= fun () ->
-            sdir.unsafe_delete scomp >>= fun () ->
-            sdir.set_times times
-        in
-*)

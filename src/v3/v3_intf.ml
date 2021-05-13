@@ -12,25 +12,10 @@ Initial path resolution is carried out without locks. After, we lock
 type times = Minifs_intf.times
 
 
-module Errors = struct
-  (** Typical errors we encounter *)
-  type exn_ = [ 
-    | `Error_no_entry
-    | `Error_not_directory
-    | `Error_not_file
-    | `Error_not_symlink
-    | `Error_attempt_to_rename_dir_over_file
-    | `Error_attempt_to_rename_root
-    | `Error_attempt_to_rename_to_subdir
-    | `Error_no_src_entry
-    | `Error_path_resolution
-    | `Error_not_empty
-    | `Error_exists
-    | `Error_is_directory
-    | `Error_concurrent_modification (* new, compared to minifs *)
-    | `Error_other
-  ] [@@deriving bin_io, yojson]
-end
+module Errors = Minifs_intf.Error_
+
+(* To avoid adding an error that is not in POSIX *)
+let eRROR_CONCURRENT_MODIFICATION = `Error_other
 
 
 (** NOTE The following are copied from v1_generic.ml *)
@@ -78,6 +63,8 @@ module Lock_ops = struct
   }
 *)
 
+  (** NOTE tid (thread id) is really "request id", similar to requests
+     in http servers *)
   type ('tid,'id,'t) lock_ops = {
     lock       : tid:'tid -> objs:'id list -> (unit,'t)m;
     unlock     : tid:'tid -> objs:'id list -> (unit,'t)m;
@@ -180,8 +167,8 @@ module S1(S0:S0) = struct
 
   type dir_handle_ops = {
     opendir  : tid:tid -> did -> (dh,t)m;
-    readdir  : dh -> (str_256 list,t) m;
-    closedir : dh -> (unit,t)m;
+    readdir  : tid:tid -> dh -> (str_256 list,t) m;
+    closedir : tid:tid -> dh -> (unit,t)m;
   }
 
 
@@ -233,18 +220,8 @@ module S1(S0:S0) = struct
 
   type extra_ops = {
     internal_err : 'a. tid:tid -> string -> ('a,t) m;
-(*    is_ancestor  : tid:tid -> parent:did -> child:did -> 
-      ([ `True | `False of 'a is_ancestor_rtype],t) m *)
   }
 
-
-  (* type id = dir_entry *)
-(*
-  type kref_ops = {
-    get: tid:tid -> id list -> unit;
-    put: tid:tid -> id list -> unit;
-  }
-*)
 end
 
 (* $ (PIPE2SH("""sed -n '/The[ ]values/,/^end/p' >GEN.S2.ml_""")) *)
@@ -276,14 +253,43 @@ module Level2_provides(S0:S0) = struct
   end
 end
 
-(* $ (PIPE2SH("""sed -n '/The[ ]resulting/,/^end/p' >GEN.T.ml_""")) *)
-(** The resulting filesystem (fd is a file identifier, dh is a
-   directory handle supporting leaf_stream operations) *)
-module type Level1_provides = sig
-  type t
-  type fd
-  type dh
-  val ops: (fd,dh,t) Minifs_intf.ops
+(* $ (PIPE2SH("""sed -n '/module[ ]Level1_provides/,/^end/p' >GEN.Level1_provides.ml_""")) *)
+module Level1_provides = struct
+  open Minifs_intf.Call_specific_errors
+  type ('tid,'fd,'dh,'t) ops = {
+    root     : path;
+    unlink   : tid:'tid -> path -> ((unit,unlink_err)r_, 't) m;
+    mkdir    : tid:'tid -> path -> ((unit,mkdir_err)r_,'t) m;
+    opendir  : tid:'tid -> path -> (('dh,opendir_err)r_, 't) m;
+    readdir  : tid:'tid -> 'dh  -> ((string list,readdir_err)r_, 't) m;
+    (** NOTE . and .. are returned *)
+
+    closedir : tid:'tid -> 'dh  -> ((unit,closedir_err)r_,  't) m;
+    create   : tid:'tid -> path -> ((unit,create_err)r_,  't) m;
+    (** create is to create a file; use mkdir for a dir *)
+
+    open_    : tid:'tid -> path -> (('fd,open_err)r_,  't) m;
+
+    pread    : 
+      tid:'tid -> fd:'fd -> foff:int -> len:int -> buf:buf -> boff:int -> 
+      ((int,pread_err)r_, 't) m; 
+
+    pwrite   : 
+      tid:'tid -> fd:'fd -> foff:int -> len:int -> buf:buf -> boff:int -> 
+      ((int,pwrite_err)r_, 't) m;
+
+    close    : tid:'tid -> 'fd  -> ((unit,close_err)r_,  't) m;
+
+    rename   : tid:'tid -> path -> path -> ((unit,rename_err)r_,  't) m;
+
+    truncate : tid:'tid -> path -> int -> ((unit,truncate_err)r_,  't) m;
+    (** truncate a file to a given len *)
+
+    stat     : tid:'tid -> path -> ((stat_record,stat_err)r_,  't) m;
+    symlink  : tid:'tid -> path -> path -> ((unit,symlink_err)r_, 't) m;
+    readlink : tid:'tid -> path -> ((string,readlink_err)r_,'t) m;
+    reset    : unit -> (unit,  't) m;
+  }
 end
 
 
@@ -310,7 +316,7 @@ module Refs_with_dirty_flags = struct
 end
 open struct module R = Refs_with_dirty_flags end
 
-
+(*
 (** For this version, we implement a file using an underlying
    filesystem. NOTE we also store sz in the database; we should check
    that the on-disk version agrees with the DB when resurrecting (and
@@ -322,3 +328,4 @@ type per_file = {
   times          : times R.ref;
   sz             : int R.ref;
 }
+*)
