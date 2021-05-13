@@ -358,7 +358,7 @@ module Stage2(Stage1:STAGE1) = struct
 
   let fid_to_path fid = config.file_data_path ^"/" ^(string_of_int fid)
 
-  let sid_to_path sid = config.file_data_path ^"/" ^(string_of_int sid) ^".symlink"
+  let sid_to_path sid = config.file_data_path ^"/" ^(string_of_int sid)
 
   let live_files_ops = 
     let finalise1 (_fid,{fd}) = Lwt.(
