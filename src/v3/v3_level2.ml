@@ -22,6 +22,9 @@ open V3_intf
 open V3_level1
 open Tjr_monad.With_lwt
 
+let dont_log = false
+let line s = Printf.printf "%s: Reached line %d\n%!" "V3_level2" s; true
+
 module R = V3_intf.Refs_with_dirty_flags 
 
 module S0 (* : S0 *) = V3_base_types
@@ -112,7 +115,9 @@ module Stage2(Stage1:STAGE1) = struct
       y
 
   let resurrect did =
+    assert(dont_log || line __LINE__);
     sql_dir_ops.get_meta ~did >>= fun (parent,times) -> 
+    assert(dont_log || line __LINE__);
     let bot = () in
     let bot_ops : _ Lru.Bot.ops = {
       find_opt = (fun () k -> sql_dir_ops.find ~did k);
@@ -132,6 +137,7 @@ module Stage2(Stage1:STAGE1) = struct
         ~bot
         ~bot_ops
     in
+    assert(dont_log || line __LINE__);
     return 
       { lock=Lwt_mutex_ops.create_mutex(); 
         parent=R.ref parent;
@@ -160,6 +166,7 @@ module Stage2(Stage1:STAGE1) = struct
     xs |> List.map ops |> List.concat |> sql_dir_ops.exec
 
   let live_dirs_ops = Live_dirs.make_cache_ops ~resurrect ~finalise
+
   let live_dirs = 
     live_dirs_ops.create 
       ~config:V3_live_object_cache.{
@@ -209,10 +216,15 @@ module Stage2(Stage1:STAGE1) = struct
       return ()
     in
     let get_times ~did = 
+      assert(dont_log || line __LINE__);
       ensure_dir_is_live did >>= fun kref -> 
+      assert(dont_log || line __LINE__);
       ops.kref_to_obj kref |> fun per_dir -> 
+      assert(dont_log || line __LINE__);
       let times = R.(!(per_dir.times)) in
+      assert(dont_log || line __LINE__);
       ops.put kref;
+      assert(dont_log || line __LINE__);
       return times
     in
     let get_parent ~did =
@@ -445,13 +457,14 @@ module Stage2(Stage1:STAGE1) = struct
     Unix.(
       let dh = opendir config.file_data_path in
       0 |> iter_k (fun ~k n -> 
-          let s = try readdir dh with End_of_file -> closedir dh; "" in
-          let m = int_of_string_opt s in
-          match m with 
-          | None -> k n
-          | Some m -> 
-            let n = max m n in
-            k n))                  
+          (try readdir dh with End_of_file -> closedir dh; "") |> function
+          | "" -> n
+          | s -> 
+            s |> int_of_string_opt |> function
+            | None -> k n
+            | Some m -> 
+              let n = max m n in
+              k n))
 
   let new_fid =
     let x = ref (max_fid()) in

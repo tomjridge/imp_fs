@@ -2,7 +2,7 @@ default: all
 
 -include Makefile.ocaml
 
-all:: 
+all:: v3_main.exe
 	$(DUNE) build bin/v3_main.exe
 	cp _build/default/bin/v3_main.exe .
 # 	$(DUNE) build bin/v1_main.exe
@@ -56,7 +56,18 @@ run_from_existing:
 
 
 # v3 -------------------------------------------------------------------
-run_v3:
+
+v3_main.exe: FORCE
+	$(DUNE) build bin/v3_main.exe
+	cp _build/default/bin/v3_main.exe .
+
+
+init_v3: v3_main.exe
+	test -d tmp || { echo "Missing ./tmp directory"; exit -1; }
+	test -d tmp/v3_data || { echo "Missing ./tmp/v3_data directory"; exit -1; }
+	OCAMLRUNPARAM=b ./v3_main.exe init
+
+run_v3: v3_main.exe
 	test -d tmp || { echo "Missing ./tmp directory"; exit -1; }
 	test -f tmp/v3_database.db || { echo "Missing ./tmp/v3_database.db"; exit -1; }
 	test -d tmp/v3_data || { echo "Missing ./tmp/v3_data directory"; exit -1; }

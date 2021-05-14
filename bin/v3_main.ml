@@ -1,5 +1,29 @@
 (** Run the V3 filesystem *)
 
+let file_data_path = "tmp/v3_data"
+let db_path = "tmp/v3_database.db"
+
+let do_init () = 
+  let _rename_existing =
+    Tjr_file.file_exists db_path |> function
+    | true -> 
+      Tjr_file.rename db_path (db_path ^ "." ^ (string_of_float @@ Unix.time()))
+    | false -> ()
+  in
+  let open Sqlite3 in
+  let open Sqlite_dir in
+  let db = db_open db_path in
+  create_tables db;
+  add_root_directory db;
+  Stdlib.exit 0
+
+
+let _ = 
+  Sys.argv |> Array.to_list |> List.tl |> fun argv -> 
+  match argv with
+  | ["init"] -> do_init ()
+  | _ -> () (* lots of fuse args etc which are passed to the fuse lib *)
+
 
 (** {2 Level 2} *)
 
@@ -13,14 +37,14 @@ module Level2_stage1 = struct
     entries_cache_trim_delta = 5;
     live_dirs_capacity       = 10;
     live_dirs_trim_delta     = 5;
-    file_data_path           = "tmp/v3_data";
+    file_data_path;
     live_files_capacity      = 10;
     live_files_trim_delta    = 5;
   }
 
   module V3_sqlite_dir = V3_sqlite_dir.Make()
 
-  let db = Sqlite3.(db_open "tmp/v3_database.db")
+  let db = Sqlite3.(db_open db_path)
 
   let sql_dir_ops = V3_sqlite_dir.make_dir_ops ~db
 end

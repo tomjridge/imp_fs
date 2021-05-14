@@ -42,6 +42,11 @@ FIXME at the moment this is blocking; this should use lwt for non-blocking, and 
 
 (* FIXME do we need db locked for concurrent stmts? *)
 
+open Sqlite3
+open Tjr_monad.With_lwt
+
+let assert_ok rc = assert(rc = Rc.OK)
+
 
 [@@@warning "-33"]
 
@@ -104,8 +109,8 @@ type db = Sqlite3.db
 
 (* NOTE no caching at this level *)
 
-(* SQL commands to create a db; dir_entries and dir_meta; NOTE name is 256 length *)
-let create_db_stmt = {|
+(** SQL commands to create a db; dir_entries and dir_meta; NOTE name is 256 length *)
+let create_tables_stmt = {|
   DROP TABLE IF EXISTS 'dir_entries';
   DROP TABLE IF EXISTS 'dir_meta';
 
@@ -116,16 +121,24 @@ let create_db_stmt = {|
   /* CREATE UNIQUE INDEX 'index2' on 'dir_meta' (did); */
 |}
 
+let create_tables db = 
+  assert_ok (exec db create_tables_stmt)
 
-open Sqlite3
-open Tjr_monad.With_lwt
 
-let assert_ok rc = assert(rc = Rc.OK)
+(** Add root directory to db *)
+let add_root_directory_stmt = {|
+  INSERT INTO dir_meta VALUES (0,0,0.0,0.0)
+|}
 
-[@@@warning "-27"]
+let add_root_directory db = 
+  assert_ok (exec db add_root_directory_stmt)
+
+
 
 let readdir_limit = 1000
 let _ = assert(readdir_limit > 0)
+
+[@@@warning "-27"]
 
 
 module Make(S:sig
@@ -179,7 +192,7 @@ module Make(S:sig
       let stmt = max_did in
       assert_ok (reset stmt);    
       step stmt |> fun rc -> 
-      assert(rc=Rc.DONE || (print_endline (Rc.to_string rc); false));
+      assert(rc=Rc.ROW || (print_endline (Rc.to_string rc); false));
       (* NOTE bind starts from 1, cols from 0 *)
       (column_int stmt 0 |> int_to_did)
     in      
@@ -190,7 +203,7 @@ module Make(S:sig
       assert_ok (reset stmt);    
       assert_ok (bind_int stmt 1 did);
       step stmt |> fun rc -> 
-      assert(rc=Rc.DONE || (print_endline (Rc.to_string rc); false));
+      assert(rc=Rc.ROW || (print_endline (Rc.to_string rc); false));
       (* NOTE bind starts from 1, cols from 0 *)
       (column_int stmt 0 |> int_to_did, Times.{atim=column_double stmt 1;mtim=column_double stmt 2})
       |> return
@@ -383,7 +396,7 @@ module Test() = struct
 
   let db = db_open "sqlite_dir_test.db"
 
-  let _ = assert_ok (exec db create_db_stmt)
+  let _ = create_tables db
 
   let dir_ops = make_dir_ops ~db 
 

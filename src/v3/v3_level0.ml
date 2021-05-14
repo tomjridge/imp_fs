@@ -2,6 +2,7 @@
 
 open V3_intf
 
+let dont_log = false
 
 module Make() = struct
 
@@ -10,10 +11,13 @@ module Make() = struct
     incr x;
     fun () -> 
       let y = !x in
+      assert(dont_log || (Printf.printf "tid %d created\n" y; true));
       incr x;
       y
 
   open Tjr_monad.With_lwt
+
+  module Msgs = Minifs_intf.Msgs
 
   let make ~(level1_ops:_ Level1_provides.ops) : _ Minifs_intf.Ops_type.ops =
     let o = level1_ops in
@@ -29,7 +33,13 @@ module Make() = struct
     let close fd     = o.close ~tid:(new_tid()) fd in
     let rename pth   = o.rename ~tid:(new_tid()) pth in
     let truncate pth = o.truncate ~tid:(new_tid()) pth in
-    let stat pth     = o.stat ~tid:(new_tid()) pth in
+    let stat pth     = 
+      let tid = new_tid () in
+      assert(dont_log || begin
+          Msgs.Stat pth |> Msgs.msg_from_client_to_yojson |> Yojson.Safe.to_string |> fun s -> 
+          Printf.printf "tid %d called %s\n%!" tid s;
+          true end);
+      o.stat ~tid pth in
     let symlink c    = o.symlink ~tid:(new_tid()) c in
     let readlink pth = o.readlink ~tid:(new_tid()) pth in
     let reset        = o.reset in
