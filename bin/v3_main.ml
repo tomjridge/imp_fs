@@ -44,7 +44,11 @@ module Level2_stage1 = struct
 
   module V3_sqlite_dir = V3_sqlite_dir.Make()
 
-  let db = Sqlite3.(db_open db_path)
+  (* FIXME not sure why FULL is necessary if default sqlite3
+     https://sqlite.org/threadsafe.html is serialized... perhaps
+     ocaml-sqlite doesn't default to serialized? FIXME actually still
+     saw errors even with full mutex, see log.15 *)
+  let db = Sqlite3.(db_open ~mutex:`FULL db_path)
 
   let sql_dir_ops = V3_sqlite_dir.make_dir_ops ~db
 end

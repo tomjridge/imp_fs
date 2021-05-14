@@ -113,7 +113,7 @@ module S1(S0:S0) = struct
     (* set_parent: did:did -> parent:did -> (unit,t)m; (\** NOTE inter-object link *\) *)
     get_parent: did:did -> (did,t)m;
 
-    sync: did:did -> (unit,t)m; (** used in rename *)
+    sync: lock_held:bool -> did:did -> (unit,t)m; (** used in rename *)
   }
   (** NOTE the parent field is an inter-object link and so needs to be
      updated atomically ; NOTE no nlink for dirs, but POSIX probably

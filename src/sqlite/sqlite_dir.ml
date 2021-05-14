@@ -45,6 +45,9 @@ FIXME at the moment this is blocking; this should use lwt for non-blocking, and 
 open Sqlite3
 open Tjr_monad.With_lwt
 
+let dont_log = false
+let line s = Printf.printf "%s: Reached line %d\n%!" "sqlite_dir" s; true
+
 let assert_ok rc = assert(rc = Rc.OK)
 
 
@@ -98,7 +101,7 @@ type ('k,'v,'t,'did) dir_ops = {
 
   pre_create: 
     note_does_not_touch_parent: unit -> 
-    new_did:'did -> parent:'did -> times:times -> unit; 
+    new_did:'did -> parent:'did -> times:times -> (unit,'t)m; 
   (** pre-create does not touch the parent directory - that needs to
      be done with a separate insert *)
 }
@@ -155,13 +158,16 @@ module Make(S:sig
   end) = struct
   open S
 
+  (* FIXME disabled for now - pre_create goes direct to db 
   let pending_creates : (did*did*times)list ref = ref []
 
   let pre_create ~note_does_not_touch_parent:() ~new_did ~parent ~times = pending_creates:=(new_did,parent,times)::!pending_creates
+  *)
 
   let make_dir_ops ~db = 
 
     (* statements *)
+    let pre_create = prepare db {| INSERT INTO dir_meta VALUES (?,?,?,?) |} in
     let get_meta = prepare db {| SELECT parent,atim,mtim FROM dir_meta WHERE did=? |} in
     let insert = prepare db {| INSERT OR REPLACE INTO dir_entries VALUES (?,?,?) |} in
     let delete = prepare db {| DELETE FROM dir_entries WHERE (did,name) = (?,?) |} in
@@ -229,32 +235,44 @@ module Make(S:sig
         |> return
     in
     let exec (ops: _ op list) = 
+      assert(dont_log || line __LINE__);
       assert_ok (exec db "BEGIN TRANSACTION");
+      assert(dont_log || line __LINE__);
       (* deal with pending_creates first *)
+      (* FIXME? need to make sure find takes the pending creates into account
       let ops = 
-        let xs = !pending_creates in
-        pending_creates:=[];
+        pending_creates:=[];           
         let xs = xs |> List.concat_map (fun (did,parent,times) -> 
             [ Set_parent (did,parent);Set_times(did,times) ] )
         in
         xs@ops  (* NOTE creates must happen before other ops, in case
                    one of the ops involves the newly created objs *)
       in
+      *)
       begin
         ops |> List.iter (fun op -> 
             match op with 
             | Insert(did,k,v) ->
+              assert(dont_log || line __LINE__);
               let k = Str_256.s256_to_string k in
               let did = did_to_int did in
               let stmt = insert in
+              assert(dont_log || line __LINE__);
               assert_ok (reset stmt);
+              assert(dont_log || line __LINE__);
               assert_ok (bind_int stmt 1 did);
+              assert(dont_log || line __LINE__);
               assert_ok (bind_text stmt 2 k);
+              assert(dont_log || line __LINE__);
               assert_ok (bind_blob stmt 3 (v |> dir_entry_to_string));
+              assert(dont_log || line __LINE__);
               step stmt |> fun rc -> 
-              assert(rc=Rc.DONE);
+              assert(dont_log || line __LINE__);
+              assert(rc=Rc.DONE || (print_endline (Rc.to_string rc); false));
+              assert(dont_log || line __LINE__);
               ()
             | Delete (did,k) -> 
+              assert(dont_log || line __LINE__);
               let k = Str_256.s256_to_string k in
               let did = did_to_int did in
               let stmt = delete in
@@ -263,8 +281,10 @@ module Make(S:sig
               assert_ok (bind_text stmt 2 k);
               step stmt |> fun rc -> 
               assert(rc=Rc.DONE);
+              assert(dont_log || line __LINE__);
               ()          
             | Set_parent (did,p) -> 
+              assert(dont_log || line __LINE__);
               let did = did_to_int did in
               let stmt = set_parent in
               assert_ok (reset stmt);
@@ -272,6 +292,8 @@ module Make(S:sig
               assert_ok (bind_int stmt 2 did);
               step stmt |> fun rc -> 
               assert(rc=Rc.DONE);
+              assert(dont_log || line __LINE__);
+              ()
             | Set_times (did,times) -> 
               let did = did_to_int did in
               let stmt = set_times in
@@ -280,9 +302,33 @@ module Make(S:sig
               assert_ok (bind_double stmt 2 times.mtim);
               assert_ok (bind_int stmt 3 did);
               step stmt |> fun rc -> 
-              assert(rc=Rc.DONE))
+              assert(rc=Rc.DONE);
+              assert(dont_log || line __LINE__);
+              ())
       end;
       assert_ok (exec db "END TRANSACTION");
+      assert(dont_log || line __LINE__);
+      return ()
+    in
+
+
+    let pre_create ~note_does_not_touch_parent:() ~new_did ~parent ~times =
+      assert(dont_log || line __LINE__);      
+      let stmt = pre_create in
+      assert_ok (reset stmt);
+      assert(dont_log || line __LINE__);
+      assert_ok (bind_int stmt 1 (new_did|>did_to_int));
+      assert(dont_log || line __LINE__);
+      assert_ok (bind_int stmt 2 (parent|>did_to_int));
+      assert(dont_log || line __LINE__);
+      assert_ok (bind_double stmt 3 (times.Times.atim));
+      assert(dont_log || line __LINE__);
+      assert_ok (bind_double stmt 4 (times.Times.mtim));
+      assert(dont_log || line __LINE__);
+      step stmt |> fun rc -> 
+      assert(dont_log || line __LINE__);
+      assert(rc=Rc.DONE);
+      assert(dont_log || line __LINE__);
       return ()
     in
 
