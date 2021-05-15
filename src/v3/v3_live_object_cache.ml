@@ -13,7 +13,8 @@ We are maintaining a cache of objects by id. We can maintain the
 
 Don't open.  *)
 
-let dont_log = false
+let dont_log = V3_intf.dont_log
+
 let line s = Printf.printf "%s: Reached line %d\n%!" "V3_live_object_cache" s; true
 
 (** User view of krefs; the user must call krelease when finished with

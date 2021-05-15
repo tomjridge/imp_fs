@@ -17,7 +17,6 @@ open V3_intf.Path_resolution
 
 open V3_intf.Lock_ops
 
-let dont_log = false
 let line s = Printf.printf "%s: Reached line %d\n%!" "V3_level1" s; true
 
 

@@ -4,8 +4,6 @@ open Tjr_monad.With_lwt
 
 open V3_intf
 
-let dont_log = false
-
 module Make() = struct
 
   let live_tids = Hashtbl.create 10

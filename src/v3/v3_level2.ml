@@ -22,7 +22,6 @@ open V3_intf
 open V3_level1
 open Tjr_monad.With_lwt
 
-let dont_log = false
 let line s = Printf.printf "%s: Reached line %d\n%!" "V3_level2" s; true
 
 module R = V3_intf.Refs_with_dirty_flags 

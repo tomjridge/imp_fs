@@ -33,13 +33,13 @@ open V3_level2
 module Level2_stage1 = struct
 
   let config = {
-    entries_cache_capacity   = 10;
-    entries_cache_trim_delta = 5;
-    live_dirs_capacity       = 10;
-    live_dirs_trim_delta     = 5;
+    entries_cache_capacity   = 100;
+    entries_cache_trim_delta = 20;
+    live_dirs_capacity       = 100;
+    live_dirs_trim_delta     = 20;
     file_data_path;
-    live_files_capacity      = 10;
-    live_files_trim_delta    = 5;
+    live_files_capacity      = 100;
+    live_files_trim_delta    = 20;
   }
 
   module V3_sqlite_dir = V3_sqlite_dir.Make()

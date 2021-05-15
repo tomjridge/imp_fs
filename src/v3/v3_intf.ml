@@ -329,3 +329,7 @@ type per_file = {
   sz             : int R.ref;
 }
 *)
+
+
+(** For debugging *)
+let dont_log = true
