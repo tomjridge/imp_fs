@@ -229,7 +229,7 @@ module Make(S:S)
          Printf.printf 
            "WARNING! Trimmed %d entries, but this is less than %d \
             (delta we aim to trim). Possibly too many finding entries? \
-            (There are %d finding entries.)\n"
+            (There are %d finding entries.)\n%!"
            (!n_removed)
            c.trim_delta
            (!n_finding)
@@ -237,7 +237,7 @@ module Make(S:S)
       (if Lru.size c.lru > c.lru_capacity then 
          Printf.printf 
            "WARNING! The LRU size %d exceeds the capacity %d and we \
-            were unable to remove more entries\n" 
+            were unable to remove more entries\n%!" 
            (Lru.size c.lru) c.lru_capacity); 
       (* FIXME what is the reasonable thing to do in this situation?
          maybe timeout??? or block and wait for finds to complete? Or

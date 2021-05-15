@@ -15,7 +15,7 @@ module Make() = struct
     incr x;
     fun () -> 
       let y = !x in
-      assert(dont_log || (Printf.printf "tid %d created\n" y; true));
+      assert(dont_log || (Printf.printf "tid %d created\n%!" y; true));
       incr x;
       Hashtbl.replace live_tids y ();
       y

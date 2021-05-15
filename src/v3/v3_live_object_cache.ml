@@ -40,7 +40,7 @@ module Private_kref_impl = struct
     (* Add a finalizer to ensure that the obj is not GC'ed in valid state *)
     assert(
       kref |> Gc.finalise (fun x -> 
-          if x.valid then Printf.printf "WARNING! kref object GC'ed but valid flag was set");
+          if x.valid then Printf.printf "WARNING! kref object GC'ed but valid flag was set\n%!");
       true);
     kref
 
@@ -177,14 +177,14 @@ module Make(S:S) : T with type id = S.id and type a = S.a = struct
             if !n_removed < n_to_remove then 
               Printf.printf 
                 "WARNING! Trimmed %d entries, but this is less than %d \
-                 (amount we aim to trim). Possibly too many live entries?\n"
+                 (amount we aim to trim). Possibly too many live entries?\n%!"
                 !n_removed
                 n_to_remove;
 
             if Lru.size cache.lru > cache.config.cache_size then 
               Printf.printf 
                 "WARNING! The LRU size %d exceeds the capacity %d and we \
-                 were unable to remove more entries\n" 
+                 were unable to remove more entries\n%!" 
                 (Lru.size cache.lru) 
                 cache.config.cache_size
                 (* FIXME what is the reasonable thing to do in this

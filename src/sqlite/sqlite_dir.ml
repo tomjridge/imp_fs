@@ -165,6 +165,15 @@ module Make(S:sig
   *)
 
   let make_dir_ops ~db = 
+    (* NOTE currently all DB access is serialized; but some concurrency could be achieved *)
+    let lck = Lwt_mutex.create () in
+
+    let with_lck f = 
+      (Lwt_mutex.lock lck)|>from_lwt >>= fun () ->
+      f () >>= fun r -> 
+      Lwt_mutex.unlock lck; 
+      return r
+    in
 
     (* statements *)
     let pre_create = prepare db {| INSERT INTO dir_meta VALUES (?,?,?,?) |} in
@@ -204,6 +213,7 @@ module Make(S:sig
     in      
 
     let get_meta ~did = 
+      with_lck @@ fun () -> 
       let did = did_to_int did in
       let stmt = get_meta in
       assert_ok (reset stmt);    
@@ -215,6 +225,7 @@ module Make(S:sig
       |> return
     in
     let find ~did k : (dir_entry option,_)m = 
+      with_lck @@ fun () -> 
       let k = Str_256.s256_to_string k in
       let did = did_to_int did in
       let stmt = find in
@@ -235,6 +246,7 @@ module Make(S:sig
         |> return
     in
     let exec (ops: _ op list) = 
+      with_lck @@ fun () -> 
       assert(dont_log || line __LINE__);
       assert_ok (exec db "BEGIN TRANSACTION");
       assert(dont_log || line __LINE__);
@@ -313,6 +325,7 @@ module Make(S:sig
 
 
     let pre_create ~note_does_not_touch_parent:() ~new_did ~parent ~times =
+      with_lck @@ fun () -> 
       assert(dont_log || line __LINE__);      
       let stmt = pre_create in
       assert_ok (reset stmt);
@@ -334,6 +347,10 @@ module Make(S:sig
 
     (* read entries after (not including) from_name; return results in reverse name order *)
     let readdir ~did ~(from_name:str_256) = 
+      (* NOTE this does not allow for interference from lwt, but we
+         still have to ensure the lock is taken; hence we do, in fact,
+         need this in the monad *)
+      with_lck @@ fun () -> 
       let from_name = Str_256.to_string from_name in
       let stmt = opendir_2 in
       assert_ok (reset stmt);
@@ -350,10 +367,11 @@ module Make(S:sig
             let de = column_blob stmt 2 in
             k ( (name,de|>string_to_dir_entry)::xs))
       |> fun rows -> 
-      rows (* in reverse order *)
+      return rows (* in reverse order *)
     in    
 
     let opendir ~did = 
+      Lwt_mutex.lock lck |> from_lwt >>= fun () -> 
       let did = did_to_int did in
       let stmt = opendir_1 in
       assert_ok (reset stmt);
@@ -369,6 +387,7 @@ module Make(S:sig
             let de = column_blob stmt 2 in
             k ( (name,de|>string_to_dir_entry)::xs))
       |> fun rows -> 
+      Lwt_mutex.unlock lck;
       (* NOTE stateful interface *)
       let current_max_name = ref (match rows with [] -> None | (name,de)::_ -> Some (name:str_256)) in
       let current_rows = ref (List.rev rows) in
@@ -380,7 +399,7 @@ module Make(S:sig
         | false -> 
           assert(!current_max_name <> None);
           let from_name = dest_Some(!current_max_name) in
-          readdir ~did ~from_name |> fun rows -> 
+          readdir ~did ~from_name >>= fun rows -> 
           match rows with
           | [] -> (
               current_max_name := None; 
