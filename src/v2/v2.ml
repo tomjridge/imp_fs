@@ -194,7 +194,7 @@ module Stage_1(S1:sig
 
 *)
 
-    let id_to_int = Dir_impl.Dir_entry.(function
+    let id_to_int = V2_dir_impl.Dir_entry.(function
         | Did did -> did
         | Fid fid -> fid
         | Sid sid -> sid)
@@ -229,7 +229,7 @@ module Stage_1(S1:sig
     let gom_delete = gom_ops.delete
 
 
-    let dir_impl = Dir_impl.dir_example
+    let dir_impl = V2_dir_impl.dir_example
     let dir_impl' =             
       let read_msg blk_id = Printf.printf "dir_impl: read from %d\n%!" (B.to_int blk_id) in
       let write_msg blk_id = Printf.printf "dir_impl: write to %d\n%!" (B.to_int blk_id) in
@@ -258,7 +258,7 @@ module Stage_1(S1:sig
         type nonrec t = t
         let monad_ops = monad_ops
       end
-      module L = Live_object_cache.Make(A)
+      module L = V2_live_object_cache.Make(A)
       
       (** $(CONFIG("params: capacity of the live_f cache")) *)
       let capacity = 20
@@ -350,7 +350,7 @@ module Stage_1(S1:sig
         ~sync
         ~freelist_ops:fl_ops
 
-    let symlink_impl = Symlink_impl.example
+    let symlink_impl = V2_symlink_impl.example
     let symlink_impl' =
       let read_msg blk_id = Printf.printf "symlink_impl: read from %d\n%!" (B.to_int blk_id) in
       let write_msg blk_id = Printf.printf "symlink_impl: write to %d\n%!" (B.to_int blk_id) in
@@ -376,7 +376,7 @@ module Stage_1(S1:sig
         type nonrec t = t
         let monad_ops = monad_ops
       end
-      module L = Live_object_cache.Make(A)
+      module L = V2_live_object_cache.Make(A)
       
       (** $(CONFIG("params: capacity of the live_f cache")) *)
       let capacity = 20

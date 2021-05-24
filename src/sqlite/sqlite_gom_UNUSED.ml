@@ -5,8 +5,8 @@
 open Printf
 open Sqlite3
 open Tjr_monad.With_lwt
-open Gom_v3
-open Gom_v3.Op
+open Gom_v3_UNUSED
+open Gom_v3_UNUSED.Op
     
 let create_db_stmt ~tbl = sprintf {|
   DROP TABLE IF EXISTS '%s';
@@ -32,7 +32,7 @@ type ('k,'v,'t) lower_ops = {
 (** Drop the get_max debug field *)
 let lower_ops_to_gom_v3 ops = 
   let {get_max=_;alloc_n;find;exec} = ops in
-  Gom_v3.{alloc_n;find;exec}
+  Gom_v3_UNUSED.{alloc_n;find;exec}
 
 
 module Make(S:sig

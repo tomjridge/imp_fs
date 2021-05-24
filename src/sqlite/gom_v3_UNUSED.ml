@@ -54,9 +54,9 @@ type ('k,'v,'t) lower_ops = {
 
 
 (* cache for the map entries *)
-type 'a cache_entry = 'a Dv3.cache_entry = Some_ of 'a | Deleted | Not_present
+type 'a cache_entry = 'a Dv3_UNUSED.cache_entry = Some_ of 'a | Deleted | Not_present
 
-type ('k,'v,'cache) cache_ops = ('k,'v,'cache) Dv3.cache_ops
+type ('k,'v,'cache) cache_ops = ('k,'v,'cache) Dv3_UNUSED.cache_ops
 
 type ('k,'v,'cache) gom_cache = {
   frees: 'k list;

@@ -14,7 +14,7 @@ open Imp_util
 
 let dont_log = false
 
-module Usedlist = Usedlist_impl.Usedlist
+module Usedlist = V2_usedlist_impl.Usedlist
 
 module Gom_origin_block = struct
   (* open Bin_prot.Std *)
@@ -109,7 +109,7 @@ module Make(S:sig
     val btree_factory : 
       (dir_entry,blk_id,blk_id,t,_leaf,_node,_dnode,_ls,blk,_wbc) Tjr_btree.Make_6.btree_factory                        
 
-    val usedlist_factory : (blk_id,blk,t) Usedlist_impl.usedlist_factory
+    val usedlist_factory : (blk_id,blk,t) V2_usedlist_impl.usedlist_factory
     
   end) = struct
   open S
@@ -356,7 +356,7 @@ module Pvt = struct
     
     let btree_factory = T.btree_factory
 
-    let usedlist_factory = Usedlist_impl.usedlist_example
+    let usedlist_factory = V2_usedlist_impl.usedlist_example
   end
 
   module M = Make(S)

@@ -1,4 +1,4 @@
-(** A simple directory implementation; NOTE this module safe to open.
+(** A simple directory implementation using a B-tree; NOTE this module safe to open.
 
 Directories are one of the main objects we deal with.
 
@@ -18,7 +18,7 @@ A directory is really a thin layer over a B-tree, interfacing with the
 
 *)
 
-open Usedlist_impl
+open V2_usedlist_impl
 
 type stat_times = Minifs_intf.times[@@deriving bin_io]
 
@@ -492,7 +492,7 @@ let dir_example =
         (module X))
 
     let usedlist_factory : (blk_id,blk,t) usedlist_factory = 
-      Usedlist_impl.usedlist_example
+      usedlist_example
 
     (* now use the B-tree factory to get hold of the ls type *)
 

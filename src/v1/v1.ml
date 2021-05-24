@@ -1,4 +1,6 @@
-(** Collection of V1 modules *)
+(** V1 - implement directories and file metadata, with file data
+    passed through to an underlying filesystem.
+ *)
 
 module V1_config = V1_config
 
@@ -9,7 +11,7 @@ module V1_file = V1_file
 module V1_generic = V1_generic
 
 (** Not used *)
-module NOT_USED_V1_resource_manager = V1_resource_manager
+module NOT_USED_V1_resource_manager = V1_resource_manager_UNUSED
 
 (** After V1_generic, this introduces some concrete types for V1_specific *)
 module V1_types = V1_types

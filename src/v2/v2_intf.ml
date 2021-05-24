@@ -4,10 +4,10 @@
 (** Object ids *)
 
 type ('fid,'did,'sid) dir_entry' = 
-  ('fid,'did,'sid) Dir_impl.Dir_entry.dir_entry'[@@deriving bin_io, sexp]
-type dir_entry = Dir_impl.Dir_entry.dir_entry[@@deriving bin_io]
+  ('fid,'did,'sid) V2_dir_impl.Dir_entry.dir_entry'[@@deriving bin_io, sexp]
+type dir_entry = V2_dir_impl.Dir_entry.dir_entry[@@deriving bin_io]
 
-let dir_entry_to_int = Dir_impl.Dir_entry.dir_entry_to_int
+let dir_entry_to_int = V2_dir_impl.Dir_entry.dir_entry_to_int
 
 
 

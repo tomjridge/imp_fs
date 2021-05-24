@@ -121,7 +121,7 @@ module Per_object_data = struct
 end
 
 
-
+module Ownership_map = Ownership_map_UNUSED
 
 
 let resource_ops = 

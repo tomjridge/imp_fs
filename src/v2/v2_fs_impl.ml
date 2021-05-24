@@ -129,7 +129,7 @@ module Example = struct
 
       (* Create root directory *)
       let root_did = (* Dir_impl.Dir_entry.Did *) 0 in
-      let dir_factory = Dir_impl.dir_example in
+      let dir_factory = V2_dir_impl.dir_example in
       let dir_factory' = 
         (* FIXME this is a bit horrible *)
         let read_msg blk_id = Printf.printf "dir_factory: read from %d\n%!" (B.to_int blk_id) in
@@ -147,7 +147,7 @@ module Example = struct
       Printf.printf "%s: about to create root dir...\n%!" __FILE__;
       dir_factory'#create_root_dir ~root_did ~times >>= fun blk_id ->
       Printf.printf "%s: ...created...\n%!" __FILE__;
-      gom_ops.V2_gom.Gom_ops.insert (Dir_impl.Dir_entry.Did root_did) blk_id >>= fun () -> 
+      gom_ops.V2_gom.Gom_ops.insert (V2_dir_impl.Dir_entry.Did root_did) blk_id >>= fun () -> 
       Printf.printf "%s: ...inserted into GOM\n%!" __FILE__;
 
       (* Make sure everything is flushed *)

@@ -35,7 +35,7 @@ let dont_log = false
 
 open Int_like
 
-module Usedlist = Usedlist_impl.Usedlist
+module Usedlist = V2_usedlist_impl.Usedlist
 
 module Times = Minifs_intf.Times
 type stat_times = Times.times[@@deriving bin_io]
@@ -161,7 +161,7 @@ type ('blk_id,'buf,'t) file_ops = {
 
 
 (* open Buffers_from_btree (\* FIXME combine with the other buf_ops *\) *)
-open Usedlist_impl
+open V2_usedlist_impl
 open Fv2_types
 
 module Iter_block_blit = Fv2_iter_block_blit
@@ -786,7 +786,7 @@ let file_examples =
 
       let buf_ops = Buf_ops.buf_ops#ba
 
-      let usedlist_factory = Usedlist_impl.usedlist_example
+      let usedlist_factory = V2_usedlist_impl.usedlist_example
 
       let btree_factory = Tjr_btree.Make_6.Examples.int_r_factory
 
@@ -947,7 +947,7 @@ module Test() = struct
       in
       object 
         method ref_ = xs
-        method ops = Usedlist_impl.Usedlist.{add; get_origin; flush }
+        method ops = Usedlist.{add; get_origin; flush }
       end
 
     let usedlist = (usedlist ())#ops

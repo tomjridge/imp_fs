@@ -1,4 +1,4 @@
-(** Live object cache.contents
+(** Live object cache.
 
 A cache of "live" objects. Expunging an object may take some
    time. Resurrecting an object may take some time. We use reference

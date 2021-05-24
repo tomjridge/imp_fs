@@ -111,7 +111,7 @@ module S1(S0:S0) = struct
      type FIXME just have another type which omits the get_origin
      field, surely? *)
   type blk_id' = Shared_ctxt.r
-  type dir_ops = (str_256,dir_entry,blk_id',t,did) Dir_impl.Dir_ops.t
+  type dir_ops = (str_256,dir_entry,blk_id',t,did) V2_dir_impl.Dir_ops.t
 
   (* val read_symlink: sid -> (str_256,t)m *)
   (* FIXME we probably want path res to return an sid, which could be
