@@ -388,6 +388,8 @@ module Stage_1(S1:sig
         gom_find (Fid fid) >>= fun blk_id -> 
         file_impl'#file_from_origin blk_id >>= fun ops ->
         return (Some ops)
+
+      let _ = lower_acquire
         
       (** When we evict from cache, we take care to call sync (this is
          blocking... possible performance issue... see

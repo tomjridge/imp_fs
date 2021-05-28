@@ -47,22 +47,22 @@ module Make(S:sig
     get_fd ~fid ~foff >>= fun fd ->
     let bs = Bytes.create (buf_ops.buf_length buf - boff) in
     (from_lwt Lwt_unix.(read fd bs boff len)) >>= fun (n:int) ->
-    Bigstring.blit_of_bytes bs 0 buf boff n;
+    let _ : buf = Shared_ctxt.buf_ops.blit_bytes_to_buf ~src:bs ~src_off:{off=0} ~src_len:{len=n} ~dst:buf ~dst_off:{off=boff} in
     close fd >>= fun () ->
     return (Ok n)
 
-  let pwrite ~fid ~foff ~len ~buf ~boff = 
+  let pwrite ~fid ~foff ~len ~(buf:Shared_ctxt.buf) ~boff = 
     assert(dont_log || 
            (printf "pwrite 1: fid=%d foff=%d len=%d boff=%d \n%!" 
               (fid|>fid_to_int) foff len boff; true));
     get_fd ~fid ~foff >>= fun fd ->
     assert(dont_log || (printf "pwrite 2\n%!";true));
-    let bs = Bigstring.to_bytes buf in  (* FIXME don't need whole buf *)
+    let bs = Shared_ctxt.buf_ops.to_bytes buf in  (* FIXME don't need whole buf *)
     assert(dont_log || (printf "pwrite 3\n%!";true));
     (from_lwt Lwt_unix.(write fd bs boff len)) >>= fun n ->
     Printf.printf "pwrite 4\n%!";
     assert(n=len); (* FIXME *)
-    Bigstring.blit_of_bytes bs boff buf boff n;
+    Bigstring.blit_of_bytes bs boff buf.ba_buf boff n;
     close fd >>= fun () ->
     assert(dont_log || (printf "pwrite 5\n%!";true));
     return (Ok n)

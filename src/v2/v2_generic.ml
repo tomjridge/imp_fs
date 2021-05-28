@@ -131,7 +131,7 @@ module S1(S0:S0) = struct
 
   type fd = fid
 
-  type buf = ba_buf
+  type buf = Shared_ctxt.buf
 
   (* FIXME open minifs automatically? or at least some of the
      submodules within minifs_intf? *)
@@ -334,16 +334,27 @@ module Make(S0:S0) = struct
       files.find fd >>= fun file ->
       file.pread ~off:{off=foff} ~len:{len} >>=| fun buf' ->
       (* FIXME do we really assert this?
-      assert(Bigstring.size buf' = len); *)
+         assert(Bigstring.size buf' = len); *)
       (* FIXME unnecessary blit between buffers *)
-      Bigstring.blit buf' 0 buf boff (ba_buf_ops.buf_length buf');
+      let _ : buf = Shared_ctxt.buf_ops.blit 
+        ~src:buf' ~src_off:{off=0} ~src_len:{len=Shared_ctxt.buf_ops.buf_length buf'}
+        ~dst:buf ~dst_off:{off=boff} 
+      in
       return (Ok len)
 
+    (* when we export pread, we need to work with ba_buf for fuse *)
+    let pread ~fd ~foff ~len ~(buf:ba_buf) ~boff = 
+      pread ~fd ~foff ~len ~buf:(Shared_ctxt.{ba_buf=buf;is_valid=true}) ~boff
+    
     (* NOTE file.pwrite should automatically update the timestamps *)
     let pwrite ~fd ~foff ~len ~buf ~boff =
       files.find fd >>= fun file ->
       (* file.pwrite ~foff ~len ~buf ~boff *)
       file.pwrite ~src:buf ~src_off:{off=boff} ~src_len:{len} ~dst_off:{off=foff}
+
+    let pwrite ~fd ~foff ~len ~buf:ba_buf ~boff = 
+      let buf = Shared_ctxt.{ba_buf;is_valid=true} in
+      pwrite ~fd ~foff ~len ~buf ~boff
       
     let close _fd = ok ()  (* FIXME record which are open? *)
 

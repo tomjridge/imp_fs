@@ -1,4 +1,4 @@
-(** A simple file implementation; supersedes v1. 
+(** A simple file implementation as map from blk index to blk, typically using a B-tree; supersedes v1. 
 
 Terminology: (file) block-index map: the map from blk index to blk_id
 
@@ -260,9 +260,9 @@ let pwrite_check = File_impl_v1.pwrite_check
 
 
 module type S = sig
-  type blk = ba_buf
-  type buf = ba_buf
-  val blk_sz : blk_sz (** assumed to match buf size *)
+  type blk = Shared_ctxt.blk
+  type buf = Shared_ctxt.buf
+  val blk_sz : blk_sz (** assumed to match buf size; = Shared_ctxt.blk_sz *)
 
   type blk_id = Shared_ctxt.r
   type r = Shared_ctxt.r
@@ -313,6 +313,7 @@ end
 
 (** Version with full sig; NOTE that this is quite specialized to Shared_ctxt *)
 module Make_v1(S:S) (* : T with module S = S*) = struct
+  (* open Shared_ctxt *)
   module S = S
   open S
 
@@ -322,13 +323,16 @@ module Make_v1(S:S) (* : T with module S = S*) = struct
   module File_origin_mshlr = (val file_origin_mshlr)
 
   let read_origin ~blk_dev_ops ~blk_id =
-    blk_dev_ops.read ~blk_id >>= fun buf -> 
-    File_origin_mshlr.unmarshal buf |> return
+    blk_dev_ops.read ~blk_id >>= fun blk -> 
+    Shared_ctxt.blk_ops.blk_to_buf blk |> fun buf -> 
+    File_origin_mshlr.unmarshal buf.Shared_ctxt.ba_buf |> return
 
-  let write_origin ~blk_dev_ops ~blk_id ~origin =
-    origin |> File_origin_mshlr.marshal |> fun buf -> 
+  let write_origin ~(blk_dev_ops:_ blk_dev_ops) ~blk_id ~origin =
+    origin |> File_origin_mshlr.marshal |> fun ba_buf -> 
+    let blk = Shared_ctxt.{ba_buf} in
+    let buf = blk |> Shared_ctxt.blk_ops.blk_to_buf in
     assert( buf_ops.buf_length buf = (blk_dev_ops.blk_sz|>Blk_sz.to_int)); 
-    blk_dev_ops.write ~blk_id ~blk:buf
+    blk_dev_ops.write ~blk_id ~blk
     
   let usedlist_origin (fo: _ File_origin_block.t) = fo.usedlist_origin
 
@@ -471,7 +475,7 @@ module Make_v1(S:S) (* : T with module S = S*) = struct
 
       open S3
 
-      let empty_blk () = buf_ops.of_string (String.make blk_sz (Char.chr 0))
+      let empty_blk () = buf_ops.of_string (String.make blk_sz (Char.chr 0)) |> Shared_ctxt.blk_ops.buf_to_blk
       (* assumes functional blk impl ?; FIXME blk_ops pads string automatically? *)
 
       let dev = blk_dev_ops
@@ -503,7 +507,7 @@ module Make_v1(S:S) (* : T with module S = S*) = struct
         buf_to_blk=(fun x -> x);
       }
 
-      let blk_ops = make_ba_ba_blk_ops ~blk_sz:blk_dev_ops.blk_sz
+      let blk_ops = Shared_ctxt.blk_ops (* make_ba_ba_blk_ops ~blk_sz:blk_dev_ops.blk_sz *)
 
       let _ = assert (
         let b = blk_ops.blk_sz = blk_dev_ops.blk_sz in
@@ -512,15 +516,18 @@ module Make_v1(S:S) (* : T with module S = S*) = struct
             __FILE__ (blk_dev_ops.blk_sz |> Blk_sz.to_int) (blk_ops.blk_sz |> Blk_sz.to_int);
            false))
         
-      let zero_blk = Bigstring.make blk_sz chr0
+      (* FIXME should never write to this!!! *)
+      let zero_blk = Shared_ctxt.(buf_create () |> blk_ops.buf_to_blk)
       (* this fills the blk with 0 from blk_off *)
       (* let truncate_blk ~blk ~blk_off =  *)
 
-      let clear_blk ~blk ~(blk_off:int) = 
-        blk |> blk_ops.blk_to_buf |> fun blk -> 
+      let priv_zero_buf_read_only = Shared_ctxt.(zero_blk |> blk_ops.blk_to_buf)
+
+      let clear_blk ~(blk:blk) ~(blk_off:int) =         
+        blk |> blk_ops.blk_to_buf |> fun buf -> 
         buf_ops.blit 
-          ~src:zero_blk ~src_off:{off=blk_off} ~src_len:{len=blk_sz-blk_off} 
-          ~dst:blk ~dst_off:{off=blk_off}
+          ~src:priv_zero_buf_read_only ~src_off:{off=blk_off} ~src_len:{len=blk_sz-blk_off} 
+          ~dst:buf ~dst_off:{off=blk_off}
         |> blk_ops.buf_to_blk 
   
       let truncate ~(size:int) : (unit,'t)m = 
@@ -776,15 +783,15 @@ end
 let file_examples = 
   let mk_example ~blk_sz = 
     let module S = struct
-      type blk = ba_buf
-      type buf = ba_buf
+      type blk = Shared_ctxt.blk
+      type buf = Shared_ctxt.buf
       let blk_sz = blk_sz
       type blk_id = Shared_ctxt.r
       type r = Shared_ctxt.r
       type t = Shared_ctxt.t
       let monad_ops = Shared_ctxt.monad_ops
 
-      let buf_ops = Buf_ops.buf_ops#ba
+      let buf_ops = Shared_ctxt.buf_ops (* Buf_ops.buf_ops#ba *)
 
       let usedlist_factory = V2_usedlist_impl.usedlist_example
 
@@ -1016,7 +1023,8 @@ module Test() = struct
     let { pread; pwrite; _ } = file_ops
 
     (* let buf_ops = Buffers_from_btree.Unsafe__ba_buf.buf_ops *)
-    let buf_ops = Buf_ops.buf_ops#ba
+    (* let buf_ops = Buf_ops.buf_ops#ba *)
+    let buf_ops = Shared_ctxt.buf_ops
 
     let run () = 
       Printf.printf "%s: tests starting...\n" __MODULE__;

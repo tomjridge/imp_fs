@@ -123,7 +123,7 @@ type params = <
 (* NOTE 'a is 'blk_id when working with the standard freelist *)
 
 (* $(PIPE2SH("""sed -n '/type[ ].*freelist_factory/,/^>/p' >GEN.freelist_factory.ml_""")) *)
-type ('a,'buf,'blk_id,'t) freelist_factory = <
+type ('a,'buf,'blk_id,'blk,'t) freelist_factory = <
   version       : ('a, 'blk_id) for_blk_ids; 
   (** NOTE this is for freelist only, not arbitrary elts *)
 
@@ -132,12 +132,12 @@ type ('a,'buf,'blk_id,'t) freelist_factory = <
      use the origin blk_id and incr to implement min_free *)
 
   read_origin:
-    blk_dev_ops : ('blk_id,'buf,'t)blk_dev_ops ->
+    blk_dev_ops : ('blk_id,'blk,'t)blk_dev_ops ->
     blk_id      : 'blk_id -> 
     (('a,'blk_id) Fl_origin.t,'t)m;
 
   write_origin:
-    blk_dev_ops : ('blk_id,'buf,'t)blk_dev_ops ->
+    blk_dev_ops : ('blk_id,'blk,'t)blk_dev_ops ->
     blk_id      : 'blk_id -> 
     origin      : ('a,'blk_id) Fl_origin.t -> 
     (unit,'t)m;
@@ -145,7 +145,7 @@ type ('a,'buf,'blk_id,'t) freelist_factory = <
   fl_origin_to_pl : ('a,'blk_id) Fl_origin.t -> 'blk_id Pl_origin.t;
 
   with_: 
-    blk_dev_ops : ('blk_id,'buf,'t)blk_dev_ops ->
+    blk_dev_ops : ('blk_id,'blk,'t)blk_dev_ops ->
     barrier     : (unit -> (unit,'t)m) -> 
     sync        : (unit -> (unit,'t)m) -> 
     params      : params ->

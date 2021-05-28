@@ -87,25 +87,24 @@ type ('blk_id,'blk,'t) counter_factory = <
 
 open Shared_ctxt
     
-let example : _ counter_factory = 
+let example : (_,blk,_) counter_factory = 
   (* We persist only occasionally; to implement this, we record on
      disk that some ids are used when they are actually not; if we
      crash, then these ids are lost *)
   let delta = 1000 in
-  let read_origin ~blk_dev_ops ~blk_id =
+  let read_origin ~(blk_dev_ops:(_,blk,_)blk_dev_ops) ~blk_id =
     blk_dev_ops.read ~blk_id >>= fun blk -> 
-    Counter_origin.unmarshal blk |> fun o -> 
+    Counter_origin.unmarshal blk.Shared_ctxt.ba_buf |> fun o -> 
     Printf.printf "counter: read origin %d %s\n%!" (blk_id|>B.to_int) (o|>Counter_origin.to_string);    
     return o
- 
   in
-  let write_origin ~blk_dev_ops ~blk_id ~origin =
+  let write_origin ~(blk_dev_ops:(_,blk,_)blk_dev_ops) ~blk_id ~origin =
     Printf.printf "counter: write origin %d %s\n%!" (blk_id|>B.to_int) (origin|>Counter_origin.to_string);
-    Counter_origin.marshal origin |> fun blk -> 
-    blk_dev_ops.write ~blk_id ~blk
+    Counter_origin.marshal origin |> fun ba_buf -> 
+    blk_dev_ops.write ~blk_id ~blk:Shared_ctxt.{ba_buf}
   in
   let with_ 
-      ~blk_dev_ops 
+      ~(blk_dev_ops:(_,blk,_)blk_dev_ops)
       ~sync
     =
     let init ~blk_id ~min_free =       

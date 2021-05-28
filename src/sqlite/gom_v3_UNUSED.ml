@@ -2,7 +2,7 @@
    are using fixed mutable origin blocks, then the GOM values don't
    change after creation until the GOM entry is deleted. *)
 
-module Flag = Fv3.Flag
+module Flag = Fv3_UNUSED.Flag
 (* open Fv3.Maybe_dirty *)
 
 (* FIXME this is really a combination of a syncable map and an

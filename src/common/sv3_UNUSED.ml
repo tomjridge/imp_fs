@@ -10,8 +10,8 @@ tjr_fs_shared/.../write_back_cache_v3.ml
 
 let dont_log = false
 
-module Flag = Fv3.Flag
-module Maybe_dirty = Fv3.Maybe_dirty
+module Flag = Fv3_UNUSED.Flag
+module Maybe_dirty = Fv3_UNUSED.Maybe_dirty
 open Maybe_dirty
 
 type ('k,'v,'cache) cache_ops = ('k,'v,'cache) wbc_ops

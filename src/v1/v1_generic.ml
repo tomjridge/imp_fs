@@ -18,6 +18,8 @@ type stat_record = Minifs_intf.stat_record
 module File_ops = struct
   open Call_specific_errors
 
+  type buf = Shared_ctxt.buf
+
   type 't file_ops = {
     pread: foff:int -> len:int -> buf:buf -> boff:int -> 
       ((int,pread_err)result, 't) m;
@@ -262,9 +264,17 @@ module Make(S0:S0) = struct
       files.find fd >>= fun file ->
       file.pread ~foff ~len ~buf ~boff
 
+    (* when we export pread, we need to work with ba_buf for fuse *)
+    let pread ~fd ~foff ~len ~(buf:ba_buf) ~boff = 
+      pread ~fd ~foff ~len ~buf:(Shared_ctxt.{ba_buf=buf;is_valid=true}) ~boff
+
     let pwrite ~fd ~foff ~len ~buf ~boff =
       files.find fd >>= fun file ->
       file.pwrite ~foff ~len ~buf ~boff
+
+    let pwrite ~fd ~foff ~len ~buf:ba_buf ~boff = 
+      let buf = Shared_ctxt.{ba_buf;is_valid=true} in
+      pwrite ~fd ~foff ~len ~buf ~boff
 
     let close _fd = ok ()  (* FIXME record which are open? *)
 

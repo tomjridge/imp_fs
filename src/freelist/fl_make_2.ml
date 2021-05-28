@@ -55,16 +55,16 @@ module Fl_example_1 = struct
 
   module Origin_mshlr = (val origin_mshlr) 
 
-  let read_origin ~blk_dev_ops ~blk_id =
+  let read_origin ~(blk_dev_ops:(r,blk,_)blk_dev_ops) ~blk_id =
     blk_dev_ops.read ~blk_id >>= fun blk ->       
-    Origin_mshlr.unmarshal blk |> fun o -> 
+    Origin_mshlr.unmarshal blk.ba_buf |> fun o -> 
     Printf.printf "%s: read origin %d %s\n%!" __FILE__ (blk_id|>B.to_int) (o|>M.origin_to_string);
     return o
 
-  let write_origin ~blk_dev_ops ~blk_id ~origin =
+  let write_origin ~(blk_dev_ops:(r,blk,_)blk_dev_ops) ~blk_id ~origin =
     Printf.printf "%s: write origin %d %s\n%!" __FILE__ (blk_id|>B.to_int) (origin|>M.origin_to_string);
-    Origin_mshlr.marshal origin |> fun blk ->
-    blk_dev_ops.write ~blk_id ~blk
+    Origin_mshlr.marshal origin |> fun ba_buf ->
+    blk_dev_ops.write ~blk_id ~blk:{ba_buf}
 
 
   (* util; we read the fl_origin then need to instantiate the plist *)

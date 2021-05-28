@@ -54,18 +54,18 @@ module Example = struct
   module Ba = (val ba_mshlr)
 
 
-  let read_origin ~blk_dev_ops ~blk_id = 
+  let read_origin ~(blk_dev_ops:(_,blk,_)blk_dev_ops) ~blk_id = 
     blk_dev_ops.read ~blk_id >>= fun blk -> 
-    Ba.unmarshal blk |> fun origin -> 
+    Ba.unmarshal blk.ba_buf |> fun origin -> 
     Printf.printf "%s: read_origin: %s\n%!" __FILE__ 
       (origin |> Fs_origin_block.sexp_of_t' |> Sexplib.Sexp.to_string_hum);
     return origin
 
-  let write_origin ~blk_dev_ops ~blk_id ~origin = 
+  let write_origin ~(blk_dev_ops:(_,blk,_)blk_dev_ops) ~blk_id ~origin = 
     Printf.printf "%s: write_origin: %s\n%!" __FILE__ 
       (origin |> Fs_origin_block.sexp_of_t' |> Sexplib.Sexp.to_string_hum);
-    origin |> Ba.marshal |> fun blk -> 
-    blk_dev_ops.write ~blk_id ~blk  
+    origin |> Ba.marshal |> fun ba_buf -> 
+    blk_dev_ops.write ~blk_id ~blk:{ba_buf}
 
   
   module Fl = Tjr_freelist

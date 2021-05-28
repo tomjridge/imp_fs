@@ -92,7 +92,7 @@ type ('blk_id,'blk,'t,'de,'gom_ops) gom_factory = <
 module Make(S:sig
     type blk_id 
     type r = blk_id
-    type blk = ba_buf
+    type blk = Shared_ctxt.blk
     type t = lwt
     type dir_entry
     val dir_entry_deriving_sexp : dir_entry deriving_sexp
@@ -129,13 +129,15 @@ module Make(S:sig
 
   module Origin_mshlr = (val origin_mshlr)
 
-  let read_origin ~(blk_dev_ops:_ blk_dev_ops) ~blk_id = 
+  let read_origin ~(blk_dev_ops:(_,blk,_) blk_dev_ops) ~blk_id = 
     blk_dev_ops.read ~blk_id >>= fun blk -> 
-    Origin_mshlr.unmarshal blk |> return
+    Origin_mshlr.unmarshal blk.Shared_ctxt.ba_buf |> return
     
+  let _ = read_origin
+
   let write_origin ~(blk_dev_ops:_ blk_dev_ops) ~blk_id ~origin = 
-    Origin_mshlr.marshal origin |> fun blk ->
-    blk_dev_ops.write ~blk_id ~blk
+    Origin_mshlr.marshal origin |> fun ba_buf ->
+    blk_dev_ops.write ~blk_id ~blk:Shared_ctxt.{ba_buf}
 
   module With_(W:sig
       val blk_dev_ops  : (blk_id,blk,t) blk_dev_ops
@@ -301,7 +303,7 @@ module Pvt = struct
   module S = struct
     type nonrec blk_id = blk_id
     type r = blk_id
-    type blk = ba_buf
+    type blk = Shared_ctxt.blk
     type nonrec t = t
     type dir_entry = Dir_entry.t
     let dir_entry_deriving_sexp : Dir_entry.t deriving_sexp = (module Dir_entry)
@@ -367,7 +369,7 @@ end
 
 open Shared_ctxt
 let gom_example 
-  : (blk_id, buf, t, Dir_entry.t, Pvt.S.gom_ops) gom_factory
+  : (blk_id, blk, t, Dir_entry.t, Pvt.S.gom_ops) gom_factory
   = Pvt.gom_factory
 
 (*

@@ -130,7 +130,7 @@ type ('blk_id,'blk,'de,'t,'did) dir_factory = <
 
 
 module type S = sig
-  type blk = ba_buf
+  type blk = Shared_ctxt.blk
   type blk_id = Shared_ctxt.r
   type r = Shared_ctxt.r
   type did
@@ -182,19 +182,23 @@ module Make_v1(S:S) = struct
   let ( >>= ) = monad_ops.bind
   let return = monad_ops.return 
 
-  let buf_ops = ba_buf_ops
+  let buf_ops = Shared_ctxt.buf_ops
 
   module Dir_origin_mshlr = (val dir_origin_mshlr)
 
   
-  let read_origin ~blk_dev_ops ~blk_id =
-    blk_dev_ops.read ~blk_id >>= fun buf -> 
-    Dir_origin_mshlr.unmarshal buf |> return
+  let read_origin ~(blk_dev_ops:(_,blk,_)blk_dev_ops) ~blk_id =
+    blk_dev_ops.read ~blk_id >>= fun blk -> 
+    let buf = Shared_ctxt.blk_ops.blk_to_buf blk in
+    Dir_origin_mshlr.unmarshal buf.ba_buf |> return
   
-  let write_origin ~blk_dev_ops ~blk_id ~origin =
-    origin |> Dir_origin_mshlr.marshal |> fun buf -> 
+  let _ = read_origin
+
+  let write_origin ~(blk_dev_ops:(_,blk,_)blk_dev_ops) ~blk_id ~origin =
+    origin |> Dir_origin_mshlr.marshal |> fun ba_buf -> 
+    let buf = buf_ops.of_ba ba_buf in
     assert( (buf_ops.buf_length buf) = (blk_dev_ops.blk_sz|>Blk_sz.to_int)); 
-    blk_dev_ops.write ~blk_id ~blk:buf
+    blk_dev_ops.write ~blk_id ~blk:(Shared_ctxt.blk_ops.buf_to_blk buf)
 
   module With(S2:sig
       val blk_dev_ops  : (blk_id,blk,t) blk_dev_ops
@@ -463,7 +467,7 @@ end
 
 let dir_example = 
   let module S = struct
-    type blk = ba_buf
+    type blk = Shared_ctxt.blk
     type blk_id = Shared_ctxt.r
     type r = Shared_ctxt.r[@@deriving bin_io]
     type t = Shared_ctxt.t

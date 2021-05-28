@@ -28,8 +28,8 @@ tjr_fs_shared/.../write_back_cache_v3.ml
 
 *)
 
-open Fv3.Maybe_dirty
-module Flag = Fv3.Flag
+open Fv3_UNUSED.Maybe_dirty
+module Flag = Fv3_UNUSED.Flag
 
 module List = struct
   include List

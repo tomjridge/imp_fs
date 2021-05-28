@@ -176,7 +176,7 @@ module S1(S0:S0) = struct
 
   type fd = fid
 
-  type buf = ba_buf
+  type buf = Shared_ctxt.buf
 
   open struct
     open Call_specific_errors
@@ -255,6 +255,7 @@ end
 
 (* $ (PIPE2SH("""sed -n '/module[ ]Level1_provides/,/^end/p' >GEN.Level1_provides.ml_""")) *)
 module Level1_provides = struct
+  type buf = Shared_ctxt.buf
   open Minifs_intf.Call_specific_errors
   type ('tid,'fd,'dh,'t) ops = {
     root     : path;
@@ -290,6 +291,11 @@ module Level1_provides = struct
     readlink : tid:'tid -> path -> ((string,readlink_err)r_,'t) m;
     reset    : unit -> (unit,  't) m;
   }
+end
+
+(** As Minifs_intf.Ops_type.ops; note that we convert Shared_ctxt.buf to ba_buf *)
+module Level0_provides = struct
+  type ('fd,'dh,'t) ops = ('fd,'dh,'t) Minifs_intf.Ops_type.ops    
 end
 
 
@@ -331,5 +337,25 @@ type per_file = {
 *)
 
 
+
+
+(** {2 Util} *)
+
+
 (** For debugging *)
 let dont_log = true
+
+let convert_pread_pwrite_to_ba_buf ~pread ~pwrite = 
+  let pread ~fd ~foff ~len ~buf:ba_buf ~boff = 
+    pread ~fd ~foff ~len ~buf:(Shared_ctxt.{ba_buf;is_valid=true}) ~boff
+  in
+  let pwrite ~fd ~foff ~len ~buf:ba_buf ~boff = 
+    let buf = Shared_ctxt.{ba_buf;is_valid=true} in
+    pwrite ~fd ~foff ~len ~buf ~boff
+  in
+  (pread,pwrite)
+
+
+
+
+

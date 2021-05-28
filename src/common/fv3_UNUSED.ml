@@ -41,7 +41,8 @@ open Maybe_dirty
 type ('k,'v,'cache) cache_ops = ('k,'v,'cache) wbc_ops
   
 (** Per-file cache entries *)
-type ('blk,'cache) f_cache = {         
+(* FIXME remove 'unit tyarg *)
+type ('unit,'cache) f_cache = {         
   times : Times.times maybe_dirty;
   size  : int maybe_dirty;
   data  : 'cache; 
@@ -169,7 +170,7 @@ module Make_v1(S: sig
        we have some actual block in the cache *)
     val cache_ops : (blk_off,blk option,cache) cache_ops
 
-    val with_cache: ((blk,cache) f_cache,t) with_state    
+    val with_cache: ((unit,cache) f_cache,t) with_state    
 
     val lower_ops: (blk,t) lower_ops
   end) = struct
@@ -469,7 +470,7 @@ module With_lwt = struct
 
   let empty_cache = wbc_ops#empty
 
-  let make_file_cache ~times ~size : (blk,cache) f_cache = { times; size; data=empty_cache } 
+  let make_file_cache ~times ~size : (unit,cache) f_cache = { times; size; data=empty_cache } 
 
   let file_factory = 
     object
@@ -505,14 +506,14 @@ module With_lwt = struct
     < make_file_cache : 
         times:times maybe_dirty ->
         size:blk_off maybe_dirty -> 
-        (blk, cache) f_cache;
+        (unit, cache) f_cache;
       with_ : 
         lower_ops:(blk, lwt) lower_ops ->
-        with_cache:((blk, cache) f_cache, lwt) with_state ->
-        (blk, lwt) file_ops >
+        with_cache:((unit, cache) f_cache, lwt) with_state ->
+        (buf,lwt) file_ops >
 
   let file_factory : file_factory = (file_factory :> file_factory)
-      
+                                    
 end
 
 let file_factory = With_lwt.file_factory

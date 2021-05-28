@@ -38,7 +38,7 @@ module Make() = struct
     close_tid tid;
     return r
 
-  let make ~(level1_ops:_ Level1_provides.ops) : _ Minifs_intf.Ops_type.ops =
+  let make ~(level1_ops:_ Level1_provides.ops) : _ Level0_provides.ops =
     let o                                = level1_ops in
     let unlink pth                       = with_tid (o.unlink pth) in
     let mkdir pth                        = with_tid (o.mkdir pth) in
@@ -69,6 +69,7 @@ module Make() = struct
         | Ok xs -> 
           return (Ok (xs,{finished=(xs=[])})))
     in
+    let (pread,pwrite) = convert_pread_pwrite_to_ba_buf ~pread ~pwrite in
     {
       root = o.root;
       unlink;

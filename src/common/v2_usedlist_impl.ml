@@ -62,8 +62,8 @@ type ('blk_id,'blk,'t) usedlist_factory = <
 >
 
 module type S = sig
-  type blk = ba_buf
-  type buf = ba_buf
+  type blk = Shared_ctxt.blk
+  type buf = Shared_ctxt.buf
   type blk_id = Shared_ctxt.r
   type r = Shared_ctxt.r
   type t

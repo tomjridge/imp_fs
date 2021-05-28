@@ -418,21 +418,21 @@ module Stage2(Stage1:STAGE1) = struct
      bytes objects, and then blit to the bigarray FIXME *)
 
   let file : file_ops = 
-    let pread ~fid ~foff ~len ~buf ~boff = 
+    let pread ~fid ~foff ~len ~(buf:Shared_ctxt.buf) ~boff = 
       ensure_file_is_live fid >>= fun kref -> 
       let {fd} = kref |> ops.kref_to_obj in
       let buf' = Bytes.create len in
       (* FIXME should take care of pread exceptions, and pwrite etc *)
       Lwt_unix.pread fd buf' ~file_offset:foff 0 (*boff*) len |> from_lwt >>= fun n -> 
-      Bigstringaf.blit_from_bytes buf' ~src_off:0 buf ~dst_off:boff ~len:n;
+      let _ : buf = Shared_ctxt.buf_ops.blit_bytes_to_buf ~src:buf' ~src_off:{off=0} ~src_len:{len=n} ~dst:buf ~dst_off:{off=boff} in
       ops.put kref;
       return (Ok n)
     in
-    let pwrite ~fid ~foff ~len ~buf ~boff = 
+    let pwrite ~fid ~foff ~len ~(buf:Shared_ctxt.buf) ~boff = 
       ensure_file_is_live fid >>= fun kref -> 
       let {fd} = kref |> ops.kref_to_obj in
       let buf' = Bytes.create len in
-      Bigstringaf.blit_to_bytes buf ~src_off:boff buf' ~dst_off:0 ~len;
+      Bigstringaf.blit_to_bytes buf.ba_buf ~src_off:boff buf' ~dst_off:0 ~len;
       Lwt_unix.pwrite fd buf' ~file_offset:foff 0(*boff*) len |> from_lwt >>= fun n -> 
       ops.put kref;
       return (Ok n)

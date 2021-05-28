@@ -159,11 +159,11 @@ module Stage_1(R1: sig
     let write_rb ~blk_id rb =
       (* FIXME have a single buf_create, specialized to std_type and buf_sz *)
       let buf = buf_create () in
-      bin_write_rb buf ~pos:0 rb |> fun _ ->
-      blk_dev_ops.write ~blk_id ~blk:buf
+      bin_write_rb buf.ba_buf ~pos:0 rb |> fun _ ->
+      blk_dev_ops.write ~blk_id ~blk:(buf|>blk_ops.buf_to_blk)
     let read_rb: blk_id:blk_id -> (rb,t)m = fun ~blk_id ->
-      blk_dev_ops.read ~blk_id >>= fun blk ->
-      bin_read_rb blk ~pos_ref:(ref 0) |> fun rb ->
+      blk_dev_ops.read ~blk_id >>= fun buf ->
+      bin_read_rb buf.ba_buf ~pos_ref:(ref 0) |> fun rb ->
       return rb
   end
 
@@ -337,7 +337,7 @@ module Stage_1(R1: sig
     include Make_root_blk_ops(Rb)
 
 
-    let file_ops ~fid = 
+    let file_ops ~fid : (_ V1_generic.file_ops,_)m = 
       gom_find (Fid fid) >>= fun blk_id ->
       read_rb ~blk_id >>= fun rb ->
       let rb = ref rb in

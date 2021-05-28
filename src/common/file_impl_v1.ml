@@ -1,4 +1,4 @@
-(** A simple file implementation; NOTE deprecated, do not use. 
+(** A simple file implementation as a map from blk_index to blk, typically using a B-tree; NOTE deprecated, do not use. 
 
 Terminology: (file) block-index map: the map from blk index to blk_id
 
