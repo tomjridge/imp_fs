@@ -17,8 +17,10 @@ all:: v3_main.exe
 
 # FIXME why -o sync_read in the following?
 FUSE_OPTIONS:=-s -f -o auto_unmount -o sync_read -o debug
+
 # NOTE following may have to end in slash
-FUSE_MNT_PT:=./fuse_mount/
+FUSE_MNT_PT:=/tmp/fuse_mount
+FUSE_DATA_DIR:=/tmp/fuse_data_dir
 
 -include Makefile.local # put your modifications here eg no debug flag
 
@@ -57,22 +59,25 @@ run_from_existing:
 
 # v3 -------------------------------------------------------------------
 
+
 v3_main.exe: FORCE
 	$(DUNE) build bin/v3_main.exe
+	rm -f v3_main.exe
 	cp _build/default/bin/v3_main.exe .
 
-
 init_v3: v3_main.exe
-	test -d tmp || { echo "Missing ./tmp directory"; exit -1; }
-	test -d tmp/v3_data || { echo "Missing ./tmp/v3_data directory"; exit -1; }
-	OCAMLRUNPARAM=b ./v3_main.exe init
+	mkdir -p $(FUSE_MNT_PT)
+	mkdir -p $(FUSE_DATA_DIR)
+	mkdir -p $(FUSE_DATA_DIR)/v3_data
+	IMP_ROOT=$(FUSE_DATA_DIR) OCAMLRUNPARAM=b ./v3_main.exe init 
 
 run_v3: v3_main.exe
-	test -d tmp || { echo "Missing ./tmp directory"; exit -1; }
-	test -f tmp/v3_database.db || { echo "Missing ./tmp/v3_database.db"; exit -1; }
-	test -d tmp/v3_data || { echo "Missing ./tmp/v3_data directory"; exit -1; }
-	OCAMLRUNPARAM=b ./v3_main.exe $(FUSE_OPTIONS) $(FUSE_MNT_PT)  2>&1
+	echo "Mounting at $(FUSE_MNT_PT) with IMP_ROOT=$(FUSE_DATA_DIR)"
+	IMP_ROOT=$(FUSE_DATA_DIR) OCAMLRUNPARAM=b ./v3_main.exe $(FUSE_OPTIONS) $(FUSE_MNT_PT)  2>&1
 
+clean_v3:
+	rm -f v3_main.exe
+	echo "Now empty $(FUSE_DATA_DIR)"
 
 run_tests:
 	$(DUNE) build src-test/test.exe

@@ -1,9 +1,15 @@
 (** Run the V3 filesystem *)
 
-let file_data_path = "tmp/v3_data"
-let db_path = "tmp/v3_database.db"
+(** Use the env var IMP_ROOT to point to where impfs should store data *)
+let _IMP_ROOT = Sys.getenv_opt "IMP_ROOT" |> function
+  | None -> failwith "Environment variable IMP_ROOT not set; this should be a directory where impfs can store data"
+  | Some x -> x
+
+let file_data_path = _IMP_ROOT^"/v3_data"
+let db_path = _IMP_ROOT^"/v3_database.db"
 
 let do_init () = 
+  Printf.printf "Initializing... IMP_ROOT=%s (contains database and file data)\n%!" _IMP_ROOT;
   let _rename_existing =
     Tjr_file.file_exists db_path |> function
     | true -> 
@@ -16,7 +22,6 @@ let do_init () =
   create_tables db;
   add_root_directory db;
   Stdlib.exit 0
-
 
 let _ = 
   Sys.argv |> Array.to_list |> List.tl |> fun argv -> 

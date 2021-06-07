@@ -13,7 +13,7 @@ module Make() = struct
     incr x;
     fun () -> 
       let y = !x in
-      assert(dont_log || (Printf.printf "tid %d created\n%!" y; true));
+      assert(!dont_log || (Printf.printf "tid %d created\n%!" y; true));
       incr x;
       Hashtbl.replace live_tids y ();
       y
@@ -52,7 +52,7 @@ module Make() = struct
     let rename p1 p2                     = with_tid (o.rename   p1 p2) in
     let truncate pth n                   = with_tid (o.truncate pth n) in
     let stat pth                         = with_tid (fun ~tid -> 
-        assert(dont_log || begin
+        assert(!dont_log || begin
             Msgs.Stat pth |> Msgs.msg_from_client_to_yojson |> Yojson.Safe.to_string 
             |> fun s -> 
             Printf.printf "tid %d called %s\n%!" tid s;
