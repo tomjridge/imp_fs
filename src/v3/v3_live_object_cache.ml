@@ -13,8 +13,6 @@ We are maintaining a cache of objects by id. We can maintain the
 
 Don't open.  *)
 
-let dont_log = V3_intf.dont_log
-
 let line s = Printf.printf "%s: Reached line %d\n%!" "V3_live_object_cache" s; true
 
 (** User view of krefs; the user must call krelease when finished with
@@ -112,6 +110,8 @@ module type T = sig
 end
 
 module Make(S:S) : T with type id = S.id and type a = S.a = struct
+  let dont_log = rv_get V3_intf.dont_log
+
   include S
   open Tjr_monad.With_lwt
 
@@ -213,18 +213,18 @@ module Make(S:S) : T with type id = S.id and type a = S.a = struct
          resurrecting entry, and whilst waiting the entry is resurrected
          then removed from cache, so the thread has to wait again *)
       let rec get id cache = 
-        assert(!dont_log || line __LINE__);
+        assert(dont_log || line __LINE__);
         match Lru.find id cache.lru with
         (* If resurrecting or finalising, wait and try again *)
         | Some(`Resurrecting p) | Some (`Finalising p) -> 
-          assert(!dont_log || line __LINE__);
+          assert(dont_log || line __LINE__);
           Lru.promote id cache.lru;
           (With_lwt.yield () |> from_lwt) >>= fun () -> 
           p >>= fun _ -> get id cache
 
         (* If in the cache, return a new kref *)
         | Some(`Present x) -> 
-          assert(!dont_log || line __LINE__);
+          assert(dont_log || line __LINE__);
           incr x.count;
           Lru.promote id cache.lru;
           return (Kref.create ~counter:x.count x.obj)
@@ -232,7 +232,7 @@ module Make(S:S) : T with type id = S.id and type a = S.a = struct
         (* If not in the cache, resurrect (and mark resurrecting), then
            place in cache and return kref *)
         | None -> 
-          assert(!dont_log || line __LINE__);
+          assert(dont_log || line __LINE__);
           (* NOTE nasty bug where p was unguarded, ran immediately,
              returned immediately, then had `Present overridden by
              `Resurrecting! *)
@@ -242,9 +242,9 @@ module Make(S:S) : T with type id = S.id and type a = S.a = struct
           resurrect id >>= fun obj ->           
           Lru.add id (`Present {count=ref 0;obj}) cache.lru;
           assert(Lru.find id cache.lru |> function | Some (`Present _) -> true | _ -> false);
-          assert(!dont_log || line __LINE__);
+          assert(dont_log || line __LINE__);
           (Lwt.wakeup_later r ());
-          assert(!dont_log || line __LINE__);
+          assert(dont_log || line __LINE__);
           get id cache
 
       (* let _ : id -> (lru,lwt) cache -> (kref, lwt) m = get *)

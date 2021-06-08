@@ -68,9 +68,6 @@ module S2 (* : V3_live_object_cache.S *) = struct
   type a = per_dir
 end
 
-module Live_dirs = V3_live_object_cache.Make(S2)
-
-
 type config = {
   entries_cache_capacity   : int;
   entries_cache_trim_delta : int;
@@ -87,14 +84,6 @@ type per_file = {
   fd: Lwt_unix.file_descr;
 }  
 
-module Live_files = V3_live_object_cache.Make(
-  struct
-    type t = lwt
-    type id = fid
-    type a = per_file
-  end)
-
-
 module type STAGE1 = sig
   val config : config
   val sql_dir_ops : sql_dir_ops
@@ -102,6 +91,17 @@ end
 
 module Stage2(Stage1:STAGE1) = struct
   open Stage1
+
+  let dont_log = rv_get dont_log
+
+  module Live_dirs = V3_live_object_cache.Make(S2)
+
+  module Live_files = V3_live_object_cache.Make(
+    struct
+      type t = lwt
+      type id = fid
+      type a = per_file
+    end)
 
   let root_did = 0
 
@@ -114,9 +114,9 @@ module Stage2(Stage1:STAGE1) = struct
       y
 
   let resurrect did =
-    assert(!dont_log || line __LINE__);
+    assert(dont_log || line __LINE__);
     sql_dir_ops.get_meta ~did >>= fun (parent,times) -> 
-    assert(!dont_log || line __LINE__);
+    assert(dont_log || line __LINE__);
     let bot = () in
     let bot_ops : _ Lru.Bot.ops = {
       find_opt = (fun () k -> sql_dir_ops.find ~did k);
@@ -136,7 +136,7 @@ module Stage2(Stage1:STAGE1) = struct
         ~bot
         ~bot_ops
     in
-    assert(!dont_log || line __LINE__);
+    assert(dont_log || line __LINE__);
     return 
       { lock=Lwt_mutex_ops.create_mutex(); 
         parent=R.ref parent;
@@ -149,7 +149,7 @@ module Stage2(Stage1:STAGE1) = struct
      dirty meta; FIXME add a "dirties" call to the lru, to return ops
      that we can then sync with the dirty meta *)
   let finalise (xs:(did*per_dir) list) =
-    assert(!dont_log || line __LINE__);
+    assert(dont_log || line __LINE__);
     let module Op = Sqlite_dir.Op in
     let ops (did,x) = 
       let dirty_meta = R.[
@@ -192,13 +192,13 @@ module Stage2(Stage1:STAGE1) = struct
       return v
     in
     let insert ~did k v =
-      assert(!dont_log || line __LINE__);
+      assert(dont_log || line __LINE__);
       ensure_dir_is_live did >>= fun kref -> 
-      assert(!dont_log || line __LINE__);
+      assert(dont_log || line __LINE__);
       ops.kref_to_obj kref |> fun per_dir -> 
-      assert(!dont_log || line __LINE__);
+      assert(dont_log || line __LINE__);
       entries_cache_ops.insert per_dir.entries_cache k v >>= fun () -> 
-      assert(!dont_log || line __LINE__);
+      assert(dont_log || line __LINE__);
       ops.put kref;
       return ()
     in      
@@ -220,15 +220,15 @@ module Stage2(Stage1:STAGE1) = struct
       return ()
     in
     let get_times ~did = 
-      assert(!dont_log || line __LINE__);
+      assert(dont_log || line __LINE__);
       ensure_dir_is_live did >>= fun kref -> 
-      assert(!dont_log || line __LINE__);
+      assert(dont_log || line __LINE__);
       ops.kref_to_obj kref |> fun per_dir -> 
-      assert(!dont_log || line __LINE__);
+      assert(dont_log || line __LINE__);
       let times = R.(!(per_dir.times)) in
-      assert(!dont_log || line __LINE__);
+      assert(dont_log || line __LINE__);
       ops.put kref;
-      assert(!dont_log || line __LINE__);
+      assert(dont_log || line __LINE__);
       return times
     in
     let get_parent ~did =
@@ -239,19 +239,19 @@ module Stage2(Stage1:STAGE1) = struct
       return parent
     in
     let sync ~lock_held ~did = 
-      assert(!dont_log || line __LINE__);
+      assert(dont_log || line __LINE__);
       ensure_dir_is_live did >>= fun kref -> 
-      assert(!dont_log || line __LINE__);
+      assert(dont_log || line __LINE__);
       ops.kref_to_obj kref |> fun per_dir -> 
-      assert(!dont_log || line __LINE__);
+      assert(dont_log || line __LINE__);
       (if lock_held then return () else lwt_mutex_ops.lock per_dir.lock) >>= fun () -> 
-      assert(!dont_log || line __LINE__);
+      assert(dont_log || line __LINE__);
       finalise [(did,per_dir)] >>= fun () -> 
-      assert(!dont_log || line __LINE__);
+      assert(dont_log || line __LINE__);
       (if lock_held then return () else lwt_mutex_ops.unlock per_dir.lock) >>= fun () ->
-      assert(!dont_log || line __LINE__);
+      assert(dont_log || line __LINE__);
       ops.put kref;
-      assert(!dont_log || line __LINE__);
+      assert(dont_log || line __LINE__);
       return ()
     in
     { find;insert;delete;set_times;get_times;get_parent;sync }
@@ -266,18 +266,18 @@ module Stage2(Stage1:STAGE1) = struct
     (* FIXME at the moment, we don't actually delete directories from the db *)
 
     let create_and_add_to_parent ~parent_locked:() ~parent ~name ~times =
-      assert(!dont_log || line __LINE__);      
+      assert(dont_log || line __LINE__);      
       (* make new dir, sync; add to parent; sync parent *)
       (* FIXME since parent is locked, we know it is in the cache, so
          this is unnecessary *)
       let new_did = new_did () in      
       sql_dir_ops.pre_create ~note_does_not_touch_parent:() ~new_did ~parent ~times >>= fun () -> 
-      assert(!dont_log || line __LINE__);
+      assert(dont_log || line __LINE__);
       dir.insert ~did:parent name (Did new_did) >>= fun () -> 
-      assert(!dont_log || line __LINE__);
+      assert(dont_log || line __LINE__);
       (* FIXME probably not necessary to sync the parent here *)
       sync_dir_when_lock_held parent >>= fun () -> 
-      assert(!dont_log || line __LINE__);
+      assert(dont_log || line __LINE__);
       return ()
     in
 
@@ -293,7 +293,7 @@ module Stage2(Stage1:STAGE1) = struct
     let rename_file rename_case =
       match rename_case with
       | Rename_file_missing { locks_held; times; src; dst } -> 
-        assert(!dont_log || line __LINE__);
+        assert(dont_log || line __LINE__);
         let (sp,sn,sfid) = src in
         let (dp,dn) = dst in
         (* one implementation is to sync src and dst (maybe just the
@@ -301,16 +301,16 @@ module Stage2(Stage1:STAGE1) = struct
            dn... dn may be "deleted" but not flushed to db), and make
            the change atomically in the db, then unlock and return *)
         dir.sync ~lock_held:true ~did:sp >>= fun () -> 
-        assert(!dont_log || line __LINE__);
+        assert(dont_log || line __LINE__);
         dir.sync ~lock_held:true ~did:dp >>= fun () -> 
-        assert(!dont_log || line __LINE__);        
+        assert(dont_log || line __LINE__);        
         remove_entry_from_cache ~did:sp sn >>= fun () -> 
-        assert(!dont_log || line __LINE__);
+        assert(dont_log || line __LINE__);
         remove_entry_from_cache ~did:dp dn >>= fun () -> 
-        assert(!dont_log || line __LINE__);
+        assert(dont_log || line __LINE__);
         let ops = Sqlite_dir.Op.([Delete(sp,sn);Insert(dp,dn,Fid sfid)]) in
         sql_dir_ops.exec ops >>= fun () -> 
-        assert(!dont_log || line __LINE__);
+        assert(dont_log || line __LINE__);
         return ()
         
       | Rename_file_file { locks_held; times; src; dst } -> 

@@ -1,5 +1,8 @@
 (** Run the V3 filesystem *)
 
+(** Enable/disable logging *)
+let _ = rv_set V3_intf.dont_log true
+
 (** Use the env var IMP_ROOT to point to where impfs should store data *)
 let _IMP_ROOT = Sys.getenv_opt "IMP_ROOT" |> function
   | None -> failwith "Environment variable IMP_ROOT not set; this should be a directory where impfs can store data"

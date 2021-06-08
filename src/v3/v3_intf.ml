@@ -343,7 +343,7 @@ type per_file = {
 
 
 (** For debugging *)
-let dont_log = ref true
+let dont_log : bool rv = rv_declare ()
 
 let convert_pread_pwrite_to_ba_buf ~pread ~pwrite = 
   let pread ~fd ~foff ~len ~buf:ba_buf ~boff = 

@@ -28,6 +28,8 @@ module Make(S0:S0) = struct
   module S2 = Level2_provides(S0)
   open S2
 
+  let dont_log = rv_get dont_log
+
   (** Make step 2, assuming values (from T2) *)
   module Make_2(X:T2) = struct
     open X
@@ -296,11 +298,11 @@ module Make(S0:S0) = struct
 
     (* FIXME here and elsewhere atim is not really dealt with *)
     let stat ~tid:_ path =
-      assert(!dont_log || line __LINE__);
+      assert(dont_log || line __LINE__);
       resolve_path ~follow_last_symlink:`If_trailing_slash path >>=| fun rpath ->
       let { parent_id=_pid; comp=_name; result; trailing_slash=_ } = rpath in
       let open Stat_record in
-      assert(!dont_log || line __LINE__);
+      assert(dont_log || line __LINE__);
       match result with
       | Missing -> err `Error_no_entry
       | File fid ->
@@ -317,9 +319,9 @@ module Make(S0:S0) = struct
            so don't need a kref? Perhaps the point is that we don't
            know the actual implementation of these operations, which
            perhaps do cause updates? So we always need a kref? *)
-        assert(!dont_log || line __LINE__);
+        assert(dont_log || line __LINE__);
         dir.get_times ~did >>= fun times ->
-        assert(!dont_log || line __LINE__);
+        assert(dont_log || line __LINE__);
         ok { sz=1; kind=`Dir; times }   (* sz for dir? FIXME size of dir *)
       | Sym (_sid,contents) ->
         ok {sz=String.length contents; times=dummy_times; kind=`Symlink}

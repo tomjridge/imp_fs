@@ -45,9 +45,6 @@ FIXME at the moment this is blocking; this should use lwt for non-blocking, and 
 open Sqlite3
 open Tjr_monad.With_lwt
 
-let dont_log = false
-let line s = Printf.printf "%s: Reached line %d\n%!" "sqlite_dir" s; true
-
 let assert_ok rc = assert(rc = Rc.OK)
 
 
@@ -156,6 +153,10 @@ module Make(S:sig
     val dir_entry_to_string: dir_entry -> string
     val string_to_dir_entry: string -> dir_entry 
   end) = struct
+  
+  let dont_log = rv_get V3_intf.dont_log
+  let line s = Printf.printf "%s: Reached line %d\n%!" "sqlite_dir" s; true
+
   open S
 
   (* FIXME disabled for now - pre_create goes direct to db 
