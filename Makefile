@@ -19,8 +19,8 @@ all:: v3_main.exe
 FUSE_OPTIONS:=-s -f -o auto_unmount -o sync_read -o debug
 
 # NOTE following may have to end in slash
-FUSE_MNT_PT:=/tmp/fuse_mount
-FUSE_DATA_DIR:=/tmp/fuse_data_dir
+FUSE_MNT_PT:=~/fuse_mount
+FUSE_DATA_DIR:=~/fuse_data_dir
 
 -include Makefile.local # put your modifications here eg no debug flag
 

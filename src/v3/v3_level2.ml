@@ -582,8 +582,8 @@ module Stage2(Stage1:STAGE1) = struct
   (** {2 Dir handles} *)
     
   type per_dir_handle = { 
-    tid: tid; (* for debugging resource usage *)
-    ls_ops: (dir_k,dir_v,lwt) Sqlite_dir.Ls.ops }
+    tid    : tid; (* for debugging resource usage *)
+    ls_ops : (dir_k,dir_v,lwt) Sqlite_dir.Ls.ops }
 
   let live_dir_handles : (did,per_dir_handle)Hashtbl.t = Hashtbl.create 100
 
@@ -597,6 +597,10 @@ module Stage2(Stage1:STAGE1) = struct
     
   let dir_handles: dir_handle_ops = 
     let opendir ~tid did = 
+      (* FIXME performance: we flush any cached entries on the dir
+         before reading; perfer a scheme where we patch up the sqldir
+         list with the cache dirty entries *)
+      dir.sync ~lock_held:false ~did >>= fun () -> 
       let dh = new_dir_handle () in
       sql_dir_ops.opendir ~did >>= fun ls_ops -> 
       assert(not @@ Hashtbl.mem live_dir_handles dh);
@@ -605,12 +609,12 @@ module Stage2(Stage1:STAGE1) = struct
       return dh
     in
     let readdir ~tid:_ dh = 
-      Hashtbl.find live_dir_handles dh |> fun per_dir -> 
-      per_dir.ls_ops.is_finished () >>= function
+      Hashtbl.find live_dir_handles dh |> fun per_dh -> 
+      per_dh.ls_ops.is_finished () >>= function
       | true -> return []
       | false -> 
-        per_dir.ls_ops.kvs () >>= fun kvs -> 
-        per_dir.ls_ops.step () >>= fun () -> 
+        per_dh.ls_ops.kvs () >>= fun kvs -> 
+        per_dh.ls_ops.step () >>= fun () -> 
         return (List.map fst kvs)
     in
     let closedir ~tid:_ dh = 
