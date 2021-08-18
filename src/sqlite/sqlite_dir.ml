@@ -42,6 +42,7 @@ FIXME at the moment this is blocking; this should use lwt for non-blocking, and 
 
 (* FIXME do we need db locked for concurrent stmts? *)
 
+open Imp_util
 open Sqlite3
 open Tjr_monad.With_lwt
 
@@ -154,7 +155,7 @@ module Make(S:sig
     val string_to_dir_entry: string -> dir_entry 
   end) = struct
   
-  let dont_log = rv_get V3_intf.dont_log
+  let dont_log = !V3_intf.dont_log
   let line s = Printf.printf "%s: Reached line %d\n%!" "sqlite_dir" s; true
 
   open S
@@ -477,7 +478,7 @@ module Test() = struct
         match i > 100_000 with
         | true -> return ()
         | false -> 
-          let xs = List_.mk_range ~min:i ~max:(i+delta) ~step:1 in
+          let xs = mk_range ~min:i ~max:(i+delta) ~step:1 in
           let xs = xs |> List.map (fun i -> Insert(did,Str_256.make @@ "filename"^(string_of_int i),"FIXME")) in
           exec xs >>= fun () -> 
           k (i+delta))

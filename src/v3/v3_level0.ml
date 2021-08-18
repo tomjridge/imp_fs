@@ -6,7 +6,7 @@ open V3_intf
 
 module Make() = struct
 
-  let dont_log = rv_get dont_log
+  let dont_log = !dont_log
 
   let live_tids = Hashtbl.create 10
 

@@ -1,5 +1,5 @@
 (env
-  (_ (flags (:standard -open Base.Either -open Tjr_lib -open Tjr_monad -open Tjr_fs_shared -open Tjr_path_resolution -open Tjr_net -open Tjr_minifs -open Tjr_minifs.Minifs_intf 
+  (_ (flags (:standard -open Base.Either -open Tjr_monad -open Tjr_fs_shared -open Tjr_path_resolution -open Tjr_net -open Tjr_minifs -open Tjr_minifs.Minifs_intf 
 
 -open Tjr_impfs
 ))))

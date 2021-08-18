@@ -306,6 +306,7 @@ module Make_v1(S:S) = struct
                 | None -> k xs
                 | Some x2 -> k ((b2e x2)::xs)) ))
 
+
   (** Free a single elt. This simply adds to the list of transient
      elements. If the list is then too big, we split it and append half the elements to
      the on-disk list. *)
@@ -315,7 +316,7 @@ module Make_v1(S:S) = struct
         match List.length transient >= tr_upper with
         | true -> (
             (* flush some to disk *)
-            transient |> List_.split_at ((tr_upper+tr_lower) / 2) |> fun (xs,ys) ->
+            transient |> Imp_util.split_at ((tr_upper+tr_lower) / 2) |> fun (xs,ys) ->
             free_elts xs >>= fun () ->
             Printf.printf "%s: %d\n%!" __FILE__ __LINE__;
             set_state {s with transient=ys })                

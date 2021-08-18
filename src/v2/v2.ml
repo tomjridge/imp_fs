@@ -253,7 +253,7 @@ module Stage_1(S1:sig
     end = struct
       module A = struct
         type k = did
-        let cmp_k = Int_.compare
+        let cmp_k = Int.compare
         type v = dir_ops
         type nonrec t = t
         let monad_ops = monad_ops
@@ -371,7 +371,7 @@ module Stage_1(S1:sig
     end = struct
       module A = struct
         type k = fid
-        let cmp_k = Int_.compare
+        let cmp_k = Int.compare
         type v = file_ops
         type nonrec t = t
         let monad_ops = monad_ops

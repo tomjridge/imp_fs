@@ -6,6 +6,7 @@
 
 (* open Util *)
 open Shared_ctxt
+open Imp_util
 
 (* thread id *)
 type tid = { tid:int }

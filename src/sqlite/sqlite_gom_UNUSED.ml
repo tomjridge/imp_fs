@@ -7,6 +7,7 @@ open Sqlite3
 open Tjr_monad.With_lwt
 open Gom_v3_UNUSED
 open Gom_v3_UNUSED.Op
+open Imp_util
     
 let create_db_stmt ~tbl = sprintf {|
   DROP TABLE IF EXISTS '%s';
@@ -76,7 +77,7 @@ module Make(S:sig
 
     let alloc_n n = 
       let m = get_max () in
-      let xs = List_.mk_range ~min:(m+1) ~max:(m+n+1) ~step:1 in
+      let xs = mk_range ~min:(m+1) ~max:(m+n+1) ~step:1 in
       return xs
     in
 
@@ -161,7 +162,7 @@ module Test() = struct
         match i > 100_000 with
         | true -> return ()
         | false -> 
-          let xs = List_.mk_range ~min:i ~max:(i+delta) ~step:1 in
+          let xs = mk_range ~min:i ~max:(i+delta) ~step:1 in
           let xs = xs |> List.map (fun i -> Insert(i,"FIXME")) in
           exec xs >>= fun () -> 
           k (i+delta))

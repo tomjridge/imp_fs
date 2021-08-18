@@ -2,6 +2,7 @@
    can write all intermediate states to a directory of files (numbered
    0...) *)
 
+open Imp_util
 open Shared_ctxt
 
 module M = Map.Make(struct type t = r let compare = Stdlib.compare end)
@@ -47,7 +48,7 @@ let make ~dirname =
 
     (* Write the entire trace to dirname/trace.marshal *)
     (Marshal.to_string t0 [] |> 
-     Tjr_file.write_string_to_file ~fn:(marshal_fn ~dirname));
+     write_string_to_file ~fn:(marshal_fn ~dirname));
 
     (* Write versions to dirname/0,1,... *)
     (0,Bytes.empty,trace) |> iter_k (fun ~k (n,file,tr) ->
@@ -65,7 +66,7 @@ let make ~dirname =
             | false -> file
           in
           Bytes.blit_string blk 0 file (blk_sz' * B.to_int blk_id) blk_sz';
-          Tjr_file.write_string_to_file ~fn:(dirname^"/"^(string_of_int n)) 
+          write_string_to_file ~fn:(dirname^"/"^(string_of_int n)) 
             (Bytes.to_string file);
           k (n+1,file,tr))
   in
@@ -98,7 +99,7 @@ let restore () =
   make () |> fun trace ->
   let fn = marshal_fn ~dirname:(string_of_int max_) in
   Printf.printf "%s: restoring from %s\n%!" __FILE__ fn;
-  Tjr_file.read_file fn |> fun s -> 
+  read_file fn |> fun s -> 
   Marshal.from_string s 0 |> fun (x:trace) -> 
   trace#t0.writes <- x.writes;
   trace#t0.map <- x.map;
@@ -107,7 +108,7 @@ let restore () =
   
 let print_trace ~dirname =
   let fn = dirname^"/trace.marshal" in
-  let s = Tjr_file.read_file fn in
+  let s = read_file fn in
   let x : trace = Marshal.from_string s 0 in
   Printf.printf "File %s, writes in order: \n%!" fn;
   let ws = List.rev x.writes in
@@ -118,5 +119,4 @@ let print_trace ~dirname =
         Printf.printf "Step %d, write to blk %d, data: %s\n\n%!" n (B.to_int blk_id) (Sexplib.Sexp.(to_string_hum (Atom blk)));
         k  (ws,n+1))
 
-  
   

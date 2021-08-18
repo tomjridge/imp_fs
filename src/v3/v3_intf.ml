@@ -342,8 +342,8 @@ type per_file = {
 (** {2 Util} *)
 
 
-(** For debugging *)
-let dont_log : bool rv = rv_declare ()
+(** config: dont_log, for debugging *)
+let dont_log : bool ref = ref false
 
 let convert_pread_pwrite_to_ba_buf ~pread ~pwrite = 
   let pread ~fd ~foff ~len ~buf:ba_buf ~boff = 

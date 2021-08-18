@@ -455,7 +455,7 @@ module With_lwt = struct
       
   (* $(FIXME("""functional cache - probably prefer imperative lru2gen for real impl""")) *)
 
-  module K = struct type t = int let compare = Int_.compare end
+  module K = struct type t = int let compare = Int.compare end
   module V = struct type t = blk option end
   module Wbc = Write_back_cache.Make(K)(V)
   include Wbc

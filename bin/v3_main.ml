@@ -1,7 +1,7 @@
 (** Run the V3 filesystem *)
 
 (** Enable/disable logging *)
-let _ = rv_set V3_intf.dont_log true
+let _ = V3_intf.dont_log := true
 
 (** Use the env var IMP_ROOT to point to where impfs should store data *)
 let _IMP_ROOT = Sys.getenv_opt "IMP_ROOT" |> function
@@ -14,9 +14,9 @@ let db_path = _IMP_ROOT^"/v3_database.db"
 let do_init () = 
   Printf.printf "Initializing... IMP_ROOT=%s (contains database and file data)\n%!" _IMP_ROOT;
   let _rename_existing =
-    Tjr_file.file_exists db_path |> function
+    file_exists db_path |> function
     | true -> 
-      Tjr_file.rename db_path (db_path ^ "." ^ (string_of_float @@ Unix.time()))
+      Unix.rename db_path (db_path ^ "." ^ (string_of_float @@ Unix.time()))
     | false -> ()
   in
   let open Sqlite3 in

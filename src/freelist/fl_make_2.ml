@@ -9,6 +9,7 @@ FIXME fl_make_1 should target the interface without the updates to
 open Plist_intf
 open Shared_ctxt
 open Freelist_intf
+open Imp_util
 
 module Pvt_debug = struct
   open Sexplib.Std
@@ -23,7 +24,7 @@ module Pvt_debug = struct
     (* only store the beginning and end of the transients... *)
     let transient = 
       if List.length transient > 10 then 
-        (List_.take 5 transient)@(transient |> List.rev |> List_.take 5  |> List.rev)
+        (take 5 transient)@(transient |> List.rev |> take 5  |> List.rev)
       else
         transient
     in
@@ -101,7 +102,7 @@ module Fl_example_1 = struct
       fun (r:r) n -> 
       let start = B.to_int r in
       let end_ = start+n in
-      (List_.map_range ~f:B.of_int start end_,B.of_int end_)
+      (map_range ~f:B.of_int start end_,B.of_int end_)
 
 
 

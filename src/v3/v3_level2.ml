@@ -92,7 +92,7 @@ end
 module Stage2(Stage1:STAGE1) = struct
   open Stage1
 
-  let dont_log = rv_get dont_log
+  let dont_log = !V3_intf.dont_log
 
   module Live_dirs = V3_live_object_cache.Make(S2)
 
@@ -496,7 +496,7 @@ module Stage2(Stage1:STAGE1) = struct
     let create_and_add_to_parent ~parent ~name ~times =
       let fid = new_fid () in
       let pth = fid_to_path fid in
-      assert(not @@ Tjr_file.file_exists pth);
+      assert(not @@ file_exists pth);
       (* FIXME probably want to sync the config.file_data_path
          directory to ensure the file is actually created on disk *)
       Lwt.(Lwt_unix.(openfile pth [O_CREAT;O_RDWR] 0o660 >>= fun fd ->
@@ -508,7 +508,7 @@ module Stage2(Stage1:STAGE1) = struct
     let create_symlink_and_add_to_parent ~parent ~name ~times ~(contents:str_256) =
       let sid = new_fid () in
       let pth = sid_to_path sid in
-      assert(not @@ Tjr_file.file_exists pth);
+      assert(not @@ file_exists pth);
       (* FIXME probably want to sync the config.file_data_path
          directory to ensure the file is actually created on disk *)
       Lwt.(Lwt_unix.(

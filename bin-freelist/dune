@@ -1,6 +1,6 @@
 (env
   (_ (flags (:standard 
-              -open Tjr_lib -open Tjr_monad -open Tjr_fs_shared -open Tjr_plist
+              -open Tjr_monad -open Tjr_fs_shared -open Tjr_plist
               -open Tjr_impfs -open Tjr_impfs.Tjr_freelist
 ))))
 

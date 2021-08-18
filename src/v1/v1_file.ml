@@ -35,8 +35,10 @@ module Make(S:sig
 
   let fn fid = sprintf "./tmp/v1_files/%d" (fid|>fid_to_int)
 
+  (* default perm for creating files *)
+  let default_file_perm = 0o640
+
   let get_fd : fid:fid -> foff:int -> (Lwt_unix.file_descr,t)m = fun ~fid ~foff ->
-    let default_file_perm = Tjr_file.default_create_perm in
     (from_lwt Lwt_unix.(openfile (fn fid) [O_RDWR] default_file_perm)) >>= fun fd ->
     (from_lwt Lwt_unix.(lseek fd foff SEEK_SET)) >>= fun (_:int) ->
     return fd
@@ -76,7 +78,7 @@ module Make(S:sig
 
   (* NOTE no times - this is data only *)
   let create ~fid = 
-    let perm = Tjr_file.default_create_perm in
+    let perm = default_file_perm in
     (* FIXME we assume it doesn't already exist *)
     from_lwt Lwt_unix.(openfile (fn fid) [O_CREAT;O_RDWR] perm) >>= fun fd ->
     from_lwt Lwt_unix.(close fd) >>= fun () ->

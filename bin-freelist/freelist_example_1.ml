@@ -73,7 +73,7 @@ let run_example ~params () =
                 b2e=(fun x -> B.to_int x) } 
 
             (* start off with some free elts in transient *)
-            let min_free_alloc elt n = (List_.from_upto elt (elt+n), elt+n)
+            let min_free_alloc elt n = (from_upto elt (elt+n), elt+n)
             let min_free = Some 6
             let fl_ref = ref { 
                 transient=[2;3;4;5]; min_free; 

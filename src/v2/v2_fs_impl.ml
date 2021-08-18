@@ -107,7 +107,7 @@ module Example = struct
         ~min_free:(Some (B.of_int 3)) >>= fun () ->
       fl_factory'#restore ~autosync:true ~origin >>= fun x -> 
       return x#freelist_ops >>= fun fl_ops ->
-      let fl_ops = Util.add_tracing_to_freelist ~freelist_ops:fl_ops in
+      let fl_ops = Tjr_freelist.add_tracing_to_freelist ~freelist_ops:fl_ops in
       
       (* Counter *)
       Printf.printf "%s: about to create counter\n%!" __FILE__;
