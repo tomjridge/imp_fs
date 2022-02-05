@@ -22,7 +22,7 @@ FUSE_OPTIONS:=-s -f -o auto_unmount -o sync_read -o debug
 FUSE_MNT_PT:=~/fuse_mount
 FUSE_DATA_DIR:=~/fuse_data_dir
 
--include Makefile.local # put your modifications here eg no debug flag
+# -include Makefile.local # put your modifications here eg no debug flag
 
 update_generated_doc::
 	cd src/common && (ocamldoc_pyexpander fv2_types.ml)

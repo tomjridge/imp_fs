@@ -7,13 +7,14 @@ homepage: "https://github.com/tomjridge/imp_fs"
 doc: "https://tomjridge.github.io/ocamldocs"
 bug-reports: "https://github.com/tomjridge/imp_fs/issues"
 depends: [
-  "dune" {>= "2.0"}
+  "dune" {>= "2.8"}
   "bigstringaf"
   "tjr_kv"
   "tjr_minifs"
+  "odoc" {with-doc}
 ]
 build: [
-  ["dune" "subst"] {pinned}
+  ["dune" "subst"] {dev}
   [
     "dune"
     "build"

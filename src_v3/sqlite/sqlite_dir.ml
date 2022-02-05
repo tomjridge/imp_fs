@@ -53,7 +53,8 @@ let assert_ok rc = assert(rc = Rc.OK)
 
 open Printf
 
-module Times = Minifs_intf.Times
+module Times = Tjr_fs_shared.Times
+type times = Times.times[@@deriving bin_io]
 
 module List = struct
   include List
@@ -104,7 +105,7 @@ type ('k,'v,'t,'did) dir_ops = {
      be done with a separate insert *)
 }
 
-type times = Times.times
+(* type times = Times.times *)
 
 type db = Sqlite3.db
 
@@ -500,3 +501,4 @@ module Test() = struct
     return ()
   
 end
+

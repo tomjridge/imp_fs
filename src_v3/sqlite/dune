@@ -3,8 +3,7 @@
              -open Base.Either 
              -open Tjr_monad
              -open Tjr_fs_shared
-             -open Tjr_minifs 
-             -open Tjr_minifs.Minifs_intf ))))
+))))
 
 
 ;;; NOTE this is a private library, usable by other tjr_impfs libs, but not externally
@@ -12,6 +11,6 @@
 (library
  (name "tjr_impfs_v3_sqlite")
  (package tjr_impfs)
- (libraries base extlib sqlite3 tjr_monad tjr_fs_shared tjr_minifs))
+ (libraries base extlib sqlite3 tjr_monad tjr_fs_shared))
 
 
