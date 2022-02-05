@@ -1,0 +1,15 @@
+(env
+ (_ (flags (:standard 
+             -open Base.Either 
+             -open Tjr_monad
+             -open Tjr_fs_shared
+             -open Tjr_minifs 
+             -open Tjr_minifs.Minifs_intf ))))
+
+
+(library
+ (public_name "tjr_impfs.v3.sqlite")
+ (name "tjr_impfs_v3_sqlite")
+ (libraries base extlib sqlite3 tjr_monad tjr_fs_shared tjr_minifs))
+
+
