@@ -1,15 +1,16 @@
-(env
- (_ (flags (:standard 
-             -open Base.Either 
-             -open Tjr_monad
-             -open Tjr_fs_shared
+;;; FIXME? including :standard in flags causes flags to be inherited from parent
+(env 
+ (_ (flags (
+      -open Base.Either 
+            -open Tjr_monad
+            -open Tjr_fs_shared
 ))))
 
 
 ;;; NOTE this is a private library, usable by other tjr_impfs libs, but not externally
 ;;; visible
 (library
- (name "tjr_impfs_v3_sqlite")
+ (name "v3_sqlite")
  (package tjr_impfs)
  (libraries base extlib sqlite3 tjr_monad tjr_fs_shared))
 

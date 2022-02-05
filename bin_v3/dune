@@ -7,11 +7,11 @@
 ;             -open Tjr_net 
              -open Tjr_minifs 
 ;             -open Tjr_minifs.Minifs_intf 
-             -open Tjr_impfs_v3_sqlite
+             -open V3_sqlite
              -open Tjr_impfs_v3
 ))))
 
 
 (executables
  (names v3_main)
- (libraries tjr_impfs_v3 tjr_impfs_v3_sqlite))
+ (libraries tjr_impfs_v3 v3_sqlite))
