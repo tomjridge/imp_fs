@@ -3,13 +3,18 @@
              -open Base.Either 
              -open Tjr_monad
              -open Tjr_fs_shared
+             -open Tjr_path_resolution
              -open Tjr_minifs 
-             -open Tjr_minifs.Minifs_intf ))))
+             -open Tjr_minifs.Minifs_intf 
+             -open Tjr_impfs_v3_sqlite
+))))
 
 
 (library
  (public_name "tjr_impfs.v3")
  (name "tjr_impfs_v3")
- (libraries base extlib sqlite3 tjr_monad tjr_fs_shared tjr_minifs))
+ (preprocess (pps ppx_deriving_yojson ppx_jane -allow-unannotated-ignores))
+ (libraries base extlib sqlite3 bigstringaf 
+            tjr_monad tjr_fs_shared tjr_minifs tjr_impfs_v3_sqlite))
 
 

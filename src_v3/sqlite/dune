@@ -7,9 +7,11 @@
              -open Tjr_minifs.Minifs_intf ))))
 
 
+;;; NOTE this is a private library, usable by other tjr_impfs libs, but not externally
+;;; visible
 (library
- (public_name "tjr_impfs.v3.sqlite")
  (name "tjr_impfs_v3_sqlite")
+ (package tjr_impfs)
  (libraries base extlib sqlite3 tjr_monad tjr_fs_shared tjr_minifs))
 
 
