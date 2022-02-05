@@ -6,7 +6,7 @@ open V3_intf
 
 module Make() = struct
 
-  let dont_log = !dont_log
+  let dont_log = !V3_util.dont_log
 
   let live_tids = Hashtbl.create 10
 
@@ -71,7 +71,7 @@ module Make() = struct
         | Ok xs -> 
           return (Ok (xs,{finished=(xs=[])})))
     in
-    let (pread,pwrite) = convert_pread_pwrite_to_ba_buf ~pread ~pwrite in
+    let (pread,pwrite) = V3_util.convert_pread_pwrite_to_ba_buf ~pread ~pwrite in
     {
       root = o.root;
       unlink;

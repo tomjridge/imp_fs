@@ -1,19 +1,18 @@
-(** This version focuses on the front end caching and locking, and
-   uses SQLite as the backend for the metadata, and some other
-   filesystem as a backend for file data.
+(** V3 level 2 is the lowest implementation level; SQLite is used to implement directories
+    and metadata (?) and some other filesystem is used to implement files.
+
+This version focuses on the front end caching and locking, so we delegate dirs and files
+to SQLite/the existing filesystem.
 
 We maintain a cache of live files, live dirs.
 
-We use kref reference counting to ensure that objects are not removed
-   from the cache whilst we operate on them. Locked objects can never
-   be removed from the cache, but we maintain an invariant that any
-   locked object must have an existing kref, so it should never be the
-   case that there are no references but an object is locked.
+We use kref reference counting to ensure that objects are not removed from the cache
+whilst we operate on them. Locked objects can never be removed from the cache, but we
+maintain an invariant that any locked object must have an existing kref, so it should
+never be the case that there are no references but an object is locked.
 
-In order to operate on an object, we first obtain a kref: krefs.get id
-
-This ensures that the object is in the cache and will not be flushed.
-
+In order to operate on an object, we first obtain a kref: [krefs.get id]. This ensures
+that the object is in the cache and will not be flushed.
 *)
 
 [@@@warning "-33-27"]
@@ -22,9 +21,11 @@ open V3_intf
 open V3_level1
 open Tjr_monad.With_lwt
 
+(** {2 Preamble} *)
+
 let line s = Printf.printf "%s: Reached line %d\n%!" "V3_level2" s; true
 
-module R = V3_intf.Refs_with_dirty_flags 
+module R = V3_util.Refs_with_dirty_flags 
 
 module S0 (* : S0 *) = V3_base_types
 open S0
@@ -35,39 +36,14 @@ open S1
 
 module Level2_provides = V3_intf.Level2_provides(S0)
 
-(** What we have to implement *)
+(** What we have to implement - see {!Stage2} below. *)
 module type T2 = Level2_provides.T2
 
 
 
 (** {2 Directories} *)
 
-(* Dir entries cache: use Lru_with_slow_operations *)
-
-module Lru = Lru_with_slow_operations
-
-let lru : (str_256,dir_entry,unit) Lru.lru_module = Lru.make ()
-module Entries_cache = (val lru)
-type entries_cache = Entries_cache.cache_state'
-let entries_cache_ops = Entries_cache.ops
-
-type sql_dir_ops = (str_256,dir_entry,t,did) Sqlite_dir.dir_ops
-  
-type per_dir = {
-  lock           : lwt_mutex;
-  parent         : did R.ref;
-  times          : times R.ref;
-  entries_cache  : entries_cache;
-}
-
-(** Live dirs; use V3_live_object_cache *)
-
-module S2 (* : V3_live_object_cache.S *) = struct
-  type t = lwt
-  type id = did
-  type a = per_dir
-end
-
+(** Configuration params known at module init time *)
 type config = {
   entries_cache_capacity   : int;
   entries_cache_trim_delta : int;
@@ -78,21 +54,55 @@ type config = {
   live_files_trim_delta     : int;
 }
 
+(** NOTE nothing in here is actually exposed in {!Stage2} below; could just open the
+    structure rather than binding it *)
+module Directories_prelude = struct
+
+  (* Dir entries cache: use Lru_with_slow_operations *)
+
+  module Lru = Lru_with_slow_operations
+
+  let lru : (str_256,dir_entry,unit) Lru.lru_module = Lru.make ()
+  module Entries_cache = (val lru)
+  type entries_cache = Entries_cache.cache_state'
+  let entries_cache_ops = Entries_cache.ops
+
+  type sql_dir_ops = (str_256,dir_entry,t,did) Sqlite_dir.dir_ops
+
+  type per_dir = {
+    lock           : lwt_mutex;
+    parent         : did R.ref;
+    times          : times R.ref;
+    entries_cache  : entries_cache;
+  }
+
+  (** Live dirs; use V3_live_object_cache *)
+
+  module S2 (* : V3_live_object_cache.S *) = struct
+    type t = lwt
+    type id = did
+    type a = per_dir
+  end
+
+  type per_file = {
+    fd: Lwt_unix.file_descr;
+  }  
+end
+open Directories_prelude
 
 
-type per_file = {
-  fd: Lwt_unix.file_descr;
-}  
-
+(** Stage 1 is immediately after connection to the SQLite backend; it includes the
+    [sql_dir_ops] live connection to the database *)
 module type STAGE1 = sig
   val config : config
   val sql_dir_ops : sql_dir_ops
 end
 
-module Stage2(Stage1:STAGE1) = struct
+(** Stage 2 uses the connection to SQLite to build the rest of the {!T2} interface *)
+module Stage2(Stage1:STAGE1) : T2 = struct
   open Stage1
 
-  let dont_log = !V3_intf.dont_log
+  let dont_log = !Util.dont_log
 
   module Live_dirs = V3_live_object_cache.Make(S2)
 
@@ -679,3 +689,7 @@ module Stage2(Stage1:STAGE1) = struct
 end (* Stage2 *)
 
 
+open struct
+  (* verify that Stage2 does indeed produce a T2 *)
+  module Check_stage2(Stage1:STAGE1) : T2 = Stage2(Stage1)
+end

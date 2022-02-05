@@ -32,13 +32,16 @@ find, insert and delete are fine.
 
 For parent and times, we can have another table (did,parent,times). 
 
-opendir creates a reference which pulls upto some limit of elts from the db, and stores the max name so we can resume later on ls_step.
+opendir creates a reference which pulls upto some limit of elts from the db, and stores
+the max name so we can resume later on ls_step.
 
-FIXME what is the distinction between flush and sync at the lower layer? since these both force dirty changes to db, there isn't any
+FIXME what is the distinction between flush and sync at the lower layer? since these both
+force dirty changes to db, there isn't any
 
-FIXME at the moment this is blocking; this should use lwt for non-blocking, and lwt locks to prevent concurrent clashes (although live dirs have a lock anyway, so perhaps this is unnecessary); sqlite+lwt via eg ocaml-sqlexpr or caqti
-
- *)
+FIXME at the moment this is blocking; this should use lwt for non-blocking, and lwt locks
+to prevent concurrent clashes (although live dirs have a lock anyway, so perhaps this is
+unnecessary); sqlite+lwt via eg ocaml-sqlexpr or caqti
+*)
 
 (* FIXME do we need db locked for concurrent stmts? *)
 

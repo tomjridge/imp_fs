@@ -28,7 +28,7 @@ module Make(S0:S0) = struct
   module S2 = Level2_provides(S0)
   open S2
 
-  let dont_log = !dont_log
+  let dont_log = !V3_util.dont_log
 
   (** Make step 2, assuming values (from T2) *)
   module Make_2(X:T2) = struct

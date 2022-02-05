@@ -1,20 +1,27 @@
-(** Abstract development of V3.
+(** Interfaces describing the abstract development of V3.
 
-See {!module:V3}.
+Levels/layers are the layers from standard software engineering. For us, level 0 is the
+topmost, and level 1 sits underneath etc.
 
-Initial path resolution is carried out without locks. After, we lock
-   objects that we need to, validate the entries, and then go ahead
-   with the modifications. If we detect changes between path res and
-    execution, we backout with a concurrent modification error.
+Stages are related to time: stage 1 occurs before stage 2 etc. This recognizes that some
+values are available only at later points in time.
+
+Initially path resolution is carried out without locks. Afterwards, we lock objects that
+we need to, validate the entries, and then go ahead with the modifications. If we detect
+changes between path res and execution, we backout with a concurrent modification error.
 
 *)
 
-type times = Minifs_intf.times
+(** {1 Preamble} *)
 
+open struct
+  type times = Tjr_fs_shared.Times.times
+end
 
 module Errors = Minifs_intf.Error_
 
-(* To avoid adding an error that is not in POSIX *)
+(** To avoid adding an error that is not in POSIX, we introduce this pseudo error
+    constructor which just default to [`Error_other] *)
 let eRROR_CONCURRENT_MODIFICATION = `Error_other
 
 
@@ -73,6 +80,14 @@ module Lock_ops = struct
 end
 open Lock_ops
 
+
+(** {1 Basic types, extended types} 
+
+From a basic set of types, we construct further types.
+
+*)
+
+(** Very basic types: monadic t, fid, did, sid... *)
 module type S0 = sig
   type t
   val monad_ops: t monad_ops
@@ -100,6 +115,7 @@ module S1(S0:S0) = struct
 
   type dir_v = dir_entry
 
+  (** Operations on a single directory *)
   type dir_ops = {
     find      : did:did -> str_256 -> (dir_entry option,t)m;
     insert    : did:did -> str_256 -> dir_entry -> (unit,t)m;
@@ -149,6 +165,8 @@ module S1(S0:S0) = struct
 
 
   (* NOTE lookup failures for did and fid are dealt with in the monad *)
+  (** Operations to create/delete a directory, and operate on more than one directory (eg
+      cross-directory rename) *)
   type dirs_ops = {
     (* find   : did -> (dir_ops,t)m; *)
     delete : did -> (unit,t)m;
@@ -196,8 +214,8 @@ module S1(S0:S0) = struct
 
     sync      : fid:fid -> (unit,t)m;
   }
-  (** NOTE the nlink field is derived from inter-object links, and so
-      needs to be updated atomically *)
+  (** NOTE the nlink field is derived from inter-object links, and so needs to be updated
+      atomically *)
 
   type files_ops = {
     (* delete: fid -> (unit,t)m; - use ref counting and impl at level 2 *)
@@ -223,6 +241,9 @@ module S1(S0:S0) = struct
   }
 
 end
+
+
+(** {1 Abstract types describing implementation in terms of levels and stages} *)
 
 (* $ (PIPE2SH("""sed -n '/The[ ]values/,/^end/p' >GEN.S2.ml_""")) *)
 (** The values we expect to be present at level 2 *)
@@ -254,6 +275,7 @@ module Level2_provides(S0:S0) = struct
 end
 
 (* $ (PIPE2SH("""sed -n '/module[ ]Level1_provides/,/^end/p' >GEN.Level1_provides.ml_""")) *)
+(** Level 1 provides a single "ops" record of operations, parameterized by thread id [tid] *)
 module Level1_provides = struct
   type buf = Shared_ctxt.buf
   open Minifs_intf.Call_specific_errors
@@ -293,69 +315,10 @@ module Level1_provides = struct
   }
 end
 
-(** As Minifs_intf.Ops_type.ops; note that we convert Shared_ctxt.buf to ba_buf *)
+(** Level 0 provides a single "ops" record of operations, as Minifs_intf.Ops_type.ops;
+    note that we convert Shared_ctxt.buf to ba_buf *)
 module Level0_provides = struct
   type ('fd,'dh,'t) ops = ('fd,'dh,'t) Minifs_intf.Ops_type.ops    
 end
-
-
-
-(** {2 Implementation types} *)
-
-module Refs_with_dirty_flags = struct
-  type 'a ref = {
-    mutable value: 'a;
-    mutable dirty: bool
-  }
-
-  (** values start off clean *)
-  let ref value = {value;dirty=false}
-
-  let is_dirty x = x.dirty
-
-  let clean x = x.dirty <- false
-
-  (** assigning sets the dirty flag *)
-  let ( := ) r value = r.value <-value; r.dirty <- true
-
-  let (!) r = r.value
-end
-open struct module R = Refs_with_dirty_flags end
-
-(*
-(** For this version, we implement a file using an underlying
-   filesystem. NOTE we also store sz in the database; we should check
-   that the on-disk version agrees with the DB when resurrecting (and
-   maybe times too). *)
-type per_file = {
-  filename       : string;
-  file_descr     : Lwt_unix.file_descr;
-  lock           : Lwt_mutex.t;  
-  times          : times R.ref;
-  sz             : int R.ref;
-}
-*)
-
-
-
-
-(** {2 Util} *)
-
-
-(** config: dont_log, for debugging *)
-let dont_log : bool ref = ref false
-
-let convert_pread_pwrite_to_ba_buf ~pread ~pwrite = 
-  let pread ~fd ~foff ~len ~buf:ba_buf ~boff = 
-    pread ~fd ~foff ~len ~buf:(Shared_ctxt.{ba_buf;is_valid=true}) ~boff
-  in
-  let pwrite ~fd ~foff ~len ~buf:ba_buf ~boff = 
-    let buf = Shared_ctxt.{ba_buf;is_valid=true} in
-    pwrite ~fd ~foff ~len ~buf ~boff
-  in
-  (pread,pwrite)
-
-
-
 
 

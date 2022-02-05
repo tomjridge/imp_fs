@@ -3,8 +3,9 @@ default: all
 -include Makefile.ocaml
 
 all:: v3_main.exe
-	$(DUNE) build bin/v3_main.exe
-	cp _build/default/bin/v3_main.exe .
+
+#	$(DUNE) build bin_v3/v3_main.exe
+#	cp _build/default/bin_v3/v3_main.exe .
 # 	$(DUNE) build bin/v1_main.exe
 # 	$(DUNE) build bin/v2_main.exe
 # 	$(DUNE) build bin/util_main.exe
@@ -61,9 +62,9 @@ run_from_existing:
 
 
 v3_main.exe: FORCE
-	$(DUNE) build bin/v3_main.exe
+	$(DUNE) build bin_v3/v3_main.exe
 	rm -f v3_main.exe
-	cp _build/default/bin/v3_main.exe .
+	cp _build/default/bin_v3/v3_main.exe .
 
 init_v3: v3_main.exe
 	mkdir -p $(FUSE_MNT_PT)

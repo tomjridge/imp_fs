@@ -1,4 +1,9 @@
-(** Instantiate Sqlite_dir with standard v3 types *)
+(** Instantiate Sqlite_dir with standard v3 types.
+
+FIXME currently depends on {!V3_level2.S1.dir_entry} but perhaps this type could be moved
+to {!V3_base_types}.
+
+ *)
 
 (* NOTE trivial functor because Sqlite_dir.Make creates mutable state *)
 module Make() = struct

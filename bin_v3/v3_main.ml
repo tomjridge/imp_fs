@@ -1,7 +1,7 @@
 (** Run the V3 filesystem *)
 
 (** Enable/disable logging *)
-let _ = V3_intf.dont_log := true
+let _ = Util.dont_log := true
 
 (** Use the env var IMP_ROOT to point to where impfs should store data *)
 let _IMP_ROOT = Sys.getenv_opt "IMP_ROOT" |> function

@@ -110,7 +110,7 @@ module type T = sig
 end
 
 module Make(S:S) : T with type id = S.id and type a = S.a = struct
-  let dont_log = !V3_intf.dont_log
+  let dont_log = !V3_util.dont_log
 
   include S
   open Tjr_monad.With_lwt
