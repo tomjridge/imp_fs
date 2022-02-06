@@ -50,3 +50,9 @@ let iter_k f (x:'a) =
   let rec k x = f ~k x in
   k x
 
+
+
+module List = struct
+  include List
+  let hd_opt xs = if xs = [] then None else Some (List.hd xs)
+end

@@ -1,40 +1,49 @@
-(** An implementation of directories on top of sqlite, for v3.
+(** An implementation of directories on top of SQLite, for v3.
 
-To implement directories, we need to implement the interface:
+Directories consist of two parts: 
+- The metadata: times (atim,mtim), parent
+- The contents: entries pointing to other files and directories
+
+To implement directories, we need to implement the interface {!Dir_ops}.
 
 {[
-type ('k,'v,'t,'did) lower_ops = {
-  get_meta  : unit -> ('did * times,'t)m;
-  (** returns parent and times *)
+  type ('k,'v,'t,'did) dir_ops = {
+    get_meta  : did:'did -> ('did * times,'t)m;
+    find      : did:'did -> 'k -> ('v option,'t) m;
+    exec      : ('k,'v,'did) op list -> (unit,'t)m;
+    opendir   : did:'did -> (('k,'v,'t)Ls.ops,'t)m;
+    max_did   : unit -> 'did; 
+    (** NOTE this is blocking, but is intended to be used once at
+        startup, so potentially only results in slightly slower startup
+        than would be possible if this was in the monad *)
 
-  find      : 'k -> ('v option,'t) m;
-
-  exec      : ('k,'v,'t,'did) exec_ops -> (unit,'t)m;
-
-  opendir   : unit -> (('k,'v,'t)Ls.ops,'t)m;
-
-  (* sync : unit -> (unit,'t)m; NOTE we assume the lower layer already
-     handles these synchronously *)
-}
+    pre_create: 
+      note_does_not_touch_parent: unit -> 
+      new_did:'did -> parent:'did -> times:times -> (unit,'t)m; 
+    (** pre-create does not touch the parent directory - that needs to
+        be done with a separate insert *)
+  }
 ]}
+
 
 We implement this without a cache: all operations go directly to the database.
 
-Let's assume that each directory has a unique (int) identifier did. 
+Let's assume that each directory has a unique (int) identifier did.  Then we can have a
+single table dir_entries, with rows [(did, name, entry)] indexed by did,name (name is
+unique of course, for a particular did).
 
-Then we can have a single table dir_entries:
-
-(did, name, entry)
-
-Indexed by did,name (name is unique of course, for a particular did)
-
-find, insert and delete are fine.
+Then [find], [insert] and [delete] are fine.
 
 For parent and times, we can have another table (did,parent,times). 
 
-opendir creates a reference which pulls upto some limit of elts from the db, and stores
-the max name so we can resume later on ls_step.
+[opendir] creates a reference which pulls upto some limit of elts from the db, and stores
+the max name so we can resume later on ls_step (the directory entries are stored ordered
+by name in the database).
 
+NOTE currently all DB access is serialized; but some concurrency could be achieved
+*)
+
+(*
 FIXME what is the distinction between flush and sync at the lower layer? since these both
 force dirty changes to db, there isn't any
 
@@ -48,36 +57,37 @@ unnecessary); sqlite+lwt via eg ocaml-sqlexpr or caqti
 open Util
 open Sqlite3
 open Tjr_monad.With_lwt
-
-let assert_ok rc = assert(rc = Rc.OK)
-
-
-[@@@warning "-33"]
-
 open Printf
+
+(* FIXME remove the following *)
+[@@@warning "-33"]
+[@@@warning "-27"]
+
 
 module Times = Tjr_fs_shared.Times
 type times = Times.times[@@deriving bin_io]
 
-module List = struct
-  include List
-  let hd_opt xs = if xs = [] then None else Some (List.hd xs)
-end
 
-
+(** Directory listing (like a dir handle) *)
+(* FIXME may want to introduce a [dh] type for dirhandles; FIXME probably simplest API is
+   a function from unit to string list ("get_more_entries"), with empty list signalling
+   end, and no need for explicit close since no real state is being maintained anyway;
+   this is close to the usual interface, except without the explicit [dh] type, and with
+   explicit opendir/closedir *)
 module Ls = struct
   type ('k,'v,'t) ops = {
     kvs: unit -> (('k*'v) list,'t)m; 
-    (** NOTE if we return [], then we are not necessarily finished! *)
+    (** NOTE if we return [], then we are not necessarily finished! FIXME perhaps we want
+        to use [] to indicate "finished", as readdir does, to avoid mismatch *)
 
     step: unit -> (unit,'t)m; 
 
     is_finished: unit -> (bool,'t)m;
-    (* close: unit -> (unit,'t)m; for explicit freeing of resources? *)
+    (* close: unit -> (unit,'t)m; FIXME for explicit freeing of resources? *)
   }
 end
 
-
+(** Directory operations, to be executed as part of a batch *)
 module Op = struct
   (* From Dv3.Op *)
   type ('k,'v,'did) op = 
@@ -85,37 +95,54 @@ module Op = struct
     | Delete of 'did*'k
     | Set_parent of 'did(*child*) * 'did(*parent*)
     | Set_times of 'did * times 
-    (** NOTE: create is not a separate operation: we just start working with a new did, initialized via set_times *)
-
+    (** NOTE: create is not a separate operation: we just start working with a new did,
+        initialized via set_times *)
 end
 open Op
 
 
-type ('k,'v,'t,'did) dir_ops = {
-  get_meta  : did:'did -> ('did * times,'t)m;
-  find      : did:'did -> 'k -> ('v option,'t) m;
-  exec      : ('k,'v,'did) op list -> (unit,'t)m;
-  opendir   : did:'did -> (('k,'v,'t)Ls.ops,'t)m;
-  max_did   : unit -> 'did; 
-  (** NOTE this is blocking, but is intended to be used once at
-     startup, so potentially only results in slightly slower startup
-     than would be possible if this was in the monad *)
+module Dir_ops = struct
+  type ('k,'v,'t,'did) dir_ops = {
+    get_meta  : did:'did -> ('did * times,'t)m;
+    find      : did:'did -> 'k -> ('v option,'t) m;
+    exec      : ('k,'v,'did) op list -> (unit,'t)m;
+    opendir   : did:'did -> (('k,'v,'t)Ls.ops,'t)m;
+    max_did   : unit -> 'did; 
+    (**  *)
 
-  pre_create: 
-    note_does_not_touch_parent: unit -> 
-    new_did:'did -> parent:'did -> times:times -> (unit,'t)m; 
-  (** pre-create does not touch the parent directory - that needs to
-     be done with a separate insert *)
-}
+    pre_create: 
+      note_does_not_touch_parent: unit -> 
+      new_did:'did -> parent:'did -> times:times -> (unit,'t)m; 
+  }
+  (** 
+NOTE ['k] is typically "name" of directory entry (a short string); ['v] is the directory
+entry itself (a pointer to a file/dir/symlink); we don't assume much about a [dir_entry]
+apart from that we can convert it to/from a string/blob.
 
-(* type times = Times.times *)
+Fields are:
+- [get_meta] - parent and time info
+- [find] a particular entry
+- [exec] a list of operations (insert, delete, set parent, set times)
+- [opendir] - return a list of entries
+- [max_did] - used once on startup, so we can allocate fresh [did]s; NOTE this is
+  blocking, but is intended to be used once at startup, so potentially only results in
+  slightly slower startup than would be possible if this was in the monad
+- [pre_create] which creates a new directory, with a given parent, but does not touch the
+  parent (that has to be done separately)
+*)
+end
+include Dir_ops
 
 type db = Sqlite3.db
 
 (* NOTE no caching at this level *)
 
-(** SQL commands to create a db; dir_entries and dir_meta; NOTE name is 256 length *)
-let create_tables_stmt = {|
+open struct
+
+  let assert_ok rc = assert(rc = Rc.OK)  
+
+  (** SQL commands to create a db; dir_entries and dir_meta; NOTE name is 256 length *)
+  let create_tables_stmt = {|
   DROP TABLE IF EXISTS 'dir_entries';
   DROP TABLE IF EXISTS 'dir_meta';
 
@@ -126,39 +153,42 @@ let create_tables_stmt = {|
   /* CREATE UNIQUE INDEX 'index2' on 'dir_meta' (did); */
 |}
 
-let create_tables db = 
-  assert_ok (exec db create_tables_stmt)
+  let create_tables db = assert_ok (exec db create_tables_stmt)      
+
+  (** Add root directory to db *)
+  let add_root_directory_stmt = {| INSERT INTO dir_meta VALUES (0,0,0.0,0.0) |}
+
+  let add_root_directory db = assert_ok (exec db add_root_directory_stmt)
+
+  (** Limit number of entries when reading from directory *)
+  let readdir_limit = 1000
+  let _ = assert(readdir_limit > 0)
+end
+
+(** What the following {!Make} functor requires; essentially a way to convert [dir_entry]
+    to/from string. *)
+module type S = sig
+  type did
+
+  val did_to_int: did -> int 
+  val int_to_did: int -> did 
+
+  type dir_entry
+
+  (** convert to string/blob *)
+  val dir_entry_to_string: dir_entry -> string
+  val string_to_dir_entry: string -> dir_entry 
+end
+
+(** What the following {!Make} functor provides *)
+module type T = sig
+  type did
+  type dir_entry
+  val make_dir_ops: db:db -> (str_256, dir_entry, lwt, did) dir_ops
+end
 
 
-(** Add root directory to db *)
-let add_root_directory_stmt = {|
-  INSERT INTO dir_meta VALUES (0,0,0.0,0.0)
-|}
-
-let add_root_directory db = 
-  assert_ok (exec db add_root_directory_stmt)
-
-
-
-let readdir_limit = 1000
-let _ = assert(readdir_limit > 0)
-
-[@@@warning "-27"]
-
-
-module Make(S:sig
-    type did
-
-    val did_to_int: did -> int 
-    val int_to_did: int -> did 
-
-    type dir_entry
-
-    (** convert to string/blob *)
-    val dir_entry_to_string: dir_entry -> string
-    val string_to_dir_entry: string -> dir_entry 
-
-  end) = struct
+module Make(S:S) : T with type did:=S.did and type dir_entry:=S.dir_entry = struct
   
   let dont_log = !Util.dont_log
   let line s = Printf.printf "%s: Reached line %d\n%!" "sqlite_dir" s; true
@@ -442,7 +472,6 @@ module Make(S:sig
 
   (* FIXME want to use str_256 rather than string? *)
   let _ : db:db -> (str_256, dir_entry, lwt, did) dir_ops = make_dir_ops
-
 
 end
 
