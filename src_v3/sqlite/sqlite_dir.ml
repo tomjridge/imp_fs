@@ -164,6 +164,9 @@ open struct
   let readdir_limit = 1000
   let _ = assert(readdir_limit > 0)
 end
+let create_tables = create_tables
+let add_root_directory = add_root_directory
+
 
 (** What the following {!Make} functor requires; essentially a way to convert [dir_entry]
     to/from string. *)

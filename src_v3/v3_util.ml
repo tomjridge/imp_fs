@@ -41,8 +41,16 @@ type per_file = {
 
 
 
-(** config: dont_log, for debugging *)
-let dont_log : bool ref = ref false
+(* config: dont_log, for debugging *)
+
+(** Logging is by default disabled; to enable, explicitly set envvar DONT_LOG=false *)
+let dont_log_envvar = 
+  Sys.getenv_opt "DONT_LOG" |> function 
+  | None -> true
+  | Some "false" -> false
+  | Some _ -> true
+
+let dont_log : bool ref = ref dont_log_envvar
 
 let convert_pread_pwrite_to_ba_buf ~pread ~pwrite = 
   let pread ~fd ~foff ~len ~buf:ba_buf ~boff = 

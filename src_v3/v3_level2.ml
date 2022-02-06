@@ -336,6 +336,7 @@ module Stage2(Stage1:STAGE1) : T2 = struct
         sql_dir_ops.exec ops        
     in
 
+    (* NOTE this is the only level 2 operation that locks objects via [!locks] *)
     let rename_dir = function
       | Rename_dir_missing { tid; locks_not_held; needs_ancestor_check; src; dst } ->
           (* We need to figure out which objs need locking; exit early
@@ -538,6 +539,9 @@ module Stage2(Stage1:STAGE1) : T2 = struct
 
 
   (** {2 locks} *)
+
+  (** NOTE locks mostly are handled at level 1, except for [Rename_dir_missing] where the
+      locking is sufficiently intricate that we do it at level 2 *)
 
   type per_tid = { objs: dir_entry list; krefs:Live_dirs.kref list; locks: Lwt_mutex.t list }
 

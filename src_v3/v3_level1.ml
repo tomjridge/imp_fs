@@ -1,11 +1,12 @@
-(** Abstract development of V3.
+(** Level 1: build on level 2 to provide essential filesystem functionality. 
 
-See {!module:V3}.
+NOTE per-thread locking is provided at level 1 (since level 2 has no notion of
+[tid]... except for operations like [Rename_dir_missing] where a [tid] is provided.).
 
-Initial path resolution is carried out without locks. After, we lock
-   objects that we need to, validate the entries, and then go ahead
-   with the modifications. If we detect changes between path res and
-    execution, we backout with a concurrent modification error.
+Level 1: Initially path resolution is carried out without locks. Afterwards, we lock
+objects that we need to, validate the entries, and then go ahead with the
+modifications. If we detect changes between path res and execution, we backout with a
+concurrent modification error.
 
 *)
 

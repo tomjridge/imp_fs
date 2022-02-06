@@ -1,4 +1,4 @@
-(** Interface level 1 with minifs *)
+(** Interface level 1 with minifs; simple wrapper to add a unique [tid] to each call *)
 
 open Tjr_monad.With_lwt
 

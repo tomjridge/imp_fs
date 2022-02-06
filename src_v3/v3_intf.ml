@@ -3,12 +3,12 @@
 Levels/layers are the layers from standard software engineering. For us, level 0 is the
 topmost, and level 1 sits underneath etc.
 
+- Level 0: fuse integration
+- Level 1: operations, with explicit thread identifiers, used for locking resources
+- Level 2: operations without thread identifiers; "raw" interface used by level 1
+
 Stages are related to time: stage 1 occurs before stage 2 etc. This recognizes that some
 values are available only at later points in time.
-
-Initially path resolution is carried out without locks. Afterwards, we lock objects that
-we need to, validate the entries, and then go ahead with the modifications. If we detect
-changes between path res and execution, we backout with a concurrent modification error.
 
 *)
 
